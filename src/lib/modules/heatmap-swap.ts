@@ -12,7 +12,7 @@
 
 import 'server-only';
 import type { SwapSuggestion, Sleeve } from '@/types';
-import { CLUSTER_CAP, getProfileCaps, type RiskProfileType } from '@/types';
+import { CLUSTER_CAP } from '@/types';
 
 const WEAK_R_THRESHOLD = 0.5;        // Weak side must be below this R
 const WEAK_MUST_BE_NEGATIVE = true;  // Only suggest if weak pos is underwater
@@ -41,8 +41,7 @@ interface CandidateForSwap {
 export function findSwapSuggestions(
   positions: PositionForSwap[],
   candidates: CandidateForSwap[],
-  totalPortfolioValue: number,
-  riskProfile?: RiskProfileType
+  totalPortfolioValue: number
 ): SwapSuggestion[] {
   const suggestions: SwapSuggestion[] = [];
 
@@ -59,9 +58,8 @@ export function findSwapSuggestions(
     const clusterValue = clusterPos.reduce((s: number, p: PositionForSwap) => s + p.value, 0);
     const clusterPct = totalPortfolioValue > 0 ? clusterValue / totalPortfolioValue : 0;
 
-    // Only suggest swaps if cluster is near or at cap (≥80%) — profile-aware
-    const effectiveClusterCap = riskProfile ? getProfileCaps(riskProfile).clusterCap : CLUSTER_CAP;
-    if (clusterPct < effectiveClusterCap * 0.8) continue;
+    // Only suggest swaps if cluster is near or at cap (≥80%)
+    if (clusterPct < CLUSTER_CAP * 0.8) continue;
 
     // Find weakest position in cluster (lowest R-multiple)
     const weakest = clusterPos.reduce((w: PositionForSwap, p: PositionForSwap) => (p.rMultiple < w.rMultiple ? p : w));

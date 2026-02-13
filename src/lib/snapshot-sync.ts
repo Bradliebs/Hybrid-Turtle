@@ -17,7 +17,6 @@ import {
   getFXRate,
 } from './market-data';
 import type { Sleeve } from '@/types';
-import { ATR_STOP_MULTIPLIER, SNAPSHOT_CLUSTER_WARNING, SNAPSHOT_SUPER_CLUSTER_WARNING } from '@/types';
 
 // ── Types ─────────────────────────────────────────────────────
 export interface SyncProgress {
@@ -165,9 +164,9 @@ export async function syncSnapshot(
     superClusterRisk.set(superCluster, (superClusterRisk.get(superCluster) || 0) + riskGbp);
   }
 
-  // Early-warning thresholds for snapshot display (not hard trading gates)
-  const maxClusterPct = SNAPSHOT_CLUSTER_WARNING;
-  const maxSuperClusterPct = SNAPSHOT_SUPER_CLUSTER_WARNING;
+  // Risk cap defaults from types
+  const maxClusterPct = 0.35;
+  const maxSuperClusterPct = 0.60;
 
   // 5. Create the snapshot record
   const snapshot = await prisma.snapshot.create({
@@ -212,7 +211,7 @@ export async function syncSnapshot(
 
           // ── Entry / Stop levels ──
           const entryTrigger = high20 + atr14 * 0.1;
-          const stopLevel = entryTrigger - atr14 * ATR_STOP_MULTIPLIER;
+          const stopLevel = entryTrigger - atr14 * 1.5;
 
           // ── Chasing detection ──
           const chasing20 = chasingLastN(daily, 20, 5);

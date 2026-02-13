@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { RiskProfileType, Sleeve } from '@/types';
-import { RISK_PROFILES, SLEEVE_CAPS, POSITION_SIZE_CAPS, getProfileCaps } from '@/types';
+import { RISK_PROFILES, SLEEVE_CAPS, POSITION_SIZE_CAPS, CLUSTER_CAP, SECTOR_CAP } from '@/types';
 
 interface PositionData {
   id: string;
@@ -43,7 +43,6 @@ export function validateRiskGates(
   riskProfile: RiskProfileType
 ): RiskGateResult[] {
   const profile = RISK_PROFILES[riskProfile];
-  const caps = getProfileCaps(riskProfile);
   const results: RiskGateResult[] = [];
 
   // Gate 1: Total Open Risk ≤ Max for profile (exclude HEDGE from calculation)
@@ -88,38 +87,38 @@ export function validateRiskGates(
     limit: sleeveCap * 100,
   });
 
-  // Gate 4: Cluster concentration (profile-aware cap)
+  // Gate 4: Cluster concentration ≤ 20%
   if (newPosition.cluster) {
     const clusterValue = existingPositions
       .filter((p) => p.cluster === newPosition.cluster)
       .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
     const clusterPercent = totalPortfolioValue > 0 ? clusterValue / totalPortfolioValue : 0;
     results.push({
-      passed: clusterPercent <= caps.clusterCap,
+      passed: clusterPercent <= CLUSTER_CAP,
       gate: 'Cluster Concentration',
-      message: `${newPosition.cluster} cluster: ${(clusterPercent * 100).toFixed(1)}% (max ${(caps.clusterCap * 100).toFixed(0)}%)`,
+      message: `${newPosition.cluster} cluster: ${(clusterPercent * 100).toFixed(1)}% (max ${(CLUSTER_CAP * 100).toFixed(0)}%)`,
       current: clusterPercent * 100,
-      limit: caps.clusterCap * 100,
+      limit: CLUSTER_CAP * 100,
     });
   }
 
-  // Gate 5: Sector concentration (profile-aware cap)
+  // Gate 5: Sector concentration ≤ 33%
   if (newPosition.sector) {
     const sectorValue = existingPositions
       .filter((p) => p.sector === newPosition.sector)
       .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
     const sectorPercent = totalPortfolioValue > 0 ? sectorValue / totalPortfolioValue : 0;
     results.push({
-      passed: sectorPercent <= caps.sectorCap,
+      passed: sectorPercent <= SECTOR_CAP,
       gate: 'Sector Concentration',
-      message: `${newPosition.sector} sector: ${(sectorPercent * 100).toFixed(1)}% (max ${(caps.sectorCap * 100).toFixed(0)}%)`,
+      message: `${newPosition.sector} sector: ${(sectorPercent * 100).toFixed(1)}% (max ${(SECTOR_CAP * 100).toFixed(0)}%)`,
       current: sectorPercent * 100,
-      limit: caps.sectorCap * 100,
+      limit: SECTOR_CAP * 100,
     });
   }
 
-  // Gate 6: Position size cap (profile-aware)
-  const positionSizeCap = caps.positionSizeCaps[newPosition.sleeve] ?? POSITION_SIZE_CAPS.CORE;
+  // Gate 6: Position size cap
+  const positionSizeCap = POSITION_SIZE_CAPS[newPosition.sleeve];
   const positionSizePercent = totalPortfolioValue > 0 ? newPosition.value / totalPortfolioValue : 0;
   results.push({
     passed: positionSizePercent <= positionSizeCap,

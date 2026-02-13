@@ -220,7 +220,7 @@ async function runNightlyProcess() {
           status: r.status,
         }));
 
-      const swaps = findSwapSuggestions(enrichedForSwap, scanCandidates, totalPortfolioValue, riskProfile);
+      const swaps = findSwapSuggestions(enrichedForSwap, scanCandidates, totalPortfolioValue);
       swapAlerts = swaps.map((s) => ({
         cluster: s.cluster,
         weakTicker: s.weakTicker,
