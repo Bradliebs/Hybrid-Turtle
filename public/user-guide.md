@@ -171,7 +171,26 @@ If you disconnect later, stored credentials are removed; synced historical data 
 
 ---
 
-## 9) Nightly Automation (Optional)
+## 9) Signal Messages (Telegram) Setup
+
+Use this if you want nightly signal/summary messages in Telegram.
+
+1. In Telegram, open **@BotFather** and create a bot (`/newbot`).
+2. Copy the **bot token** from BotFather.
+3. Send at least one message to your new bot.
+4. Get your **chat ID** by opening this URL in a browser (replace `<TOKEN>`):
+	- `https://api.telegram.org/bot<TOKEN>/getUpdates`
+	- Look for `"chat"` then the numeric `"id"` value.
+5. Open HybridTurtle → **Settings** → **Telegram Notifications**.
+6. Paste **Bot Token** and **Chat ID**, then click **Send Test Message**.
+7. Add the same values to your `.env` file:
+	- `TELEGRAM_BOT_TOKEN="..."`
+	- `TELEGRAM_CHAT_ID="..."`
+8. Restart the dashboard (`start.bat`) so environment variables are reloaded.
+
+---
+
+## 10) Nightly Automation (Optional)
 
 If enabled in installer:
 - runs on weeknights (scheduled task)
@@ -182,7 +201,7 @@ If PC is off at schedule time, task may run late when machine resumes (depending
 
 ---
 
-## 10) Troubleshooting
+## 11) Troubleshooting
 
 ## Installer says unsupported Node version
 - install Node.js 20 or 22 LTS
@@ -210,7 +229,7 @@ If PC is off at schedule time, task may run late when machine resumes (depending
 
 ---
 
-## 11) Update Procedure (When You Receive New Code)
+## 12) Update Procedure (When You Receive New Code)
 
 1. Close running dashboard
 2. Run `update.bat`
@@ -219,7 +238,7 @@ If PC is off at schedule time, task may run late when machine resumes (depending
 
 ---
 
-## 12) Quick Non-Technical Checklist
+## 13) Quick Non-Technical Checklist
 
 - Use `install.bat` once
 - Use `start.bat` daily
@@ -232,7 +251,7 @@ If PC is off at schedule time, task may run late when machine resumes (depending
 
 ---
 
-## 13) Where to Read More
+## 14) Where to Read More
 
 - `SETUP-README.md` for concise installation help
 - `DASHBOARD-GUIDE.md` for deep technical/feature reference

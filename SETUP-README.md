@@ -58,6 +58,23 @@ A systematic trading dashboard built on the Turtle Trading methodology with mode
 
 ---
 
+## Telegram Signal Messages (Optional)
+
+Use this if you want nightly Telegram summaries/signals.
+
+1. Create a Telegram bot with **@BotFather** (`/newbot`) and copy the bot token.
+2. Send at least one message to the bot.
+3. Get your chat ID from:
+   - `https://api.telegram.org/bot<TOKEN>/getUpdates`
+4. In the app, open **Settings → Telegram Notifications** and test with **Send Test Message**.
+5. Put these values in `.env`:
+   - `TELEGRAM_BOT_TOKEN="..."`
+   - `TELEGRAM_CHAT_ID="..."`
+6. Restart with `start.bat`.
+7. To automate nightly delivery, run `install.bat` and choose **Y** for the nightly Telegram task.
+
+---
+
 ## Troubleshooting
 
 ### "Node.js not found"
