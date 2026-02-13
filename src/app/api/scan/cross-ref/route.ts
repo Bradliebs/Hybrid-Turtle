@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getScanCache } from '@/lib/scan-cache';
+import { getScanCache, setScanCache, isScanCacheFresh, SCAN_CACHE_TTL_MS, type CachedScanResult } from '@/lib/scan-cache';
 import prisma from '@/lib/prisma';
 import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/lib/dual-score';
 import * as fs from 'fs';
@@ -125,6 +125,114 @@ async function getDualScoreTickers(): Promise<ScoredTicker[]> {
   return [];
 }
 
+// ── Load scan data with DB fallback ─────────────────────────
+async function getScanDataWithFallback(): Promise<CachedScanResult | null> {
+  // Try in-memory cache first
+  const cached = getScanCache();
+  if (cached && isScanCacheFresh(cached)) {
+    return cached;
+  }
+
+  // Fallback: load most recent scan from database
+  if (!process.env.DATABASE_URL) return null;
+  try {
+    const latestScan = await prisma.scan.findFirst({
+      orderBy: { runDate: 'desc' },
+      include: {
+        results: {
+          include: { stock: true },
+          orderBy: { rankScore: 'desc' },
+        },
+      },
+    });
+
+    if (!latestScan || latestScan.results.length === 0) return null;
+
+    // For cross-ref we accept scans up to 24h old (unlike the live scan page
+    // which uses the stricter 1-hour TTL). The plan page watchlist should
+    // always show the best available data rather than going blank.
+    const CROSS_REF_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const latestScanAgeMs = Date.now() - latestScan.runDate.getTime();
+    if (latestScanAgeMs > CROSS_REF_MAX_AGE_MS) {
+      console.log('[CrossRef] DB scan is older than 24h, skipping');
+      return null;
+    }
+
+    // Reconstruct scan result shape from DB rows
+    const candidates = latestScan.results.map((r) => ({
+      id: r.stock.ticker,
+      ticker: r.stock.ticker,
+      name: r.stock.name,
+      sleeve: r.stock.sleeve,
+      sector: r.stock.sector || 'Unknown',
+      cluster: r.stock.cluster || 'General',
+      price: r.price,
+      priceCurrency: r.stock.ticker.endsWith('.L') ? 'GBX' : (r.stock.currency || 'USD'),
+      technicals: {
+        ma200: r.ma200,
+        adx: r.adx,
+        plusDI: r.plusDI,
+        minusDI: r.minusDI,
+        atrPercent: r.atrPercent,
+        efficiency: r.efficiency,
+        twentyDayHigh: r.twentyDayHigh,
+        atr: 0,
+        volumeRatio: 1,
+        relativeStrength: 0,
+        atrSpiking: false,
+      },
+      entryTrigger: r.entryTrigger,
+      stopPrice: r.stopPrice,
+      distancePercent: r.distancePercent,
+      status: r.status,
+      rankScore: r.rankScore,
+      passesAllFilters: r.passesAllFilters,
+      passesRiskGates: true,
+      passesAntiChase: true,
+      shares: r.shares,
+      riskDollars: r.riskDollars,
+      filterResults: {
+        priceAboveMa200: r.price > r.ma200,
+        adxAbove20: r.adx >= 20,
+        plusDIAboveMinusDI: r.plusDI > r.minusDI,
+        atrPercentBelow8: r.atrPercent < 8,
+        efficiencyAbove30: r.efficiency >= 30,
+        dataQuality: r.ma200 > 0 && r.adx > 0,
+        passesAll: r.passesAllFilters,
+        atrSpiking: false,
+        atrSpikeAction: 'NONE' as const,
+      },
+    }));
+
+    const passedFilters = candidates.filter((c) => c.passesAllFilters);
+
+    const dbResult: CachedScanResult = {
+      regime: latestScan.regime,
+      candidates,
+      readyCount: passedFilters.filter((c) => c.status === 'READY').length,
+      watchCount: passedFilters.filter((c) => c.status === 'WATCH').length,
+      farCount: candidates.filter((c) => c.status === 'FAR').length,
+      totalScanned: candidates.length,
+      passedFilters: passedFilters.length,
+      passedRiskGates: passedFilters.length,
+      passedAntiChase: passedFilters.length,
+      cachedAt: latestScan.runDate.toISOString(),
+      userId: latestScan.userId,
+      riskProfile: 'BALANCED',
+      equity: 0,
+    };
+
+    // Re-populate in-memory cache for subsequent requests
+    setScanCache(dbResult);
+    console.log(`[CrossRef] Loaded ${candidates.length} scan results from DB (scan ${latestScan.id})`);
+
+    return dbResult;
+  } catch (dbError) {
+    console.warn('[CrossRef] Failed to load scan from DB:', (dbError as Error).message);
+    return null;
+  }
+}
+
 // ── Cross-reference types ───────────────────────────────────
 interface CrossRefTicker {
   ticker: string;
@@ -154,7 +262,7 @@ interface CrossRefTicker {
 export async function GET() {
   try {
     // ── Load both datasets ──────────────────────────────────
-    const scanCache = getScanCache();
+    const scanCache = await getScanDataWithFallback();
     const dualTickers = await getDualScoreTickers();
 
     const hasScanData = scanCache && Array.isArray(scanCache.candidates) && scanCache.candidates.length > 0;
