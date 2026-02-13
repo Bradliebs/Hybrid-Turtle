@@ -162,15 +162,23 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         echo echo [%%date%% %%time%%] Nightly process finished ^(exit code: %%ERRORLEVEL%%^) ^>^> nightly.log
     ) > "%~dp0nightly-task.bat"
 
-        :: Create the Windows Scheduled Task (single line for reliability)
-        powershell -NoProfile -ExecutionPolicy Bypass -Command "$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c \"' + (Join-Path '%SCRIPT_DIR%' 'nightly-task.bat') + '\"') -WorkingDirectory '%SCRIPT_DIR%'; $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '21:10'; $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd; Register-ScheduledTask -TaskName 'HybridTurtle-Nightly' -Action $action -Trigger $trigger -Settings $settings -Description 'HybridTurtle nightly Telegram summary' -Force"
+    :: Create/replace scheduled task using schtasks (more robust across machines)
+    set "TASK_NAME=HybridTurtle-Nightly"
+    set "NIGHTLY_BAT=%SCRIPT_DIR%nightly-task.bat"
+    set "TASK_RUN=cmd.exe /c \"\"%NIGHTLY_BAT%\"\""
+    schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
+    schtasks /Create /TN "%TASK_NAME%" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 21:10 /TR "%TASK_RUN%" /F >nul 2>&1
 
     if !errorlevel! equ 0 (
         echo         Scheduled task 'HybridTurtle-Nightly' created!
         echo         Runs Mon-Fri at 21:10. View/edit in Task Scheduler.
+        echo         Action: cmd.exe /c ""%NIGHTLY_BAT%""
     ) else (
         echo         !! Could not create scheduled task.
         echo         !! Try running this installer as Administrator.
+        echo         !! Manual action should be:
+        echo         !! Program/script: cmd.exe
+        echo         !! Add arguments: /c ""%NIGHTLY_BAT%""
     )
 ) else (
     echo         Skipped - you can set this up later by running:
