@@ -1,6 +1,8 @@
 # HybridTurtle Dashboard — Complete Operating Guide
 
 > **Version:** 5.11 | **Last Updated:** February 2026
+>
+> Prefer a simpler non-technical walkthrough? See `USER-GUIDE.md`.
 
 ---
 
@@ -25,6 +27,8 @@
 
 ## 1. First-Time Setup
 
+**Prerequisite:** Node.js **20 LTS** or **22 LTS** (choose the LTS tab on nodejs.org).
+
 ### Step 1 — Install & Start
 
 ```bash
@@ -39,7 +43,7 @@ npm run dev                    # Start dashboard at http://localhost:3000
 Or use the batch files:
 - `install.bat` — Full install
 - `start.bat` — Start the dashboard
-- `run-dashboard.bat` — Alternative starter
+- `run-dashboard.bat` — Compatibility alias that redirects to `start.bat`
 
 ### Step 2 — Configure Settings
 
