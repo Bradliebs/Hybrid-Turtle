@@ -44,6 +44,10 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
 
   // Sort: BOTH_RECOMMEND first, then by agreement score
   const sortedReady = [...ready].sort((a, b) => {
+    // Trigger-met candidates first
+    const aTriggerMet = a.price > 0 && a.entryTrigger > 0 && a.price >= a.entryTrigger ? 1 : 0;
+    const bTriggerMet = b.price > 0 && b.entryTrigger > 0 && b.price >= b.entryTrigger ? 1 : 0;
+    if (bTriggerMet !== aTriggerMet) return bTriggerMet - aTriggerMet;
     const typeOrder: Record<string, number> = { BOTH_RECOMMEND: 0, SCAN_ONLY: 1, DUAL_ONLY: 2, CONFLICT: 3 };
     const oa = typeOrder[a.matchType || 'SCAN_ONLY'] ?? 4;
     const ob = typeOrder[b.matchType || 'SCAN_ONLY'] ?? 4;
@@ -52,6 +56,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
   });
 
   const bothCount = ready.filter(c => c.matchType === 'BOTH_RECOMMEND').length;
+  const triggerMetCount = ready.filter(c => c.price > 0 && c.entryTrigger > 0 && c.price >= c.entryTrigger).length;
 
   return (
     <div className="card-surface p-4">
@@ -61,7 +66,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
           Ready Candidates
         </h3>
         <span className="text-xs text-muted-foreground">
-          {ready.length} ready{bothCount > 0 ? ` (${bothCount} confirmed)` : ''} · {watch.length} watchlist
+          {ready.length} ready{bothCount > 0 ? ` (${bothCount} confirmed)` : ''}{triggerMetCount > 0 ? ` · ${triggerMetCount} triggered` : ''} · {watch.length} watchlist
         </span>
       </div>
 
@@ -92,18 +97,21 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
             const badge = matchTypeBadge[c.matchType || 'SCAN_ONLY'] || matchTypeBadge.SCAN_ONLY;
             const BadgeIcon = badge.icon;
             const isHeld = heldTickers.has(c.ticker);
+            const isTriggerMet = c.price > 0 && c.entryTrigger > 0 && c.price >= c.entryTrigger;
             return (
               <div
                 key={c.ticker}
                 className={cn(
                   "bg-navy-800 rounded-lg p-3 border relative",
-                  isHeld
-                    ? 'border-primary-400/40 ring-1 ring-primary-400/20'
-                    : c.matchType === 'BOTH_RECOMMEND'
-                      ? 'border-emerald-500/30'
-                      : c.matchType === 'CONFLICT'
-                        ? 'border-amber-500/20'
-                        : 'border-profit/20'
+                  isTriggerMet
+                    ? 'border-amber-400/60 ring-2 ring-amber-400/30 animate-pulse'
+                    : isHeld
+                      ? 'border-primary-400/40 ring-1 ring-primary-400/20'
+                      : c.matchType === 'BOTH_RECOMMEND'
+                        ? 'border-emerald-500/30'
+                        : c.matchType === 'CONFLICT'
+                          ? 'border-amber-500/20'
+                          : 'border-profit/20'
                 )}
               >
                 <div className="flex items-center justify-between mb-2">
@@ -120,6 +128,12 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                       <BadgeIcon className="w-3 h-3" />
                       {badge.label}
                     </span>
+                    {isTriggerMet && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border text-amber-400 bg-amber-500/15 border-amber-500/40">
+                        <AlertTriangle className="w-3 h-3" />
+                        TRIGGER MET
+                      </span>
+                    )}
                   </div>
                   {c.matchType === 'BOTH_RECOMMEND' && !isHeld ? (
                     <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-navy-900 transition-colors">

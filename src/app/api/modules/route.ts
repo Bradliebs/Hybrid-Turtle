@@ -350,10 +350,46 @@ export async function GET(request: NextRequest) {
 
     const effectiveMaxPositions = breadthSafety.maxPositionsOverride || maxPositions;
 
+    // ── Trigger-Met Detection: query snapshot for candidates where close >= entryTrigger ──
+    let triggerMetCandidates: { ticker: string; name: string; sleeve: string; close: number; entryTrigger: number; stopLevel: number; distancePct: number; atr14: number; adx14: number; currency: string }[] = [];
+    try {
+      const latestSnapshot = await prisma.snapshot.findFirst({
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (latestSnapshot) {
+        const heldTickers = new Set(enrichedOpen.map(p => p.ticker));
+        const triggeredRows = await prisma.snapshotTicker.findMany({
+          where: {
+            snapshotId: latestSnapshot.id,
+            status: { in: ['READY', 'WATCH'] },
+          },
+          orderBy: { distanceTo20dHighPct: 'asc' },
+        });
+        triggerMetCandidates = triggeredRows
+          .filter(r => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0)
+          .map(r => ({
+            ticker: r.ticker,
+            name: r.name || r.ticker,
+            sleeve: r.sleeve || 'CORE',
+            close: r.close,
+            entryTrigger: r.entryTrigger,
+            stopLevel: r.stopLevel,
+            distancePct: ((r.close - r.entryTrigger) / r.entryTrigger) * 100,
+            atr14: r.atr14,
+            adx14: r.adx14,
+            currency: r.currency || 'USD',
+          }));
+      }
+    } catch (error) {
+      console.warn('[Modules] Trigger-met query failed:', (error as Error).message);
+    }
+
     const actionCard = generateActionCard({
       regime,
       breadthPct,
       readyCandidates: scanCandidates.map(c => ({ ticker: c.ticker, status: c.status })),
+      triggerMet: triggerMetCandidates,
       stopUpdates: stopRecs.map(r => ({ ticker: r.ticker, from: r.currentStop, to: r.newStop })),
       riskBudgetPct,
       laggards,

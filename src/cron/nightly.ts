@@ -22,7 +22,7 @@ import prisma from '@/lib/prisma';
 import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
-import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
+import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
 import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR } from '@/lib/market-data';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
@@ -419,6 +419,7 @@ async function runNightlyProcess() {
     console.log(`        Snapshot: ${snapshotSync.rowCount} synced, ${snapshotSync.failed.length} failed`);
 
     let readyToBuy: NightlyReadyCandidate[] = [];
+    let triggerMetCandidates: NightlyTriggerMetCandidate[] = [];
     if (snapshotSync.snapshotId) {
       try {
         const heldTickers = new Set(positions.map((p) => p.stock.ticker));
@@ -441,6 +442,32 @@ async function runNightlyProcess() {
             adx14: r.adx14,
             currency: r.currency || 'USD',
           }));
+
+        // Detect trigger-met candidates: close >= entryTrigger and not already held
+        const allTriggeredRows = await prisma.snapshotTicker.findMany({
+          where: {
+            snapshotId: snapshotSync.snapshotId,
+            status: { in: ['READY', 'WATCH'] },
+          },
+          orderBy: { distanceTo20dHighPct: 'asc' },
+        });
+        triggerMetCandidates = allTriggeredRows
+          .filter((r) => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0)
+          .map((r) => ({
+            ticker: r.ticker,
+            name: r.name || r.ticker,
+            sleeve: r.sleeve || 'CORE',
+            close: r.close,
+            entryTrigger: r.entryTrigger,
+            stopLevel: r.stopLevel,
+            distancePct: ((r.close - r.entryTrigger) / r.entryTrigger) * 100,
+            atr14: r.atr14,
+            adx14: r.adx14,
+            currency: r.currency || 'USD',
+          }));
+        if (triggerMetCandidates.length > 0) {
+          alerts.push(`🚨 ${triggerMetCandidates.length} trigger(s) met — review for immediate entry`);
+        }
       } catch (error) {
         console.warn('  [7b] Failed to query READY tickers:', (error as Error).message);
       }
@@ -467,6 +494,7 @@ async function runNightlyProcess() {
       snapshotSynced: snapshotSync.rowCount,
       snapshotFailed: snapshotSync.failed.length,
       readyToBuy,
+      triggerMet: triggerMetCandidates,
       pyramidAlerts,
       laggards: laggardAlerts,
       climaxAlerts,

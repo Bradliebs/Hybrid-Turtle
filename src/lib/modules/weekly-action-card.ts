@@ -8,6 +8,7 @@
 import 'server-only';
 import type {
   WeeklyActionCard,
+  TriggerMetCandidate,
   MarketRegime,
   LaggardFlag,
   ClimaxSignal,
@@ -21,6 +22,7 @@ interface ActionCardInput {
   regime: MarketRegime;
   breadthPct: number;
   readyCandidates: { ticker: string; status: string }[];
+  triggerMet?: TriggerMetCandidate[];
   stopUpdates: { ticker: string; from: number; to: number }[];
   riskBudgetPct: number;
   laggards: LaggardFlag[];
@@ -70,12 +72,17 @@ export function generateActionCard(input: ActionCardInput): WeeklyActionCard {
   if (input.riskBudgetPct > 80) {
     notes.push(`⚠️ Risk budget ${input.riskBudgetPct.toFixed(0)}% utilized — limited capacity`);
   }
+  const triggerMet = input.triggerMet || [];
+  if (triggerMet.length > 0) {
+    notes.push(`🚨 ${triggerMet.length} trigger(s) met — price above entry trigger, confirm volume & buy`);
+  }
 
   return {
     weekOf: weekStart.toISOString().split('T')[0],
     regime: input.regime,
     breadthPct: input.breadthPct,
     readyCandidates: input.readyCandidates,
+    triggerMet,
     stopUpdates: input.stopUpdates,
     riskBudgetPct: input.riskBudgetPct,
     // Rich detail objects for drill-down
@@ -115,6 +122,14 @@ export function actionCardToMarkdown(card: WeeklyActionCard): string {
     lines.push(`## 🎯 Ready Candidates (${card.readyCandidates.length})`);
     for (const c of card.readyCandidates) {
       lines.push(`- ${c.ticker} [${c.status}]`);
+    }
+    lines.push('');
+  }
+
+  if (card.triggerMet.length > 0) {
+    lines.push(`## 🚨 TRIGGER MET (${card.triggerMet.length})`);
+    for (const t of card.triggerMet) {
+      lines.push(`- **${t.ticker}** (${t.sleeve}) — Close: ${t.close.toFixed(2)} ≥ Trigger: ${t.entryTrigger.toFixed(2)} — CONFIRM VOLUME & BUY`);
     }
     lines.push('');
   }

@@ -440,12 +440,27 @@ export interface TurnoverMetrics {
   closedPositionsLast30: number;
 }
 
+// Trigger-Met Candidate (price crossed above entry trigger)
+export interface TriggerMetCandidate {
+  ticker: string;
+  name: string;
+  sleeve: string;
+  close: number;
+  entryTrigger: number;
+  stopLevel: number;
+  distancePct: number;
+  atr14: number;
+  adx14: number;
+  currency: string;
+}
+
 // Module 17: Weekly Action Card
 export interface WeeklyActionCard {
   weekOf: string;
   regime: MarketRegime;
   breadthPct: number;
   readyCandidates: { ticker: string; status: string }[];
+  triggerMet: TriggerMetCandidate[];
   stopUpdates: { ticker: string; from: number; to: number }[];
   riskBudgetPct: number;
   // Rich detail objects for drill-down

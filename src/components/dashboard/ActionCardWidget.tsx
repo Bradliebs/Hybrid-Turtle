@@ -5,7 +5,7 @@ import {
   FileText, TrendingUp, ShieldAlert,
   Flame, Trash2, Ban, ArrowRightLeft,
   ChevronDown, ChevronUp, Zap, RotateCcw,
-  ArrowRight,
+  ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import type { WeeklyActionCard as ActionCardType } from '@/types';
 import { cn } from '@/lib/utils';
@@ -93,6 +93,49 @@ export default function ActionCardWidget() {
           <div className="text-[10px] text-muted-foreground">Max Pos</div>
         </div>
       </div>
+
+      {/* 🚨 TRIGGER MET — prominent alert above everything else */}
+      {card.triggerMet && card.triggerMet.length > 0 && (
+        <div className="mb-3 p-3 rounded-lg border-2 border-amber-400/60 bg-amber-500/10 animate-pulse">
+          <div className="text-xs font-bold text-amber-400 mb-2 flex items-center gap-1.5">
+            <AlertTriangle className="w-4 h-4" />
+            TRIGGER MET ({card.triggerMet.length})
+          </div>
+          <div className="space-y-2">
+            {card.triggerMet.map(t => {
+              const sym = t.currency === 'GBX' || t.currency === 'GBP' ? '£' : t.currency === 'EUR' ? '€' : '$';
+              return (
+                <div key={t.ticker} className="bg-navy-800/80 rounded-md p-2 border border-amber-500/30">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold text-amber-400">{t.ticker}</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                      PRICE ABOVE TRIGGER
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mb-1">{t.name} · {t.sleeve}</div>
+                  <div className="grid grid-cols-3 gap-2 text-[10px]">
+                    <div>
+                      <span className="text-muted-foreground">Close</span>
+                      <div className="font-mono font-medium text-amber-400">{sym}{t.close.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Trigger</span>
+                      <div className="font-mono font-medium text-foreground">{sym}{t.entryTrigger.toFixed(2)}</div>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Stop</span>
+                      <div className="font-mono font-medium text-loss">{sym}{t.stopLevel.toFixed(2)}</div>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-amber-300/80 mt-1 italic">
+                    Confirm volume ≥1.0× on breakout day before buying
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Ready Candidates */}
       {card.readyCandidates.length > 0 && (

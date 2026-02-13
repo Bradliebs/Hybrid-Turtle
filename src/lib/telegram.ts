@@ -157,6 +157,22 @@ export interface NightlyReadyCandidate {
 }
 
 /**
+ * Trigger-met candidate — price has crossed above entry trigger
+ */
+export interface NightlyTriggerMetCandidate {
+  ticker: string;
+  name: string;
+  sleeve: string;
+  close: number;
+  entryTrigger: number;
+  stopLevel: number;
+  distancePct: number;
+  atr14: number;
+  adx14: number;
+  currency: string;
+}
+
+/**
  * Pyramid add alert for the nightly Telegram message
  */
 export interface NightlyPyramidAlert {
@@ -192,6 +208,7 @@ export async function sendNightlySummary(summary: {
   snapshotSynced: number;
   snapshotFailed: number;
   readyToBuy: NightlyReadyCandidate[];
+  triggerMet?: NightlyTriggerMetCandidate[];
   pyramidAlerts?: NightlyPyramidAlert[];
   laggards?: NightlyLaggardAlert[];
   climaxAlerts?: NightlyClimaxAlert[];
@@ -235,6 +252,16 @@ export async function sendNightlySummary(summary: {
        Entry: ${sym}${r.entryTrigger.toFixed(2)}  Stop: ${sym}${r.stopLevel.toFixed(2)}  Dist: ${r.distancePct.toFixed(1)}%  ADX: ${r.adx14.toFixed(0)}`;
       }).join('\n')
     : '  No candidates at entry';
+
+  // ══ TRIGGER MET lines (price crossed above entry trigger) ══
+  const triggerMetList = summary.triggerMet || [];
+  const triggerMetLines = triggerMetList.length > 0
+    ? triggerMetList.map((t) => {
+        const sym = currencySymbol(t.currency);
+        return `  🚨 <b>${t.ticker}</b> (${t.sleeve})  ${sym}${t.close.toFixed(2)} ≥ trigger ${sym}${t.entryTrigger.toFixed(2)}
+       Stop: ${sym}${t.stopLevel.toFixed(2)}  ADX: ${t.adx14.toFixed(0)}  → CONFIRM VOLUME & BUY`;
+      }).join('\n')
+    : '';
 
   // ── Pyramid add lines ──
   const pyramidList = summary.pyramidAlerts || [];
@@ -317,7 +344,10 @@ ${stopLines}
 <b>━━━ Ready to Buy (${summary.readyToBuy.length}) ━━━</b>
 ${readyLines}
 
-${pyramidList.length > 0 ? `<b>━━━ Pyramid Adds (${pyramidList.length}) ━━━</b>
+${triggerMetList.length > 0 ? `<b>━━━ 🚨 TRIGGER MET (${triggerMetList.length}) ━━━</b>
+${triggerMetLines}
+
+` : ''}${pyramidList.length > 0 ? `<b>━━━ Pyramid Adds (${pyramidList.length}) ━━━</b>
 ${pyramidLines}
 
 ` : ''}${climaxList.length > 0 ? `<b>━━━ Climax Signals (${climaxList.length}) ━━━</b>
