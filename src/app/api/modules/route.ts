@@ -151,7 +151,8 @@ export async function GET(request: NextRequest) {
         rMultiple: p.rMultiple,
       })),
       scanCandidates,
-      totalPortfolioValue
+      totalPortfolioValue,
+      riskProfile
     );
 
     // ── Module 8: Heat Check ──
