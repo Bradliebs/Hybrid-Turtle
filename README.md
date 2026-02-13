@@ -1,6 +1,18 @@
 # HybridTurtle Trading Dashboard
 
+![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
+![Node](https://img.shields.io/badge/node-20%20or%2022%20LTS-339933)
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![Prisma](https://img.shields.io/badge/Prisma-ORM-2D3748)
+![License](https://img.shields.io/badge/license-Private-informational)
+
 Systematic trading workspace built around a Hybrid Turtle process: scan opportunities, enforce risk rules, plan weekly execution, and manage positions with disciplined stop logic.
+
+## Preview
+
+![HybridTurtle Dashboard Preview](docs/preview.svg)
+
+Replace `docs/preview.svg` with a real dashboard screenshot when ready.
 
 ## Why this project exists
 

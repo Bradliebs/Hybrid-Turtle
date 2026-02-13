@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">HybridTurtle Dashboard Preview Placeholder</title>
+  <desc id="desc">Placeholder image for README preview. Replace with an actual dashboard screenshot.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="40" y="40" width="1120" height="550" rx="16" fill="#0f172a" stroke="#334155"/>
+  <text x="600" y="220" text-anchor="middle" fill="#e2e8f0" font-family="Segoe UI, Arial, sans-serif" font-size="48" font-weight="700">HybridTurtle Dashboard</text>
+  <text x="600" y="280" text-anchor="middle" fill="#93c5fd" font-family="Segoe UI, Arial, sans-serif" font-size="24">Preview Placeholder</text>
+  <text x="600" y="340" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, Arial, sans-serif" font-size="20">Replace docs/preview.svg with a real screenshot when ready</text>
+</svg>
