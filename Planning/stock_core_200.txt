@@ -1,0 +1,276 @@
+# Stock Core Universe - Quality Large Caps
+# Updated: Jan 2026
+
+# ========== MEGA CAP TECH ==========
+AAPL
+MSFT
+AMZN
+META
+GOOGL
+NVDA
+AVGO
+AMD
+TSM
+ASML
+AMAT
+KLAC
+QCOM
+ADBE
+INTU
+CRM
+ORCL
+
+# ========== FINANCIALS ==========
+JPM
+GS
+MS
+BAC
+SCHW
+COF
+PYPL
+V
+MA
+SPGI
+MCO
+CME
+ICE
+BLK
+AXP
+
+# ========== HEALTHCARE ==========
+LLY
+NVO
+UNH
+JNJ
+ABBV
+ISRG
+TMO
+VRTX
+REGN
+AMGN
+DHR
+
+# ========== INDUSTRIALS ==========
+HON
+CAT
+DE
+UNP
+RTX
+NOC
+LMT
+GE
+ETN
+
+# ========== SEMICONDUCTORS ==========
+MU
+MRVL
+ON
+
+# ========== TECH GROWTH ==========
+NFLX
+PLTR
+TSLA
+SPOT
+HUBS
+DDOG
+CDNS
+SNOW
+CRWD
+PANW
+NOW
+WDAY
+
+# ========== CONSUMER ==========
+PG
+PEP
+KO
+WMT
+COST
+CL
+HD
+NKE
+SBUX
+MCD
+LULU
+UBER
+
+# ========== TRAVEL & LEISURE ==========
+BKNG
+ABNB
+
+# ========== ENERGY ==========
+XOM
+CVX
+COP
+SLB
+
+# ========== UTILITIES & REITS ==========
+NEE
+WM
+LIN
+VICI
+PSA
+AMT
+EQIX
+
+# ========== POWER & AI INFRASTRUCTURE ==========
+CEG
+VST
+GEV
+ANET
+
+# ========== MATERIALS ==========
+NUE
+RIO
+FCX
+APD
+
+# ========== MID-CAP GROWTH ==========
+VRT
+SMCI
+BSX
+PGR
+AVAV
+FSLR
+GLW
+DTE
+CMS
+WRB
+TKO
+DRI
+TOST
+DUOL
+FIX
+TEAM
+MSCI
+UPS
+
+# ========== GLOBAL GROWTH ==========
+MELI
+NU
+RACE
+
+# ========== SPECULATIVE (smaller allocation) ==========
+BABA
+SOFI
+HOOD
+MRNA
+RBLX
+
+# ========== UK LARGE CAPS ==========
+ULVR
+DGE
+REL
+AZN
+GSK
+HSBA
+LGEN.L
+NG
+SSE
+SHEL
+LSEG.L
+BA.L
+EXPN.L
+LLOY.L
+CPG.L
+RR.L
+GLEN.L
+BATS.L
+
+# ========== EUROPEAN QUALITY ==========
+NESN.SW
+NOVN
+ROG
+SAP
+SIE
+ALV
+SU
+OR
+MC
+TTE
+
+# ========== COMMODITIES ==========
+MP
+MT
+# ========== SEMICONDUCTORS (additions) ==========
+LRCX
+TXN
+ADI
+NXPI
+
+# ========== CYBERSECURITY ==========
+ZS
+FTNT
+NET
+
+# ========== SOFTWARE/CLOUD ==========
+MDB
+VEEV
+TTD
+
+# ========== HEALTHCARE (additions) ==========
+GILD
+DXCM
+IDXX
+ZTS
+SYK
+EW
+
+# ========== DEFENSE/AEROSPACE (additions) ==========
+GD
+TDG
+AXON
+LHX
+
+# ========== INDUSTRIALS (additions) ==========
+TT
+URI
+EMR
+ROK
+PH
+
+# ========== CONSUMER (additions) ==========
+CELH
+DECK
+CMG
+CAVA
+ONON
+WING
+
+# ========== REITS ==========
+O
+DLR
+PLD
+CCI
+WELL
+
+# ========== FINANCIALS (additions) ==========
+TRV
+CB
+WFC
+AON
+MKTX
+
+# ========== FINTECH ==========
+XYZ
+
+# ========== ENERGY (additions) ==========
+EOG
+DVN
+MPC
+
+# ========== MATERIALS (additions) ==========
+SCCO
+GOLD
+
+# ========== TRAVEL/LEISURE ==========
+MAR
+HLT
+LYV
+DAL
+
+# ========== SMALL CAP GROWTH ==========
+APP
+RH
+
+IWQU.L

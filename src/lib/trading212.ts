@@ -1,0 +1,426 @@
+// ============================================================
+// Trading 212 API Client — HybridTurtle Integration
+// ============================================================
+
+export type Trading212Environment = 'demo' | 'live';
+
+const BASE_URLS: Record<Trading212Environment, string> = {
+  demo: 'https://demo.trading212.com/api/v0',
+  live: 'https://live.trading212.com/api/v0',
+};
+
+// ---- Response Types ----
+
+export interface T212Position {
+  averagePricePaid: number;
+  createdAt: string; // ISO 8601
+  currentPrice: number;
+  instrument: {
+    isin: string;
+    currencyCode: string;
+    name: string;
+    ticker: string;
+  };
+  quantity: number;
+  quantityAvailableForTrading: number;
+  quantityInPies: number;
+  walletImpact: {
+    investedValue: number;
+    result: number;
+    resultCoef: number;
+    value: number;
+    valueInAccountCurrency: number;
+  };
+}
+
+export interface T212AccountSummary {
+  cash: {
+    availableToTrade: number;
+    inPies: number;
+    reservedForOrders: number;
+  };
+  currency: string;
+  id: number;
+  investments: {
+    currentValue: number;
+    realizedProfitLoss: number;
+    totalCost: number;
+    unrealizedProfitLoss: number;
+  };
+  totalValue: number;
+}
+
+export interface T212Instrument {
+  ticker: string;
+  isin: string;
+  currencyCode: string;
+  name: string;
+  type: string;
+  exchange: string;
+  minTradeQuantity: number;
+  maxOpenQuantity: number;
+  addedOn: string;
+}
+
+export interface T212HistoricalOrder {
+  id: number;
+  ticker: string;
+  type: string;
+  status: string;
+  limitPrice?: number;
+  stopPrice?: number;
+  quantity: number;
+  filledQuantity: number;
+  filledValue: number;
+  dateCreated: string;
+  dateExecuted?: string;
+  dateModified?: string;
+}
+
+export interface T212PendingOrder {
+  id: number;
+  createdAt: string;
+  currency: string;
+  extendedHours: boolean;
+  filledQuantity: number;
+  filledValue: number;
+  initiatedFrom: string;
+  instrument: {
+    currency: string;
+    isin: string;
+    name: string;
+    ticker: string;
+  };
+  limitPrice?: number;
+  quantity: number;
+  side: 'BUY' | 'SELL';
+  status: string;
+  stopPrice?: number;
+  strategy: string;
+  ticker: string;
+  timeInForce: 'DAY' | 'GOOD_TILL_CANCEL';
+  type: 'LIMIT' | 'STOP' | 'MARKET' | 'STOP_LIMIT';
+  value: number;
+}
+
+export interface T212PlaceStopOrderRequest {
+  quantity: number;       // Negative for sell (stop-loss)
+  stopPrice: number;
+  ticker: string;         // T212 format: AAPL_US_EQ
+  timeValidity: 'DAY' | 'GOOD_TILL_CANCEL';
+}
+
+export interface T212PaginatedResponse<T> {
+  items: T[];
+  nextPagePath: string | null;
+}
+
+// ---- API Client ----
+
+export class Trading212Client {
+  private baseUrl: string;
+  private authHeader: string;
+
+  constructor(apiKey: string, apiSecret: string, environment: Trading212Environment = 'live') {
+    this.baseUrl = BASE_URLS[environment];
+    // HTTP Basic Auth: base64(API_KEY:API_SECRET)
+    const credentials = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64');
+    this.authHeader = `Basic ${credentials}`;
+  }
+
+  private async request<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T> {
+    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const method = options?.method ?? 'GET';
+    
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Authorization': this.authHeader,
+        'Content-Type': 'application/json',
+      },
+      ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
+    });
+
+    if (!response.ok) {
+      const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+      const rateLimitReset = response.headers.get('x-ratelimit-reset');
+
+      if (response.status === 429) {
+        throw new Trading212Error(
+          `Rate limited. Resets at ${rateLimitReset}`,
+          429,
+          rateLimitReset ? parseInt(rateLimitReset) : undefined
+        );
+      }
+
+      if (response.status === 401) {
+        throw new Trading212Error('Invalid API credentials', 401);
+      }
+
+      if (response.status === 403) {
+        throw new Trading212Error('Access forbidden — check API key permissions', 403);
+      }
+
+      throw new Trading212Error(
+        `Trading 212 API error: ${response.status} ${response.statusText}`,
+        response.status
+      );
+    }
+
+    return response.json();
+  }
+
+  // ---- Positions ----
+
+  /** Fetch all open positions. Rate limit: 1 req / 1s */
+  async getPositions(): Promise<T212Position[]> {
+    return this.request<T212Position[]>('/equity/positions');
+  }
+
+  /** Fetch a single position by ticker. Rate limit: 1 req / 1s */
+  async getPosition(ticker: string): Promise<T212Position[]> {
+    return this.request<T212Position[]>(`/equity/positions?ticker=${encodeURIComponent(ticker)}`);
+  }
+
+  // ---- Account ----
+
+  /** Get account summary with cash and investment metrics. Rate limit: 1 req / 5s */
+  async getAccountSummary(): Promise<T212AccountSummary> {
+    return this.request<T212AccountSummary>('/equity/account/summary');
+  }
+
+  // ---- Instruments ----
+
+  /** Get list of tradable instruments */
+  async getInstruments(): Promise<T212Instrument[]> {
+    return this.request<T212Instrument[]>('/equity/metadata/instruments');
+  }
+
+  // ---- Historical Orders (paginated) ----
+
+  /** Fetch all historical orders with automatic pagination */
+  async getOrderHistory(limit: number = 50): Promise<T212HistoricalOrder[]> {
+    const allOrders: T212HistoricalOrder[] = [];
+    let nextPath: string | null = `/equity/history/orders?limit=${limit}`;
+
+    while (nextPath) {
+      const page: T212PaginatedResponse<T212HistoricalOrder> = await this.request(nextPath);
+      allOrders.push(...page.items);
+      nextPath = page.nextPagePath;
+    }
+
+    return allOrders;
+  }
+
+  // ---- Orders ----
+
+  /** Get all pending (active) orders. Rate limit: 1 req / 5s */
+  async getPendingOrders(): Promise<T212PendingOrder[]> {
+    return this.request<T212PendingOrder[]>('/equity/orders');
+  }
+
+  /** Get a single pending order by ID. Rate limit: 1 req / 1s */
+  async getOrder(orderId: number): Promise<T212PendingOrder> {
+    return this.request<T212PendingOrder>(`/equity/orders/${orderId}`);
+  }
+
+  /**
+   * Place a Stop order (sell stop-loss).
+   * Quantity must be NEGATIVE for a sell-side stop-loss.
+   * Rate limit: 1 req / 2s
+   */
+  async placeStopOrder(order: T212PlaceStopOrderRequest): Promise<T212PendingOrder> {
+    return this.request<T212PendingOrder>('/equity/orders/stop', {
+      method: 'POST',
+      body: order,
+    });
+  }
+
+  /**
+   * Cancel a pending order by ID.
+   * Rate limit: 50 req / 1m
+   */
+  async cancelOrder(orderId: number): Promise<void> {
+    const url = `${this.baseUrl}/equity/orders/${orderId}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': this.authHeader,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Trading212Error('Order not found — may have already been filled or cancelled', 404);
+      }
+      throw new Trading212Error(`Failed to cancel order: ${response.status}`, response.status);
+    }
+  }
+
+  /**
+   * Place or replace a stop-loss for a position.
+   * MONOTONIC RULE: the new stop must be >= any existing T212 stop.
+   * 1. Finds any existing STOP sell orders for this ticker
+   * 2. Enforces monotonic rule (stops only go UP)
+   * 3. Cancels old stops
+   * 4. Places a new stop order at the given price
+   * Returns the new order, or null if shares is 0.
+   * Throws Trading212Error if the new stop would lower an existing one.
+   */
+  async setStopLoss(
+    t212Ticker: string,
+    shares: number,
+    stopPrice: number
+  ): Promise<T212PendingOrder | null> {
+    if (shares <= 0) return null;
+
+    // 1. Find existing stop orders for this ticker
+    const pending = await this.getPendingOrders();
+    const existingStops = pending.filter(
+      (o) => o.ticker === t212Ticker && o.type === 'STOP' && o.side === 'SELL'
+    );
+
+    // 2. MONOTONIC ENFORCEMENT — never lower an existing stop
+    const highestExisting = existingStops.reduce(
+      (max, o) => Math.max(max, o.stopPrice ?? 0),
+      0
+    );
+    if (highestExisting > 0 && stopPrice < highestExisting) {
+      throw new Trading212Error(
+        `Monotonic rule: cannot lower stop from ${highestExisting.toFixed(2)} to ${stopPrice.toFixed(2)}. Stops can only move UP.`,
+        400
+      );
+    }
+
+    // If the stop price is the same as what's already on T212, skip
+    if (
+      existingStops.length === 1 &&
+      Math.abs((existingStops[0].stopPrice ?? 0) - stopPrice) < 0.005
+    ) {
+      return existingStops[0]; // Already set — no change needed
+    }
+
+    // 3. Cancel existing stop orders
+    for (const old of existingStops) {
+      try {
+        await this.cancelOrder(old.id);
+        await new Promise((r) => setTimeout(r, 250));
+      } catch {
+        // Ignore if already cancelled/filled
+      }
+    }
+
+    // 4. Wait a moment after cancellations
+    if (existingStops.length > 0) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    // 5. Place new stop order (negative quantity = sell)
+    return this.placeStopOrder({
+      quantity: -shares,
+      stopPrice,
+      ticker: t212Ticker,
+      timeValidity: 'GOOD_TILL_CANCEL',
+    });
+  }
+
+  /**
+   * Remove all stop-loss orders for a ticker.
+   */
+  async removeStopLoss(t212Ticker: string): Promise<number> {
+    const pending = await this.getPendingOrders();
+    const stops = pending.filter(
+      (o) => o.ticker === t212Ticker && o.type === 'STOP' && o.side === 'SELL'
+    );
+    let cancelled = 0;
+    for (const order of stops) {
+      try {
+        await this.cancelOrder(order.id);
+        cancelled++;
+        await new Promise((r) => setTimeout(r, 250));
+      } catch {
+        // Ignore
+      }
+    }
+    return cancelled;
+  }
+
+  // ---- Connection Test ----
+
+  /** Test the API connection by fetching account summary */
+  async testConnection(): Promise<{ ok: boolean; accountId?: number; currency?: string; error?: string }> {
+    try {
+      const summary = await this.getAccountSummary();
+      return {
+        ok: true,
+        accountId: summary.id,
+        currency: summary.currency,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Trading212Error ? error.message : 'Unknown error',
+      };
+    }
+  }
+}
+
+// ---- Error Class ----
+
+export class Trading212Error extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number,
+    public readonly rateLimitReset?: number
+  ) {
+    super(message);
+    this.name = 'Trading212Error';
+  }
+}
+
+// ---- Position Mapper ----
+
+/** Maps a Trading 212 position to HybridTurtle's internal format */
+export function mapT212Position(t212Pos: T212Position) {
+  const ticker = t212Pos.instrument.ticker
+    // Trading 212 uses format like "AAPL_US_EQ" — extract the base ticker
+    .replace(/_US_EQ$/, '')
+    .replace(/_UK_EQ$/, '')
+    .replace(/_EQ$/, '')
+    .replace(/_ETF$/, '');
+
+  return {
+    ticker,
+    fullTicker: t212Pos.instrument.ticker,
+    name: t212Pos.instrument.name,
+    isin: t212Pos.instrument.isin,
+    currency: t212Pos.instrument.currencyCode,
+    shares: t212Pos.quantity,
+    entryPrice: t212Pos.averagePricePaid,
+    currentPrice: t212Pos.currentPrice,
+    entryDate: t212Pos.createdAt,
+    investedValue: t212Pos.walletImpact?.investedValue || 0,
+    currentValue: t212Pos.walletImpact?.value || 0,
+    profitLoss: t212Pos.walletImpact?.result || 0,
+    profitLossPercent: (t212Pos.walletImpact?.resultCoef || 0) * 100,
+    valueInAccountCurrency: t212Pos.walletImpact?.valueInAccountCurrency || 0,
+    source: 'trading212' as const,
+  };
+}
+
+/** Maps a Trading 212 account summary to HybridTurtle metrics */
+export function mapT212AccountSummary(summary: T212AccountSummary) {
+  return {
+    accountId: summary.id,
+    currency: summary.currency,
+    cash: summary.cash.availableToTrade,
+    cashInPies: summary.cash.inPies,
+    cashReservedForOrders: summary.cash.reservedForOrders,
+    totalCash: summary.cash.availableToTrade + summary.cash.inPies + summary.cash.reservedForOrders,
+    investmentsValue: summary.investments.currentValue,
+    investmentsCost: summary.investments.totalCost,
+    realizedPL: summary.investments.realizedProfitLoss,
+    unrealizedPL: summary.investments.unrealizedProfitLoss,
+    totalValue: summary.totalValue,
+  };
+}

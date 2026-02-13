@@ -1,0 +1,796 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import Navbar from '@/components/shared/Navbar';
+import { useStore } from '@/store/useStore';
+import { RISK_PROFILES } from '@/types';
+import { cn, formatCurrency, formatPercent } from '@/lib/utils';
+import {
+  Settings as SettingsIcon,
+  Shield,
+  DollarSign,
+  Bell,
+  Database,
+  Link,
+  AlertTriangle,
+  Check,
+  Save,
+  TestTube,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Unplug,
+  Plug,
+  TrendingUp,
+  Loader2,
+  Search,
+  Plus,
+  X,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+
+const DEFAULT_USER_ID = 'default-user';
+
+export default function SettingsPage() {
+  const { riskProfile, setRiskProfile, equity, setEquity } = useStore();
+  const [equityInput, setEquityInput] = useState(equity.toString());
+  const [telegramToken, setTelegramToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [showToken, setShowToken] = useState(false);
+  const [telegramTesting, setTelegramTesting] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [alphaVantageKey, setAlphaVantageKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Trading 212 state
+  const [t212ApiKey, setT212ApiKey] = useState('');
+  const [t212ApiSecret, setT212ApiSecret] = useState('');
+  const [t212Environment, setT212Environment] = useState<'demo' | 'live'>('demo');
+  const [t212ShowKey, setT212ShowKey] = useState(false);
+  const [t212ShowSecret, setT212ShowSecret] = useState(false);
+  const [t212Connected, setT212Connected] = useState(false);
+  const [t212AccountId, setT212AccountId] = useState<string | null>(null);
+  const [t212Currency, setT212Currency] = useState<string | null>(null);
+  const [t212LastSync, setT212LastSync] = useState<string | null>(null);
+  const [t212Connecting, setT212Connecting] = useState(false);
+  const [t212Syncing, setT212Syncing] = useState(false);
+  const [t212Error, setT212Error] = useState<string | null>(null);
+  const [t212Success, setT212Success] = useState<string | null>(null);
+
+  const profile = RISK_PROFILES[riskProfile as keyof typeof RISK_PROFILES];
+
+  // Stock universe state
+  interface StockItem {
+    id: string;
+    ticker: string;
+    name: string;
+    sleeve: string;
+    sector: string | null;
+    cluster: string | null;
+    superCluster: string | null;
+    region: string | null;
+    currency: string | null;
+    active: boolean;
+  }
+
+  const [stocks, setStocks] = useState<StockItem[]>([]);
+  const [stockSummary, setStockSummary] = useState({ total: 0, core: 0, etf: 0, highRisk: 0 });
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockSleeveFilter, setStockSleeveFilter] = useState<string>('ALL');
+  const [stocksLoading, setStocksLoading] = useState(true);
+  const [stocksExpanded, setStocksExpanded] = useState(false);
+  const [addTicker, setAddTicker] = useState('');
+  const [addSleeve, setAddSleeve] = useState<'CORE' | 'ETF' | 'HIGH_RISK' | 'HEDGE'>('CORE');
+
+  const fetchStocks = useCallback(async () => {
+    setStocksLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (stockSleeveFilter !== 'ALL') params.set('sleeve', stockSleeveFilter);
+      if (stockSearch) params.set('search', stockSearch);
+      const res = await fetch(`/api/stocks?${params.toString()}`);
+      const data = await res.json();
+      setStocks(data.stocks || []);
+      setStockSummary(data.summary || { total: 0, core: 0, etf: 0, highRisk: 0 });
+    } catch {
+      console.error('Failed to fetch stocks');
+    } finally {
+      setStocksLoading(false);
+    }
+  }, [stockSleeveFilter, stockSearch]);
+
+  useEffect(() => {
+    fetchStocks();
+  }, [fetchStocks]);
+
+  const handleAddStock = async () => {
+    if (!addTicker.trim()) return;
+    try {
+      await fetch('/api/stocks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: addTicker.trim().toUpperCase(), sleeve: addSleeve }),
+      });
+      setAddTicker('');
+      fetchStocks();
+    } catch {
+      console.error('Failed to add stock');
+    }
+  };
+
+  const handleRemoveStock = async (ticker: string) => {
+    try {
+      await fetch(`/api/stocks?ticker=${ticker}`, { method: 'DELETE' });
+      fetchStocks();
+    } catch {
+      console.error('Failed to remove stock');
+    }
+  };
+
+  const handleTelegramTest = async () => {
+    if (!telegramToken || !telegramChatId) {
+      setTelegramTestResult({ success: false, message: 'Enter both Bot Token and Chat ID' });
+      return;
+    }
+    setTelegramTesting(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch('/api/settings/telegram-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botToken: telegramToken, chatId: telegramChatId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTelegramTestResult({ success: true, message: `Test sent via ${data.botName}` });
+      } else {
+        setTelegramTestResult({ success: false, message: data.error || 'Test failed' });
+      }
+    } catch {
+      setTelegramTestResult({ success: false, message: 'Network error — is the server running?' });
+    } finally {
+      setTelegramTesting(false);
+      setTimeout(() => setTelegramTestResult(null), 5000);
+    }
+  };
+
+  const handleSave = async () => {
+    const newEquity = parseFloat(equityInput);
+    if (!isNaN(newEquity) && newEquity > 0) {
+      setEquity(newEquity);
+    }
+    // Persist to database
+    try {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: DEFAULT_USER_ID,
+          riskProfile,
+          equity: !isNaN(newEquity) && newEquity > 0 ? newEquity : equity,
+        }),
+      });
+    } catch {
+      console.error('Failed to persist settings');
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleT212Connect = async () => {
+    if (!t212ApiKey || !t212ApiSecret) {
+      setT212Error('Please enter both API Key and API Secret');
+      return;
+    }
+
+    setT212Connecting(true);
+    setT212Error(null);
+    setT212Success(null);
+
+    try {
+      const res = await fetch('/api/trading212/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: DEFAULT_USER_ID,
+          apiKey: t212ApiKey,
+          apiSecret: t212ApiSecret,
+          environment: t212Environment,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setT212Error(data.error || 'Failed to connect');
+        return;
+      }
+
+      setT212Connected(true);
+      setT212AccountId(data.accountId?.toString());
+      setT212Currency(data.currency);
+      setT212Success(`Connected! Account: ${data.accountId} (${data.currency})`);
+    } catch (err) {
+      setT212Error('Network error — could not reach Trading 212');
+    } finally {
+      setT212Connecting(false);
+    }
+  };
+
+  const handleT212Disconnect = async () => {
+    try {
+      await fetch(`/api/trading212/connect?userId=${DEFAULT_USER_ID}`, { method: 'DELETE' });
+      setT212Connected(false);
+      setT212AccountId(null);
+      setT212Currency(null);
+      setT212LastSync(null);
+      setT212ApiKey('');
+      setT212ApiSecret('');
+      setT212Success(null);
+      setT212Error(null);
+    } catch {
+      setT212Error('Failed to disconnect');
+    }
+  };
+
+  const handleT212Sync = async () => {
+    setT212Syncing(true);
+    setT212Error(null);
+    setT212Success(null);
+
+    try {
+      const res = await fetch('/api/trading212/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: DEFAULT_USER_ID }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setT212Error(data.error || 'Sync failed');
+        return;
+      }
+
+      setT212LastSync(data.syncedAt);
+      setT212Success(
+        `Synced! ${data.sync.created} new, ${data.sync.updated} updated, ${data.sync.closed} closed`
+      );
+
+      // Update equity from T212 account value
+      if (data.account?.totalValue) {
+        setEquity(data.account.totalValue);
+        setEquityInput(data.account.totalValue.toFixed(2));
+      }
+    } catch {
+      setT212Error('Network error during sync');
+    } finally {
+      setT212Syncing(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+              <SettingsIcon className="w-6 h-6 text-primary-400" />
+              Settings
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Configure your HybridTurtle trading system
+            </p>
+          </div>
+          <button
+            onClick={handleSave}
+            className={cn(
+              'btn-primary flex items-center gap-2',
+              saved && 'bg-profit hover:bg-profit'
+            )}
+          >
+            {saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+            {saved ? 'Saved!' : 'Save Changes'}
+          </button>
+        </div>
+
+        {/* Account & Equity */}
+        <div className="card-surface p-6">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
+            <DollarSign className="w-5 h-5 text-primary-400" />
+            Account
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Account Equity</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                <input
+                  type="number"
+                  value={equityInput}
+                  onChange={(e) => setEquityInput(e.target.value)}
+                  className="input-field pl-7 w-full"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Risk per trade: {formatCurrency(parseFloat(equityInput || '0') * profile.riskPerTrade / 100)}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Risk Profile</label>
+              <select
+                value={riskProfile}
+                onChange={(e) => setRiskProfile(e.target.value as any)}
+                className="input-field w-full"
+              >
+                <option value="CONSERVATIVE">Conservative (0.75% / 8 pos)</option>
+                <option value="BALANCED">Balanced (0.95% / 5 pos)</option>
+                <option value="SMALL_ACCOUNT">Small Account (1.5% / 4 pos)</option>
+                <option value="AGGRESSIVE">Aggressive (1.0% / 2 pos)</option>
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Max positions: {profile.maxPositions} · Max total risk: {formatPercent(profile.maxOpenRisk)}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Trading 212 Integration */}
+        <div className="card-surface p-6 border border-primary/20">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-1">
+            <TrendingUp className="w-5 h-5 text-primary-400" />
+            Trading 212 Integration
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Connect your Trading 212 account to automatically sync your portfolio positions
+          </p>
+
+          {t212Error && (
+            <div className="mb-4 p-3 bg-loss/10 border border-loss/30 rounded-lg text-sm text-loss flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              {t212Error}
+            </div>
+          )}
+
+          {t212Success && (
+            <div className="mb-4 p-3 bg-profit/10 border border-profit/30 rounded-lg text-sm text-profit flex items-center gap-2">
+              <Check className="w-4 h-4 flex-shrink-0" />
+              {t212Success}
+            </div>
+          )}
+
+          {t212Connected && (
+            <div className="mb-4 p-3 bg-primary/10 border border-primary/30 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-profit animate-pulse" />
+                  <span className="text-sm font-medium text-foreground">Connected</span>
+                  {t212AccountId && (
+                    <span className="text-xs text-muted-foreground">
+                      Account: {t212AccountId} ({t212Currency}) — {t212Environment.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleT212Sync}
+                    disabled={t212Syncing}
+                    className="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5"
+                  >
+                    {t212Syncing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    {t212Syncing ? 'Syncing...' : 'Sync Now'}
+                  </button>
+                  <button
+                    onClick={handleT212Disconnect}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-loss/20 text-loss rounded-lg hover:bg-loss/30 transition-colors"
+                  >
+                    <Unplug className="w-3 h-3" />
+                    Disconnect
+                  </button>
+                </div>
+              </div>
+              {t212LastSync && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Last synced: {new Date(t212LastSync).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">API Key</label>
+              <div className="relative">
+                <input
+                  type={t212ShowKey ? 'text' : 'password'}
+                  value={t212ApiKey}
+                  onChange={(e) => setT212ApiKey(e.target.value)}
+                  placeholder="Enter your Trading 212 API Key"
+                  className="input-field w-full pr-10"
+                  disabled={t212Connected}
+                />
+                <button
+                  onClick={() => setT212ShowKey(!t212ShowKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {t212ShowKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">API Secret</label>
+              <div className="relative">
+                <input
+                  type={t212ShowSecret ? 'text' : 'password'}
+                  value={t212ApiSecret}
+                  onChange={(e) => setT212ApiSecret(e.target.value)}
+                  placeholder="Enter your Trading 212 API Secret"
+                  className="input-field w-full pr-10"
+                  disabled={t212Connected}
+                />
+                <button
+                  onClick={() => setT212ShowSecret(!t212ShowSecret)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {t212ShowSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-4">
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Environment</label>
+              <select
+                value={t212Environment}
+                onChange={(e) => setT212Environment(e.target.value as 'demo' | 'live')}
+                className="input-field"
+                disabled={t212Connected}
+              >
+                <option value="demo">Paper Trading (Demo)</option>
+                <option value="live">Live Trading (Real Money)</option>
+              </select>
+            </div>
+
+            {!t212Connected && (
+              <div className="flex items-end">
+                <button
+                  onClick={handleT212Connect}
+                  disabled={t212Connecting || !t212ApiKey || !t212ApiSecret}
+                  className={cn(
+                    'btn-primary flex items-center gap-2 mt-auto',
+                    (t212Connecting || !t212ApiKey || !t212ApiSecret) && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {t212Connecting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plug className="w-4 h-4" />
+                  )}
+                  {t212Connecting ? 'Connecting...' : 'Connect & Test'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-3">
+            Generate API keys from your Trading 212 app. Only works with Invest and Stocks ISA accounts.
+            <a
+              href="https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary-400 hover:text-primary-300 ml-1"
+            >
+              How to get your API key →
+            </a>
+          </p>
+        </div>
+
+        {/* Data Sources */}
+        <div className="card-surface p-6">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
+            <Database className="w-5 h-5 text-primary-400" />
+            Data Sources
+          </h2>
+          <div>
+            <label className="block text-sm text-muted-foreground mb-1">Alpha Vantage API Key</label>
+            <div className="relative">
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                value={alphaVantageKey}
+                onChange={(e) => setAlphaVantageKey(e.target.value)}
+                placeholder="Enter your API key"
+                className="input-field w-full pr-10"
+              />
+              <button
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Get a free API key at alphavantage.co
+            </p>
+          </div>
+        </div>
+
+        {/* Telegram */}
+        <div className="card-surface p-6">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
+            <Bell className="w-5 h-5 text-primary-400" />
+            Telegram Notifications
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Bot Token</label>
+              <div className="relative">
+                <input
+                  type={showToken ? 'text' : 'password'}
+                  value={telegramToken}
+                  onChange={(e) => setTelegramToken(e.target.value)}
+                  placeholder="Enter bot token"
+                  className="input-field w-full pr-10"
+                />
+                <button
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">Chat ID</label>
+              <input
+                type="text"
+                value={telegramChatId}
+                onChange={(e) => setTelegramChatId(e.target.value)}
+                placeholder="Enter chat ID"
+                className="input-field w-full"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <button
+              onClick={handleTelegramTest}
+              disabled={telegramTesting}
+              className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 disabled:opacity-50"
+            >
+              {telegramTesting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <TestTube className="w-3 h-3" />
+              )}
+              {telegramTesting ? 'Sending...' : 'Send Test Message'}
+            </button>
+            {telegramTestResult && (
+              <span className={cn('text-xs', telegramTestResult.success ? 'text-green-400' : 'text-red-400')}>
+                {telegramTestResult.success ? '✓' : '✗'} {telegramTestResult.message}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Universe Management — DB-backed */}
+        <div className="card-surface p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+              <Database className="w-5 h-5 text-primary-400" />
+              Ticker Universe
+            </h2>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="px-2 py-1 rounded bg-primary/10 text-primary-400 font-mono">
+                {stockSummary.total} total
+              </span>
+              <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400 font-mono">
+                {stockSummary.core} Core
+              </span>
+              <span className="px-2 py-1 rounded bg-purple-500/10 text-purple-400 font-mono">
+                {stockSummary.etf} ETF
+              </span>
+              <span className="px-2 py-1 rounded bg-orange-500/10 text-orange-400 font-mono">
+                {stockSummary.highRisk} High‑Risk
+              </span>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search ticker, sector..."
+                value={stockSearch}
+                onChange={(e) => setStockSearch(e.target.value)}
+                className="input-field w-full pl-9 text-sm"
+              />
+            </div>
+
+            {/* Sleeve tabs */}
+            <div className="flex gap-1 bg-surface-2 rounded-lg p-1">
+              {['ALL', 'CORE', 'ETF', 'HIGH_RISK', 'HEDGE'].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setStockSleeveFilter(s)}
+                  className={cn(
+                    'px-3 py-1.5 text-xs rounded-md transition-colors',
+                    stockSleeveFilter === s
+                      ? 'bg-primary text-white'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {s === 'HIGH_RISK' ? 'High-Risk' : s === 'ALL' ? 'All' : s === 'HEDGE' ? 'Hedge' : s}
+                </button>
+              ))}
+            </div>
+
+            {/* Toggle expand */}
+            <button
+              onClick={() => setStocksExpanded(!stocksExpanded)}
+              className="text-muted-foreground hover:text-foreground p-2"
+              title={stocksExpanded ? 'Collapse' : 'Expand'}
+            >
+              {stocksExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {/* Add ticker inline */}
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              type="text"
+              placeholder="Add ticker..."
+              value={addTicker}
+              onChange={(e) => setAddTicker(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddStock()}
+              className="input-field text-sm w-32 font-mono"
+            />
+            <select
+              value={addSleeve}
+              onChange={(e) => setAddSleeve(e.target.value as 'CORE' | 'ETF' | 'HIGH_RISK' | 'HEDGE')}
+              className="input-field text-sm"
+            >
+              <option value="CORE">Core</option>
+              <option value="ETF">ETF</option>
+              <option value="HIGH_RISK">High-Risk</option>
+              <option value="HEDGE">Hedge</option>
+            </select>
+            <button
+              onClick={handleAddStock}
+              disabled={!addTicker.trim()}
+              className={cn(
+                'btn-primary flex items-center gap-1 text-xs px-3 py-2',
+                !addTicker.trim() && 'opacity-50 cursor-not-allowed'
+              )}
+            >
+              <Plus className="w-3 h-3" />
+              Add
+            </button>
+            <button
+              onClick={fetchStocks}
+              className="text-muted-foreground hover:text-foreground p-2"
+              title="Refresh"
+            >
+              <RefreshCw className={cn('w-4 h-4', stocksLoading && 'animate-spin')} />
+            </button>
+          </div>
+
+          {/* Stocks table */}
+          {stocksLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin text-primary-400" />
+              <span className="ml-2 text-sm text-muted-foreground">Loading universe...</span>
+            </div>
+          ) : (
+            <div className={cn(
+              'overflow-auto border border-white/5 rounded-lg',
+              stocksExpanded ? 'max-h-[600px]' : 'max-h-[280px]'
+            )}>
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-surface-2 text-muted-foreground">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium">Ticker</th>
+                    <th className="text-left px-3 py-2 font-medium">Sleeve</th>
+                    <th className="text-left px-3 py-2 font-medium">Sector</th>
+                    <th className="text-left px-3 py-2 font-medium">Cluster</th>
+                    <th className="text-left px-3 py-2 font-medium">Super Cluster</th>
+                    <th className="text-left px-3 py-2 font-medium">Region</th>
+                    <th className="text-left px-3 py-2 font-medium">CCY</th>
+                    <th className="text-right px-3 py-2 font-medium w-8"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {stocks.map((stock) => (
+                    <tr key={stock.id} className="hover:bg-white/5 transition-colors">
+                      <td className="px-3 py-1.5 font-mono font-semibold text-foreground">
+                        {stock.ticker}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className={cn(
+                          'px-1.5 py-0.5 rounded text-[10px] font-medium',
+                          stock.sleeve === 'CORE' && 'bg-blue-500/20 text-blue-400',
+                          stock.sleeve === 'ETF' && 'bg-purple-500/20 text-purple-400',
+                          stock.sleeve === 'HIGH_RISK' && 'bg-orange-500/20 text-orange-400',
+                          stock.sleeve === 'HEDGE' && 'bg-teal-500/20 text-teal-400'
+                        )}>
+                          {stock.sleeve}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{stock.sector || '—'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{stock.cluster || '—'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{stock.superCluster || '—'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground">{stock.region || '—'}</td>
+                      <td className="px-3 py-1.5 text-muted-foreground font-mono">{stock.currency || '—'}</td>
+                      <td className="px-3 py-1.5 text-right">
+                        <button
+                          onClick={() => handleRemoveStock(stock.ticker)}
+                          className="text-muted-foreground hover:text-loss transition-colors"
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {stocks.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">
+                        No stocks found{stockSearch ? ` matching "${stockSearch}"` : ''}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground mt-3">
+            {stocks.length} stocks shown · Imported from your Planning folder files · Run{' '}
+            <code className="text-primary-400 font-mono">npx prisma db seed</code> to re-import
+          </p>
+        </div>
+
+        {/* NEVER Rules (Read Only) */}
+        <div className="card-surface p-6 border border-loss/30">
+          <h2 className="text-lg font-semibold text-loss flex items-center gap-2 mb-4">
+            <AlertTriangle className="w-5 h-5" />
+            Immutable Rules — Cannot Be Modified
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[
+              'NEVER lower a stop-loss — monotonic enforcement',
+              'NEVER buy if regime ≠ BULLISH',
+              'NEVER skip the 16-point health check',
+              'NEVER chase a Monday gap > 1 ATR',
+              'NEVER override sleeve or cluster caps',
+              'NEVER round position size UP (always floor)',
+              'NEVER enter a trade with $0 stop-loss',
+              'NEVER exceed max positions for risk profile',
+              'NEVER average down on a losing position',
+              'NEVER trade on Monday (Observe Only)',
+            ].map((rule, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-2 p-2 bg-loss/5 border border-loss/20 rounded"
+              >
+                <Shield className="w-3 h-3 text-loss flex-shrink-0" />
+                <span className="text-xs text-loss/80">{rule}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

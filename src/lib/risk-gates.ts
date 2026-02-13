@@ -1,0 +1,282 @@
+// ============================================================
+// Risk Gates — Concentration & Cap Checks
+// ============================================================
+
+import type { RiskProfileType, Sleeve } from '@/types';
+import { RISK_PROFILES, SLEEVE_CAPS, POSITION_SIZE_CAPS, CLUSTER_CAP, SECTOR_CAP } from '@/types';
+
+interface PositionData {
+  id: string;
+  ticker: string;
+  sleeve: Sleeve;
+  sector: string;
+  cluster: string;
+  value: number;
+  riskDollars: number;
+  shares: number;
+  entryPrice: number;
+  currentStop: number;
+  currentPrice: number;
+}
+
+export interface RiskGateResult {
+  passed: boolean;
+  gate: string;
+  message: string;
+  current: number;
+  limit: number;
+}
+
+/**
+ * Run all risk cap gate checks before allowing a new position
+ */
+export function validateRiskGates(
+  newPosition: {
+    sleeve: Sleeve;
+    sector: string;
+    cluster: string;
+    value: number;
+    riskDollars: number;
+  },
+  existingPositions: PositionData[],
+  equity: number,
+  riskProfile: RiskProfileType
+): RiskGateResult[] {
+  const profile = RISK_PROFILES[riskProfile];
+  const results: RiskGateResult[] = [];
+
+  // Gate 1: Total Open Risk ≤ Max for profile (exclude HEDGE from calculation)
+  const nonHedgePositions = existingPositions.filter((p) => p.sleeve !== 'HEDGE');
+  const currentOpenRisk = nonHedgePositions.reduce((sum, p) => {
+    const posRisk = p.riskDollars != null
+      ? p.riskDollars
+      : (p.currentPrice - p.currentStop) * p.shares;
+    return sum + Math.max(0, posRisk);
+  }, 0);
+  const totalOpenRiskPercent = ((currentOpenRisk + newPosition.riskDollars) / equity) * 100;
+  results.push({
+    passed: totalOpenRiskPercent <= profile.maxOpenRisk,
+    gate: 'Total Open Risk',
+    message: `Total open risk: ${totalOpenRiskPercent.toFixed(1)}% (max ${profile.maxOpenRisk}%) — ex-hedge`,
+    current: totalOpenRiskPercent,
+    limit: profile.maxOpenRisk,
+  });
+
+  // Gate 2: Max positions not reached (exclude HEDGE from count)
+  const openPositions = nonHedgePositions.length;
+  results.push({
+    passed: openPositions < profile.maxPositions,
+    gate: 'Max Positions',
+    message: `Open positions: ${openPositions + 1}/${profile.maxPositions} (ex-hedge)`,
+    current: openPositions + 1,
+    limit: profile.maxPositions,
+  });
+
+  // Gate 3: Sleeve limits
+  const totalPortfolioValue = existingPositions.reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+  const sleeveValue = existingPositions
+    .filter((p) => p.sleeve === newPosition.sleeve)
+    .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+  const sleevePercent = totalPortfolioValue > 0 ? sleeveValue / totalPortfolioValue : 0;
+  const sleeveCap = SLEEVE_CAPS[newPosition.sleeve];
+  results.push({
+    passed: sleevePercent <= sleeveCap,
+    gate: 'Sleeve Limit',
+    message: `${newPosition.sleeve} sleeve: ${(sleevePercent * 100).toFixed(1)}% (max ${(sleeveCap * 100).toFixed(0)}%)`,
+    current: sleevePercent * 100,
+    limit: sleeveCap * 100,
+  });
+
+  // Gate 4: Cluster concentration ≤ 20%
+  if (newPosition.cluster) {
+    const clusterValue = existingPositions
+      .filter((p) => p.cluster === newPosition.cluster)
+      .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+    const clusterPercent = totalPortfolioValue > 0 ? clusterValue / totalPortfolioValue : 0;
+    results.push({
+      passed: clusterPercent <= CLUSTER_CAP,
+      gate: 'Cluster Concentration',
+      message: `${newPosition.cluster} cluster: ${(clusterPercent * 100).toFixed(1)}% (max ${(CLUSTER_CAP * 100).toFixed(0)}%)`,
+      current: clusterPercent * 100,
+      limit: CLUSTER_CAP * 100,
+    });
+  }
+
+  // Gate 5: Sector concentration ≤ 33%
+  if (newPosition.sector) {
+    const sectorValue = existingPositions
+      .filter((p) => p.sector === newPosition.sector)
+      .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+    const sectorPercent = totalPortfolioValue > 0 ? sectorValue / totalPortfolioValue : 0;
+    results.push({
+      passed: sectorPercent <= SECTOR_CAP,
+      gate: 'Sector Concentration',
+      message: `${newPosition.sector} sector: ${(sectorPercent * 100).toFixed(1)}% (max ${(SECTOR_CAP * 100).toFixed(0)}%)`,
+      current: sectorPercent * 100,
+      limit: SECTOR_CAP * 100,
+    });
+  }
+
+  // Gate 6: Position size cap
+  const positionSizeCap = POSITION_SIZE_CAPS[newPosition.sleeve];
+  const positionSizePercent = totalPortfolioValue > 0 ? newPosition.value / totalPortfolioValue : 0;
+  results.push({
+    passed: positionSizePercent <= positionSizeCap,
+    gate: 'Position Size',
+    message: `Position size: ${(positionSizePercent * 100).toFixed(1)}% (max ${(positionSizeCap * 100).toFixed(0)}%)`,
+    current: positionSizePercent * 100,
+    limit: positionSizeCap * 100,
+  });
+
+  return results;
+}
+
+/**
+ * Pyramiding configuration
+ */
+export const PYRAMID_CONFIG = {
+  enabled: true,
+  maxAdds: 2,
+  // ATR-based triggers relative to entry
+  addTriggers: [0.5, 1.0], // Add #1: Entry + 0.5 × ATR, Add #2: Entry + 1.0 × ATR
+  // Add sizing: same as original (full equity × risk_per_trade)
+} as const;
+
+export const BACKTEST_PYRAMID_CONFIG = {
+  maxUnits: 4,
+  addIntervalAtr: 0.5,
+} as const;
+
+/**
+ * Check if pyramiding is allowed for a position
+ * Uses ATR-based triggers: Add #1 at Entry + 0.5×ATR, Add #2 at Entry + 1.0×ATR
+ * Max 2 adds. Add sizing = same as original (full equity × risk_per_trade).
+ */
+export function canPyramid(
+  currentPrice: number,
+  entryPrice: number,
+  initialRisk: number,
+  atr?: number,
+  currentAdds?: number
+): {
+  allowed: boolean;
+  rMultiple: number;
+  addNumber: number; // 0 = not allowed, 1 = first add, 2 = second add
+  triggerPrice: number | null;
+  message: string;
+} {
+  if (initialRisk <= 0) {
+    return { allowed: false, rMultiple: 0, addNumber: 0, triggerPrice: null, message: 'Invalid initial risk' };
+  }
+
+  const rMultiple = (currentPrice - entryPrice) / initialRisk;
+  const addsUsed = currentAdds ?? 0;
+
+  // Max adds reached
+  if (addsUsed >= PYRAMID_CONFIG.maxAdds) {
+    return {
+      allowed: false,
+      rMultiple,
+      addNumber: 0,
+      triggerPrice: null,
+      message: `Max pyramid adds reached (${PYRAMID_CONFIG.maxAdds}/${PYRAMID_CONFIG.maxAdds})`,
+    };
+  }
+
+  // ATR-based trigger check
+  if (atr != null && atr > 0) {
+    const nextAddIndex = addsUsed; // 0-based: 0 = first add, 1 = second add
+    if (nextAddIndex < PYRAMID_CONFIG.addTriggers.length) {
+      const triggerMultiplier = PYRAMID_CONFIG.addTriggers[nextAddIndex];
+      const triggerPrice = entryPrice + triggerMultiplier * atr;
+
+      if (currentPrice >= triggerPrice) {
+        return {
+          allowed: true,
+          rMultiple,
+          addNumber: nextAddIndex + 1,
+          triggerPrice,
+          message: `Pyramid add #${nextAddIndex + 1} allowed: price ${currentPrice.toFixed(2)} ≥ trigger ${triggerPrice.toFixed(2)} (Entry + ${triggerMultiplier}×ATR)`,
+        };
+      } else {
+        return {
+          allowed: false,
+          rMultiple,
+          addNumber: 0,
+          triggerPrice,
+          message: `Price ${currentPrice.toFixed(2)} below add #${nextAddIndex + 1} trigger ${triggerPrice.toFixed(2)} (Entry + ${triggerMultiplier}×ATR)`,
+        };
+      }
+    }
+  }
+
+  // Fallback: R-multiple based (for when ATR not available)
+  if (rMultiple < 1.0) {
+    return {
+      allowed: false,
+      rMultiple,
+      addNumber: 0,
+      triggerPrice: null,
+      message: `Cannot add to position at ${rMultiple.toFixed(1)}R. Pyramiding only allowed at +1R or more.`,
+    };
+  }
+
+  return {
+    allowed: true,
+    rMultiple,
+    addNumber: addsUsed + 1,
+    triggerPrice: null,
+    message: `Pyramiding allowed at ${rMultiple.toFixed(1)}R (add #${addsUsed + 1})`,
+  };
+}
+
+/**
+ * Calculate portfolio risk budget utilization
+ */
+export function getRiskBudget(
+  positions: PositionData[],
+  equity: number,
+  riskProfile: RiskProfileType
+): {
+  usedRiskPercent: number;
+  availableRiskPercent: number;
+  maxRiskPercent: number;
+  usedPositions: number;
+  maxPositions: number;
+  sleeveUtilization: Record<Sleeve, { used: number; max: number }>;
+} {
+  const profile = RISK_PROFILES[riskProfile];
+
+  const totalRisk = positions.reduce((sum, p) => {
+    // Exclude HEDGE positions from open risk calculation
+    if (p.sleeve === 'HEDGE') return sum;
+    const risk = p.riskDollars != null
+      ? p.riskDollars
+      : (p.currentPrice - p.currentStop) * p.shares;
+    return sum + Math.max(0, risk);
+  }, 0);
+
+  const usedRiskPercent = equity > 0 ? (totalRisk / equity) * 100 : 0;
+  const totalValue = positions.reduce((sum, p) => sum + p.value, 0);
+
+  const sleeveUtilization: Record<Sleeve, { used: number; max: number }> = {
+    CORE: { used: 0, max: SLEEVE_CAPS.CORE * 100 },
+    HIGH_RISK: { used: 0, max: SLEEVE_CAPS.HIGH_RISK * 100 },
+    ETF: { used: 0, max: SLEEVE_CAPS.ETF * 100 },
+    HEDGE: { used: 0, max: SLEEVE_CAPS.HEDGE * 100 },
+  };
+
+  for (const p of positions) {
+    const pct = totalValue > 0 ? (p.value / totalValue) * 100 : 0;
+    sleeveUtilization[p.sleeve].used += pct;
+  }
+
+  return {
+    usedRiskPercent,
+    availableRiskPercent: Math.max(0, profile.maxOpenRisk - usedRiskPercent),
+    maxRiskPercent: profile.maxOpenRisk,
+    usedPositions: positions.filter((p) => p.sleeve !== 'HEDGE').length,
+    maxPositions: profile.maxPositions,
+    sleeveUtilization,
+  };
+}

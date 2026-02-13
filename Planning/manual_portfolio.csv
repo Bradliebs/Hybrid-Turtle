@@ -1,0 +1,22 @@
+# Manual Portfolio Template
+# --------------------------
+# Fill in your current holdings below.
+# Delete the example rows and add your own positions.
+#
+# Columns:
+#   ticker       - The ticker symbol (e.g., AAPL, MSFT, VUSA.L)
+#   quantity     - Number of shares/units you own (can be fractional)
+#   avg_cost     - Your average purchase price per share (in ticker currency)
+#   currency     - The currency of the ticker (USD, GBP, GBX, EUR)
+#
+# Notes:
+#   - Use Yahoo Finance ticker format (e.g., VUSA.L for London Stock Exchange)
+#   - GBX = pence (UK stocks often quote in pence, not pounds)
+#   - Lines starting with # are comments and will be ignored
+#
+ticker,quantity,avg_cost,currency
+# === EXAMPLE POSITIONS (delete these and add your own) ===
+AAPL,10,185.50,USD
+MSFT,5,378.25,USD
+VUSA.L,25,93.50,GBP
+NVDA,3,875.00,USD

@@ -1,0 +1,877 @@
+'use client';
+
+import { useState } from 'react';
+import { cn } from '@/lib/utils';
+import { formatCurrency, formatPrice, formatPercent, formatR, formatDate } from '@/lib/utils';
+import StatusBadge from '@/components/shared/StatusBadge';
+import { canPyramid, PYRAMID_CONFIG } from '@/lib/risk-gates';
+import { Bell, BellOff, Lock, Plus, ArrowUpDown, ChevronDown, X, AlertTriangle, TrendingUp, LogOut, Send, Loader2, CheckCircle, XCircle, RefreshCw, Layers } from 'lucide-react';
+
+interface Position {
+  id: string;
+  ticker: string;
+  name: string;
+  sleeve: string;
+  status: string;
+  entryPrice: number;
+  entryDate: string;
+  shares: number;
+  currentStop: number;
+  initialRisk: number;
+  protectionLevel: string;
+  currentPrice: number;
+  rMultiple: number;
+  gainPercent: number;
+  gainDollars: number;
+  value: number;
+  riskGBP?: number;
+  priceCurrency?: string;
+  rating?: string;
+  candidateStatus?: string;
+  entryTrigger?: number;
+  alerts?: number;
+}
+
+interface PositionsTableProps {
+  positions: Position[];
+  onUpdateStop?: (positionId: string, newStop: number, reason: string) => Promise<boolean>;
+  onExitPosition?: (positionId: string, exitPrice: number) => Promise<boolean>;
+}
+
+export default function PositionsTable({ positions, onUpdateStop, onExitPosition }: PositionsTableProps) {
+  const [tab, setTab] = useState<'all' | 'open' | 'closed'>('open');
+  const [sortField, setSortField] = useState<string>('ticker');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Stop modal state
+  const [stopModal, setStopModal] = useState<Position | null>(null);
+  const [stopInput, setStopInput] = useState('');
+  const [stopError, setStopError] = useState<string | null>(null);
+  const [stopSubmitting, setStopSubmitting] = useState(false);
+  const [pushToT212, setPushToT212] = useState(true);
+  const [t212PushStatus, setT212PushStatus] = useState<'idle' | 'pushing' | 'success' | 'error'>('idle');
+  const [t212PushMessage, setT212PushMessage] = useState<string | null>(null);
+  const [t212CurrentStop, setT212CurrentStop] = useState<number | null>(null);
+  const [t212Loading, setT212Loading] = useState(false);
+
+  // T212 bulk sync state
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; total: number } | null>(null);
+
+  // Exit modal state
+  const [exitModal, setExitModal] = useState<Position | null>(null);
+  const [exitInput, setExitInput] = useState('');
+  const [exitError, setExitError] = useState<string | null>(null);
+  const [exitSubmitting, setExitSubmitting] = useState(false);
+
+  const filtered = positions.filter((p) => {
+    if (tab === 'all') return true;
+    if (tab === 'open') return p.status === 'OPEN';
+    return p.status === 'CLOSED';
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const aVal = (a as any)[sortField];
+    const bVal = (b as any)[sortField];
+    if (typeof aVal === 'string') return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+  });
+
+  const toggleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  return (
+    <div className="card-surface">
+      {/* Header */}
+      <div className="p-4 border-b border-border flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          {(['all', 'open', 'closed'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'px-3 py-1.5 text-sm font-medium rounded-lg transition-colors capitalize',
+                tab === t
+                  ? 'bg-primary/20 text-primary-400'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {t} {t !== 'all' && `(${positions.filter((p) => t === 'open' ? p.status === 'OPEN' : p.status === 'CLOSED').length})`}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground">
+            {filtered.length} position{filtered.length !== 1 ? 's' : ''}
+          </span>
+          <button
+          disabled={bulkSyncing}
+          onClick={async () => {
+            setBulkSyncing(true);
+            setBulkSyncResult(null);
+            try {
+              const res = await fetch('/api/stops/t212', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                setBulkSyncResult({ placed: data.placed, failed: data.failed, total: data.total });
+                setTimeout(() => setBulkSyncResult(null), 5000);
+              }
+            } catch { /* ignore */ }
+            setBulkSyncing(false);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-primary/20 text-primary-400 rounded-lg hover:bg-primary/30 transition-colors disabled:opacity-50"
+          title="Push all DB stop prices to Trading 212 as pending stop orders"
+        >
+          {bulkSyncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+          Push Stops to T212
+        </button>
+        {bulkSyncResult && (
+          <span className="text-xs text-profit flex items-center gap-1">
+            <CheckCircle className="w-3 h-3" />
+            {bulkSyncResult.placed}/{bulkSyncResult.total} placed
+            {bulkSyncResult.failed > 0 && <span className="text-loss">({bulkSyncResult.failed} failed)</span>}
+          </span>
+        )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="w-8">
+                <input type="checkbox" className="rounded border-border bg-navy-800" />
+              </th>
+              <th className="w-8"></th>
+              <th className="w-8"></th>
+              <th className="cursor-pointer" onClick={() => toggleSort('ticker')}>
+                <span className="flex items-center gap-1">
+                  Ticker <ArrowUpDown className="w-3 h-3" />
+                </span>
+              </th>
+              <th>Status</th>
+              <th>Rating</th>
+              <th className="cursor-pointer text-right" onClick={() => toggleSort('rMultiple')}>
+                <span className="flex items-center gap-1 justify-end">
+                  R-Multiple <ArrowUpDown className="w-3 h-3" />
+                </span>
+              </th>
+              <th className="text-right">Entry</th>
+              <th className="text-right">Current</th>
+              <th className="text-right">Stop-Loss</th>
+              <th className="text-right">Protection</th>
+              <th className="text-right">Shares</th>
+              <th className="cursor-pointer text-right" onClick={() => toggleSort('gainPercent')}>
+                <span className="flex items-center gap-1 justify-end">
+                  Gain% <ArrowUpDown className="w-3 h-3" />
+                </span>
+              </th>
+              <th className="cursor-pointer text-right" onClick={() => toggleSort('value')}>
+                <span className="flex items-center gap-1 justify-end">
+                  Value <ArrowUpDown className="w-3 h-3" />
+                </span>
+              </th>
+              <th className="text-right">Risk $</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((pos) => (
+              <tr key={pos.id} className="group">
+                <td>
+                  <input type="checkbox" className="rounded border-border bg-navy-800" />
+                </td>
+                <td>
+                  <div
+                    className={cn(
+                      'w-2 h-2 rounded-full',
+                      pos.status === 'OPEN' ? 'bg-profit' : 'bg-muted-foreground'
+                    )}
+                  />
+                </td>
+                <td>
+                  {(pos.alerts || 0) > 0 ? (
+                    <div className="relative">
+                      <Bell className="w-4 h-4 text-warning" />
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-warning text-[8px] text-black rounded-full flex items-center justify-center font-bold">
+                        {pos.alerts}
+                      </span>
+                    </div>
+                  ) : (
+                    <BellOff className="w-4 h-4 text-muted-foreground/30" />
+                  )}
+                </td>
+                <td>
+                  <div>
+                    <span className="text-primary-400 font-semibold">{pos.ticker}</span>
+                    <div className="text-xs text-muted-foreground">{pos.name}</div>
+                  </div>
+                </td>
+                <td>
+                  <StatusBadge status={pos.candidateStatus || pos.status} />
+                </td>
+                <td>
+                  <StatusBadge status={pos.rating || 'N/A'} />
+                </td>
+                <td className="text-right">
+                  <span
+                    className={cn(
+                      'font-mono font-semibold',
+                      pos.rMultiple >= 0 ? 'text-profit' : 'text-loss'
+                    )}
+                  >
+                    {formatR(pos.rMultiple)}
+                  </span>
+                  {/* Pyramid add indicator */}
+                  {pos.status === 'OPEN' && (() => {
+                    const pc = canPyramid(pos.currentPrice, pos.entryPrice, pos.initialRisk, undefined, 0);
+                    if (pc.allowed) {
+                      return (
+                        <div className="flex items-center justify-end gap-1 mt-0.5">
+                          <Layers className="w-3 h-3 text-profit" />
+                          <span className="text-[10px] text-profit font-medium">Add #{pc.addNumber}</span>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </td>
+                <td className="text-right font-mono text-sm">{formatPrice(pos.entryPrice, pos.priceCurrency)}</td>
+                <td className="text-right font-mono text-sm">{formatPrice(pos.currentPrice, pos.priceCurrency)}</td>
+                <td className="text-right">
+                  <span className="font-mono text-sm flex items-center justify-end gap-1">
+                    {pos.protectionLevel !== 'INITIAL' && (
+                      <Lock className="w-3 h-3 text-profit" />
+                    )}
+                    {formatPrice(pos.currentStop, pos.priceCurrency)}
+                  </span>
+                </td>
+                <td className="text-right">
+                  <StatusBadge status={pos.protectionLevel} />
+                </td>
+                <td className="text-right font-mono text-sm">{pos.shares}</td>
+                <td className="text-right">
+                  <span
+                    className={cn(
+                      'font-mono text-sm',
+                      pos.gainPercent >= 0 ? 'text-profit' : 'text-loss'
+                    )}
+                  >
+                    {formatPercent(pos.gainPercent)}
+                  </span>
+                </td>
+                <td className="text-right font-mono text-sm">{formatCurrency(pos.value)}</td>
+                <td className="text-right">
+                  <span
+                    className={cn(
+                      'font-mono text-sm',
+                      pos.rMultiple >= 0 ? 'text-profit' : 'text-loss'
+                    )}
+                  >
+                    {formatCurrency(pos.riskGBP ?? 0)}
+                  </span>
+                </td>
+                <td>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {pos.status === 'OPEN' && (
+                      <>
+                        <button
+                          onClick={async () => {
+                            setStopModal(pos);
+                            setStopInput(pos.currentStop.toFixed(2));
+                            setStopError(null);
+                            setT212PushStatus('idle');
+                            setT212PushMessage(null);
+                            setT212CurrentStop(null);
+                            // Fetch T212 stop status in background
+                            setT212Loading(true);
+                            try {
+                              const res = await fetch('/api/stops/t212');
+                              if (res.ok) {
+                                const data = await res.json();
+                                const match = data.positions?.find((p: any) => p.positionId === pos.id);
+                                if (match?.t212StopOrder?.stopPrice) {
+                                  setT212CurrentStop(match.t212StopOrder.stopPrice);
+                                  // If T212 has a higher stop, update the pre-fill and modal display
+                                  if (match.t212StopOrder.stopPrice > pos.currentStop) {
+                                    setStopInput(match.t212StopOrder.stopPrice.toFixed(2));
+                                  }
+                                  // Sync: if the GET route corrected the DB, update modal
+                                  if (match.dbSyncedUp && match.currentStop > pos.currentStop) {
+                                    pos.currentStop = match.currentStop;
+                                  }
+                                }
+                              }
+                            } catch { /* ignore */ }
+                            setT212Loading(false);
+                          }}
+                          className="px-2 py-1 text-xs bg-primary/20 text-primary-400 rounded hover:bg-primary/30 transition-colors"
+                        >
+                          Update Stop
+                        </button>
+                        <button
+                          onClick={() => {
+                            setExitModal(pos);
+                            setExitInput(pos.currentPrice.toFixed(2));
+                            setExitError(null);
+                          }}
+                          className="px-2 py-1 text-xs bg-loss/20 text-loss rounded hover:bg-loss/30 transition-colors"
+                        >
+                          Exit
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {sorted.length === 0 && (
+              <tr>
+                <td colSpan={16} className="text-center py-12 text-muted-foreground">
+                  No positions found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Update Stop Modal ── */}
+      {stopModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-navy-800 border border-border rounded-xl shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-primary-400" />
+                <h3 className="font-semibold">Update Stop — {stopModal.ticker}</h3>
+              </div>
+              <button onClick={() => setStopModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Position context */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">Entry</span>
+                  <p className="font-mono font-medium">{formatPrice(stopModal.entryPrice, stopModal.priceCurrency)}</p>
+                </div>
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">Current Price</span>
+                  <p className="font-mono font-medium">{formatPrice(stopModal.currentPrice, stopModal.priceCurrency)}</p>
+                </div>
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">Current Stop (DB)</span>
+                  <p className="font-mono font-medium text-warning">{formatPrice(stopModal.currentStop, stopModal.priceCurrency)}</p>
+                </div>
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">T212 Stop</span>
+                  <p className="font-mono font-medium">
+                    {t212Loading ? (
+                      <span className="text-muted-foreground flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Checking…</span>
+                    ) : t212CurrentStop !== null ? (
+                      <span className={cn(
+                        t212CurrentStop > stopModal.currentStop ? 'text-profit' : 
+                        t212CurrentStop < stopModal.currentStop ? 'text-loss' : 'text-warning'
+                      )}>
+                        {formatPrice(t212CurrentStop, stopModal.priceCurrency)}
+                        {t212CurrentStop > stopModal.currentStop && (
+                          <span className="text-xs ml-1">(higher)</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">None</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* Warning if T212 stop is higher than DB */}
+              {t212CurrentStop !== null && t212CurrentStop > stopModal.currentStop && (
+                <div className="flex items-start gap-2 p-3 bg-profit/10 border border-profit/20 rounded-lg text-sm">
+                  <TrendingUp className="w-4 h-4 text-profit shrink-0 mt-0.5" />
+                  <span className="text-profit/90">
+                    T212 already has a higher stop at <strong>{formatPrice(t212CurrentStop, stopModal.priceCurrency)}</strong>. 
+                    New stop must be above this level.
+                  </span>
+                </div>
+              )}
+
+              {/* ── Stop Ladder Recommendation ── */}
+              {(() => {
+                const R = stopModal.initialRisk;
+                const entry = stopModal.entryPrice;
+                const rMul = stopModal.rMultiple;
+                const curStop = stopModal.currentStop;
+
+                // Build the ladder
+                const ladder: { level: string; trigger: string; stopPrice: number; formula: string; active: boolean; reached: boolean }[] = [
+                  {
+                    level: 'Breakeven',
+                    trigger: '≥ +1.5R',
+                    stopPrice: entry,
+                    formula: 'Entry Price',
+                    active: false,
+                    reached: rMul >= 1.5,
+                  },
+                  {
+                    level: 'Partial Lock',
+                    trigger: '≥ +2.5R',
+                    stopPrice: entry + 0.5 * R,
+                    formula: 'Entry + 0.5 × R',
+                    active: false,
+                    reached: rMul >= 2.5,
+                  },
+                  {
+                    level: 'Trail + Lock',
+                    trigger: '≥ +3.0R',
+                    stopPrice: entry + 1.0 * R,
+                    formula: 'Entry + 1.0 × R (floor)',
+                    active: false,
+                    reached: rMul >= 3.0,
+                  },
+                ];
+
+                // Mark the highest reached level as active (if its stop is above current)
+                for (let i = ladder.length - 1; i >= 0; i--) {
+                  if (ladder[i].reached && ladder[i].stopPrice > curStop) {
+                    ladder[i].active = true;
+                    break;
+                  }
+                }
+
+                const recommended = ladder.find(l => l.active);
+
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Stop Ladder</p>
+                    <div className="bg-navy-900 rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border/50 text-muted-foreground">
+                            <th className="text-left px-3 py-1.5 font-medium">Level</th>
+                            <th className="text-left px-3 py-1.5 font-medium">Trigger</th>
+                            <th className="text-right px-3 py-1.5 font-medium">Stop →</th>
+                            <th className="text-right px-3 py-1.5 font-medium"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ladder.map((row) => (
+                            <tr
+                              key={row.level}
+                              className={cn(
+                                'border-b border-border/30 transition-colors',
+                                row.active ? 'bg-profit/10' : row.reached ? 'bg-navy-800/50' : ''
+                              )}
+                            >
+                              <td className="px-3 py-1.5">
+                                <span className={cn(
+                                  'flex items-center gap-1.5',
+                                  row.active ? 'text-profit font-semibold' : row.reached ? 'text-foreground' : 'text-muted-foreground'
+                                )}>
+                                  {row.reached && <span className="text-[10px]">✓</span>}
+                                  {row.level}
+                                </span>
+                              </td>
+                              <td className={cn('px-3 py-1.5 font-mono', row.reached ? 'text-foreground' : 'text-muted-foreground')}>
+                                {row.trigger}
+                              </td>
+                              <td className={cn('px-3 py-1.5 font-mono text-right', row.active ? 'text-profit font-semibold' : '')}>
+                                {formatPrice(row.stopPrice, stopModal.priceCurrency)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right">
+                                {row.reached && row.stopPrice > curStop && (
+                                  <button
+                                    onClick={() => { setStopInput(row.stopPrice.toFixed(2)); setStopError(null); }}
+                                    className="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary-400 rounded hover:bg-primary/30 transition-colors"
+                                  >
+                                    Use
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {recommended ? (
+                      <p className="text-xs text-profit flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3" />
+                        Recommended: move stop to <strong>{formatPrice(recommended.stopPrice, stopModal.priceCurrency)}</strong> ({recommended.level})
+                      </p>
+                    ) : rMul < 1.5 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No upgrade yet — profit needs to reach +1.5R ({formatR(1.5)}) for breakeven. Currently at {formatR(rMul)}.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Stop is already at or above the recommended level.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Pyramid Add Triggers */}
+              {(() => {
+                const R = stopModal.initialRisk;
+                const entry = stopModal.entryPrice;
+                const rMul = stopModal.rMultiple;
+                const pc = canPyramid(stopModal.currentPrice, entry, R, undefined, 0);
+                const triggers = PYRAMID_CONFIG.addTriggers.map((mult, idx) => {
+                  // Without ATR, use R-based approximation: entry + mult * R (roughly)
+                  const approxTrigger = entry + (idx + 1) * R;
+                  const reached = stopModal.currentPrice >= approxTrigger;
+                  return {
+                    addNumber: idx + 1,
+                    triggerLabel: `+${(idx + 1).toFixed(0)}R`,
+                    approxPrice: approxTrigger,
+                    atrMultiplier: mult,
+                    reached,
+                  };
+                });
+
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                      <Layers className="w-3 h-3" />
+                      Pyramid Add Triggers
+                    </p>
+                    <div className="bg-navy-900 rounded-lg overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-border/50 text-muted-foreground">
+                            <th className="text-left px-3 py-1.5 font-medium">Add</th>
+                            <th className="text-left px-3 py-1.5 font-medium">ATR Trigger</th>
+                            <th className="text-right px-3 py-1.5 font-medium">≈ Price</th>
+                            <th className="text-right px-3 py-1.5 font-medium">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {triggers.map((t) => (
+                            <tr
+                              key={t.addNumber}
+                              className={cn(
+                                'border-b border-border/30',
+                                t.reached ? 'bg-profit/10' : ''
+                              )}
+                            >
+                              <td className="px-3 py-1.5">
+                                <span className={cn(
+                                  'font-medium',
+                                  t.reached ? 'text-profit' : 'text-muted-foreground'
+                                )}>
+                                  #{t.addNumber}
+                                </span>
+                              </td>
+                              <td className="px-3 py-1.5 text-muted-foreground">
+                                Entry + {t.atrMultiplier}×ATR
+                              </td>
+                              <td className={cn(
+                                'px-3 py-1.5 font-mono text-right',
+                                t.reached ? 'text-profit font-semibold' : ''
+                              )}>
+                                {formatPrice(t.approxPrice, stopModal.priceCurrency)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right">
+                                {t.reached ? (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-medium">
+                                    TRIGGERED
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    Pending
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {pc.allowed ? (
+                      <p className="text-xs text-profit flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3" />
+                        Pyramid add #{pc.addNumber} is available at {formatR(pc.rMultiple)}
+                      </p>
+                    ) : rMul > 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        Next add triggers at approx. {formatPrice(triggers.find(t => !t.reached)?.approxPrice ?? 0, stopModal.priceCurrency)}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Position not in profit — no pyramid adds available
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Safety warning */}
+              <div className="flex items-start gap-2 p-3 bg-warning/10 border border-warning/20 rounded-lg text-sm">
+                <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                <span className="text-warning/90">Stops can only move <strong>UP</strong> (monotonic enforcement). The new stop must be above {formatPrice(Math.max(stopModal.currentStop, t212CurrentStop ?? 0), stopModal.priceCurrency)}.</span>
+              </div>
+
+              {/* Input */}
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">New Stop Price</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={stopInput}
+                  onChange={(e) => { setStopInput(e.target.value); setStopError(null); }}
+                  className="w-full px-3 py-2 bg-navy-900 border border-border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  autoFocus
+                />
+              </div>
+
+              {stopError && (
+                <p className="text-sm text-loss flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> {stopError}
+                </p>
+              )}
+
+              {/* T212 Push toggle */}
+              <div className="flex items-center gap-2 p-3 bg-navy-900 border border-border/50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="pushToT212"
+                  checked={pushToT212}
+                  onChange={(e) => setPushToT212(e.target.checked)}
+                  className="rounded border-border bg-navy-800"
+                />
+                <label htmlFor="pushToT212" className="text-sm cursor-pointer flex items-center gap-1.5">
+                  <Send className="w-3.5 h-3.5 text-primary-400" />
+                  Also set stop on Trading 212
+                </label>
+              </div>
+
+              {t212PushStatus === 'pushing' && (
+                <p className="text-xs text-primary-400 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Placing stop order on Trading 212…
+                </p>
+              )}
+              {t212PushStatus === 'success' && t212PushMessage && (
+                <p className="text-xs text-profit flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> {t212PushMessage}
+                </p>
+              )}
+              {t212PushStatus === 'error' && t212PushMessage && (
+                <p className="text-xs text-loss flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> {t212PushMessage}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-border">
+              <button
+                onClick={() => setStopModal(null)}
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={stopSubmitting}
+                onClick={async () => {
+                  const newStop = parseFloat(stopInput);
+                  if (isNaN(newStop) || newStop <= 0) {
+                    setStopError('Enter a valid price');
+                    return;
+                  }
+                  // Monotonic rule: use the HIGHER of DB stop and T212 stop as the floor
+                  const effectiveFloor = Math.max(stopModal.currentStop, t212CurrentStop ?? 0);
+                  if (newStop <= effectiveFloor) {
+                    setStopError(`New stop must be above ${formatPrice(effectiveFloor, stopModal.priceCurrency)} (${t212CurrentStop && t212CurrentStop > stopModal.currentStop ? 'T212 stop' : 'current stop'})`);
+                    return;
+                  }
+                  if (newStop >= stopModal.currentPrice) {
+                    setStopError('Stop cannot be at or above current price');
+                    return;
+                  }
+                  if (!onUpdateStop) {
+                    setStopError('Stop update not available');
+                    return;
+                  }
+                  setStopSubmitting(true);
+                  setT212PushStatus('idle');
+                  setT212PushMessage(null);
+
+                  const reason = `Manual stop update: ${formatPrice(stopModal.currentStop, stopModal.priceCurrency)} → ${formatPrice(newStop, stopModal.priceCurrency)}`;
+                  const ok = await onUpdateStop(stopModal.id, newStop, reason);
+
+                  if (!ok) {
+                    setStopSubmitting(false);
+                    setStopError('Failed to update stop — check monotonic rule');
+                    return;
+                  }
+
+                  // Push to T212 if checkbox is checked
+                  if (pushToT212) {
+                    setT212PushStatus('pushing');
+                    try {
+                      const t212Res = await fetch('/api/stops/t212', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          positionId: stopModal.id,
+                          stopPrice: newStop,
+                        }),
+                      });
+                      if (t212Res.ok) {
+                        const t212Data = await t212Res.json();
+                        setT212PushStatus('success');
+                        setT212PushMessage(t212Data.message || 'Stop placed on Trading 212');
+                      } else {
+                        const t212Err = await t212Res.json().catch(() => ({ error: 'Unknown error' }));
+                        setT212PushStatus('error');
+                        setT212PushMessage(t212Err.error || 'Failed to place stop on T212');
+                      }
+                    } catch {
+                      setT212PushStatus('error');
+                      setT212PushMessage('Network error pushing to Trading 212');
+                    }
+                  }
+
+                  setStopSubmitting(false);
+
+                  // Auto-close after short delay if T212 push succeeded or wasn't requested
+                  if (!pushToT212) {
+                    setStopModal(null);
+                  } else {
+                    setTimeout(() => {
+                      setStopModal(null);
+                      setT212PushStatus('idle');
+                      setT212PushMessage(null);
+                    }, 2000);
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-primary/20 text-primary-400 rounded-lg hover:bg-primary/30 transition-colors disabled:opacity-50"
+              >
+                {stopSubmitting ? 'Saving…' : pushToT212 ? 'Update & Push to T212' : 'Confirm Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Exit Position Modal ── */}
+      {exitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-navy-800 border border-border rounded-xl shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div className="flex items-center gap-2">
+                <LogOut className="w-5 h-5 text-loss" />
+                <h3 className="font-semibold">Exit Position — {exitModal.ticker}</h3>
+              </div>
+              <button onClick={() => setExitModal(null)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              {/* Position summary */}
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">Entry</span>
+                  <p className="font-mono font-medium">{formatPrice(exitModal.entryPrice, exitModal.priceCurrency)}</p>
+                </div>
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">Shares</span>
+                  <p className="font-mono font-medium">{exitModal.shares}</p>
+                </div>
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">Current Price</span>
+                  <p className="font-mono font-medium">{formatPrice(exitModal.currentPrice, exitModal.priceCurrency)}</p>
+                </div>
+                <div className="bg-navy-900 rounded-lg p-2.5">
+                  <span className="text-muted-foreground text-xs">P&L</span>
+                  <p className={cn('font-mono font-medium', exitModal.gainPercent >= 0 ? 'text-profit' : 'text-loss')}>
+                    {formatPercent(exitModal.gainPercent)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Exit price input */}
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">Exit Price</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={exitInput}
+                  onChange={(e) => { setExitInput(e.target.value); setExitError(null); }}
+                  className="w-full px-3 py-2 bg-navy-900 border border-border rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-loss/50"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Pre-filled with current market price. Adjust if you sold at a different price.
+                </p>
+              </div>
+
+              {/* Preview realised P&L */}
+              {!isNaN(parseFloat(exitInput)) && parseFloat(exitInput) > 0 && (
+                <div className="bg-navy-900 rounded-lg p-3">
+                  <span className="text-muted-foreground text-xs">Estimated Realised P&L ({exitModal.priceCurrency || 'GBP'})</span>
+                  <p className={cn(
+                    'font-mono font-semibold text-lg',
+                    (parseFloat(exitInput) - exitModal.entryPrice) >= 0 ? 'text-profit' : 'text-loss'
+                  )}>
+                    {formatPrice((parseFloat(exitInput) - exitModal.entryPrice) * exitModal.shares, exitModal.priceCurrency)}
+                  </p>
+                </div>
+              )}
+
+              {exitError && (
+                <p className="text-sm text-loss flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> {exitError}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-border">
+              <button
+                onClick={() => setExitModal(null)}
+                className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={exitSubmitting}
+                onClick={async () => {
+                  const price = parseFloat(exitInput);
+                  if (isNaN(price) || price <= 0) {
+                    setExitError('Enter a valid exit price');
+                    return;
+                  }
+                  if (!onExitPosition) {
+                    setExitError('Exit not available');
+                    return;
+                  }
+                  setExitSubmitting(true);
+                  const ok = await onExitPosition(exitModal.id, price);
+                  setExitSubmitting(false);
+                  if (ok) {
+                    setExitModal(null);
+                  } else {
+                    setExitError('Failed to close position');
+                  }
+                }}
+                className="px-4 py-2 text-sm bg-loss/20 text-loss rounded-lg hover:bg-loss/30 transition-colors disabled:opacity-50"
+              >
+                {exitSubmitting ? 'Closing…' : 'Confirm Exit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,59 @@
+# Backtest Universe - Diversified Sample
+# Mix of sectors for realistic backtest
+# Updated: Jan 2026
+
+# MEGA CAP TECH
+AAPL
+MSFT
+AMZN
+META
+GOOGL
+NVDA
+
+# SEMICONDUCTORS
+AMD
+AVGO
+ASML
+TSM
+
+# FINANCIALS
+JPM
+GS
+BAC
+V
+MA
+
+# HEALTHCARE
+LLY
+UNH
+JNJ
+ABBV
+
+# INDUSTRIALS
+CAT
+HON
+UNP
+GE
+
+# CONSUMER
+COST
+WMT
+MCD
+NKE
+
+# ENERGY
+XOM
+CVX
+
+# UK/EUROPE
+SHEL
+AZN
+SAP
+
+# DEFENSE
+RTX
+LMT
+
+# ETFs (benchmarks)
+SPY
+QQQ

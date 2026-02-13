@@ -1,0 +1,33 @@
+VUSA
+VUAG.L
+EQQQ.L
+CNDX
+IWMO
+WSML
+VAGS.L
+INRG
+EIMI
+VWO
+AIAI
+RBOT
+BTEE
+SGLN
+SSLN
+REMX
+PICK
+CMOD.L
+COMF.L
+
+SQQQ
+SH
+SPXS
+VXX
+# ========== BOND ETFs ==========
+TLT
+IGLT.L
+
+# ========== SECTOR ETFs ==========
+XLE
+XLF
+XLV
+XLK
