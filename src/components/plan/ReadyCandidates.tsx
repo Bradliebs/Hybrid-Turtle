@@ -66,7 +66,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
           Ready Candidates
         </h3>
         <span className="text-xs text-muted-foreground">
-          {ready.length} ready{bothCount > 0 ? ` (${bothCount} confirmed)` : ''}{triggerMetCount > 0 ? ` · ${triggerMetCount} triggered` : ''} · {watch.length} watchlist
+          {ready.length} ready{bothCount > 0 ? ` (${bothCount} confirmed)` : ''}{triggerMetCount > 0 ? ` · ${triggerMetCount} triggered` : ''}
         </span>
       </div>
 
@@ -230,49 +230,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
         </div>
       )}
 
-      {watch.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-navy-600">
-          <h4 className="text-xs font-semibold text-muted-foreground mb-2">WATCHLIST</h4>
-          <div className="space-y-2">
-            {watch.map((c) => {
-              const badge = matchTypeBadge[c.matchType || 'SCAN_ONLY'] || matchTypeBadge.SCAN_ONLY;
-              const BadgeIcon = badge.icon;
-              return (
-              <div key={c.ticker} className={cn(
-                "flex items-center justify-between p-2 rounded",
-                heldTickers.has(c.ticker) ? 'bg-primary-500/10 ring-1 ring-primary-400/20' : 'bg-navy-800/50'
-              )}>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-warning font-semibold">{c.ticker}</span>
-                  <StatusBadge status={c.status} />
-                  {heldTickers.has(c.ticker) && (
-                    <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded text-[10px] font-medium text-primary-400 bg-primary-500/15 border border-primary-500/30">
-                      <Briefcase className="w-2.5 h-2.5" />
-                      HELD
-                    </span>
-                  )}
-                    <span className={cn("inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border", badge.color)}>
-                      <BadgeIcon className="w-2.5 h-2.5" />
-                      {badge.label}
-                    </span>
-                    {c.dualNCS != null && (
-                      <span className={cn(
-                        "text-[10px] font-mono",
-                        c.dualNCS >= 70 ? 'text-emerald-400' : c.dualNCS >= 40 ? 'text-amber-400' : 'text-red-400'
-                      )}>
-                        NCS {c.dualNCS.toFixed(0)}
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {formatPercent(c.distancePercent)} away
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
