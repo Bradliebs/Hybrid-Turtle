@@ -2,32 +2,37 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Trading212Client } from '@/lib/trading212';
 import { ensureDefaultUser } from '@/lib/default-user';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const connectSchema = z.object({
+  apiKey: z.string().trim().min(1),
+  apiSecret: z.string().trim().min(1),
+  environment: z.enum(['demo', 'live']).optional(),
+  userId: z.string().trim().min(1).optional(),
+});
 
 // POST /api/trading212/connect — Test connection and save credentials
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { apiKey, apiSecret, environment = 'demo' } = body;
-    let { userId } = body;
+    const parsed = await parseJsonBody(request, connectSchema);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const { apiKey, apiSecret, environment = 'demo' } = parsed.data;
+    let { userId } = parsed.data;
 
     // Ensure user exists
     if (!userId) {
       userId = await ensureDefaultUser();
     }
-
-    if (!apiKey || !apiSecret) {
-      return NextResponse.json({ error: 'API Key and API Secret are required' }, { status: 400 });
-    }
-
     // Test the connection
     const client = new Trading212Client(apiKey, apiSecret, environment);
     const result = await client.testConnection();
 
     if (!result.ok) {
-      return NextResponse.json(
-        { error: result.error || 'Failed to connect to Trading 212' },
-        { status: 400 }
-      );
+      return apiError(400, 'T212_CONNECT_FAILED', result.error || 'Failed to connect to Trading 212');
     }
 
     // Save credentials to user profile (ensure user exists first)
@@ -52,10 +57,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Trading 212 connect error:', error);
-    return NextResponse.json(
-      { error: (error as Error).message || 'Failed to connect to Trading 212' },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_CONNECT_FAILED', (error as Error).message || 'Failed to connect to Trading 212', undefined, true);
   }
 }
 
@@ -84,9 +86,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Trading 212 disconnect error:', error);
-    return NextResponse.json(
-      { error: 'Failed to disconnect Trading 212' },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_DISCONNECT_FAILED', 'Failed to disconnect Trading 212', (error as Error).message, true);
   }
 }

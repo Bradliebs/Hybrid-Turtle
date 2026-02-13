@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import { calculateStopRecommendation } from '@/lib/stop-manager';
 import type { ProtectionLevel } from '@/types';
+import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
 
     if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+      return apiError(400, 'INVALID_REQUEST', 'userId is required');
     }
 
     const positions = await prisma.position.findMany({
@@ -124,9 +125,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('[Hedge API]', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch hedge positions' },
-      { status: 500 }
-    );
+    return apiError(500, 'HEDGE_FETCH_FAILED', 'Failed to fetch hedge positions', (error as Error).message, true);
   }
 }

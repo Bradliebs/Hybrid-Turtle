@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import { calculateGainDollars, calculateGainPercent } from '@/lib/position-sizer';
+import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -177,9 +178,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Portfolio summary error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch portfolio summary' },
-      { status: 500 }
-    );
+    return apiError(500, 'PORTFOLIO_SUMMARY_FAILED', 'Failed to fetch portfolio summary', (error as Error).message, true);
   }
 }

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import type { AllModulesResult } from '@/types';
+import { apiRequest } from '@/lib/api-client';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -31,9 +32,7 @@ export function useModulesData(): {
 
     (async () => {
       try {
-        const res = await fetch(`/api/modules?userId=${DEFAULT_USER_ID}`);
-        if (!res.ok) throw new Error(`Modules API ${res.status}`);
-        const data: AllModulesResult = await res.json();
+        const data = await apiRequest<AllModulesResult>(`/api/modules?userId=${DEFAULT_USER_ID}`);
         if (!cancelled) {
           setModulesData(data);
         }

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { formatCurrency, formatPrice, formatPercent, formatR, formatDate } from '@/lib/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
 import { canPyramid, PYRAMID_CONFIG } from '@/lib/risk-gates';
+import { apiRequest } from '@/lib/api-client';
 import { Bell, BellOff, Lock, Plus, ArrowUpDown, ChevronDown, X, AlertTriangle, TrendingUp, LogOut, Send, Loader2, CheckCircle, XCircle, RefreshCw, Layers } from 'lucide-react';
 
 interface Position {
@@ -116,16 +117,13 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
             setBulkSyncing(true);
             setBulkSyncResult(null);
             try {
-              const res = await fetch('/api/stops/t212', {
+              const data = await apiRequest<{ placed: number; failed: number; total: number }>('/api/stops/t212', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
               });
-              if (res.ok) {
-                const data = await res.json();
-                setBulkSyncResult({ placed: data.placed, failed: data.failed, total: data.total });
-                setTimeout(() => setBulkSyncResult(null), 5000);
-              }
+              setBulkSyncResult({ placed: data.placed, failed: data.failed, total: data.total });
+              setTimeout(() => setBulkSyncResult(null), 5000);
             } catch { /* ignore */ }
             setBulkSyncing(false);
           }}
@@ -297,20 +295,24 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                             // Fetch T212 stop status in background
                             setT212Loading(true);
                             try {
-                              const res = await fetch('/api/stops/t212');
-                              if (res.ok) {
-                                const data = await res.json();
-                                const match = data.positions?.find((p: any) => p.positionId === pos.id);
-                                if (match?.t212StopOrder?.stopPrice) {
-                                  setT212CurrentStop(match.t212StopOrder.stopPrice);
-                                  // If T212 has a higher stop, update the pre-fill and modal display
-                                  if (match.t212StopOrder.stopPrice > pos.currentStop) {
-                                    setStopInput(match.t212StopOrder.stopPrice.toFixed(2));
-                                  }
-                                  // Sync: if the GET route corrected the DB, update modal
-                                  if (match.dbSyncedUp && match.currentStop > pos.currentStop) {
-                                    pos.currentStop = match.currentStop;
-                                  }
+                              const data = await apiRequest<{
+                                positions?: Array<{
+                                  positionId: string;
+                                  currentStop: number;
+                                  dbSyncedUp: boolean;
+                                  t212StopOrder?: { stopPrice?: number };
+                                }>;
+                              }>('/api/stops/t212');
+                              const match = data.positions?.find((p) => p.positionId === pos.id);
+                              if (match?.t212StopOrder?.stopPrice) {
+                                setT212CurrentStop(match.t212StopOrder.stopPrice);
+                                // If T212 has a higher stop, update the pre-fill and modal display
+                                if (match.t212StopOrder.stopPrice > pos.currentStop) {
+                                  setStopInput(match.t212StopOrder.stopPrice.toFixed(2));
+                                }
+                                // Sync: if the GET route corrected the DB, update modal
+                                if (match.dbSyncedUp && match.currentStop > pos.currentStop) {
+                                  pos.currentStop = match.currentStop;
                                 }
                               }
                             } catch { /* ignore */ }
@@ -720,7 +722,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   if (pushToT212) {
                     setT212PushStatus('pushing');
                     try {
-                      const t212Res = await fetch('/api/stops/t212', {
+                      const t212Data = await apiRequest<{ message?: string }>('/api/stops/t212', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -728,15 +730,8 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                           stopPrice: newStop,
                         }),
                       });
-                      if (t212Res.ok) {
-                        const t212Data = await t212Res.json();
-                        setT212PushStatus('success');
-                        setT212PushMessage(t212Data.message || 'Stop placed on Trading 212');
-                      } else {
-                        const t212Err = await t212Res.json().catch(() => ({ error: 'Unknown error' }));
-                        setT212PushStatus('error');
-                        setT212PushMessage(t212Err.error || 'Failed to place stop on T212');
-                      }
+                      setT212PushStatus('success');
+                      setT212PushMessage(t212Data.message || 'Stop placed on Trading 212');
                     } catch {
                       setT212PushStatus('error');
                       setT212PushMessage('Network error pushing to Trading 212');

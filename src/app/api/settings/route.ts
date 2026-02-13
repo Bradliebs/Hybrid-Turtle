@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
+import { apiError } from '@/lib/api-response';
 
 // GET /api/settings?userId=default-user
 export async function GET(request: NextRequest) {
@@ -20,13 +21,13 @@ export async function GET(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
     return NextResponse.json(user);
   } catch (error) {
     console.error('GET /api/settings error:', error);
-    return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
+    return apiError(500, 'SETTINGS_FETCH_FAILED', 'Failed to fetch settings', (error as Error).message, true);
   }
 }
 
@@ -38,7 +39,7 @@ export async function PUT(request: NextRequest) {
 
     const validProfiles = ['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT'];
     if (riskProfile && !validProfiles.includes(riskProfile)) {
-      return NextResponse.json({ error: 'Invalid risk profile' }, { status: 400 });
+      return apiError(400, 'INVALID_RISK_PROFILE', 'Invalid risk profile');
     }
 
     const data: Record<string, unknown> = {};
@@ -59,6 +60,6 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(user);
   } catch (error) {
     console.error('PUT /api/settings error:', error);
-    return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 });
+    return apiError(500, 'SETTINGS_SAVE_FAILED', 'Failed to save settings', (error as Error).message, true);
   }
 }

@@ -3,6 +3,8 @@
 import { useState, useCallback } from 'react';
 import { useStore } from '@/store/useStore';
 import { cn } from '@/lib/utils';
+import { apiRequest } from '@/lib/api-client';
+import type { FearGreedData, MarketRegime } from '@/types';
 import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 
 export default function MarketIndicesBar() {
@@ -12,21 +14,22 @@ export default function MarketIndicesBar() {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [indicesRes, fgRes, regimeRes] = await Promise.all([
-        fetch('/api/market-data?action=indices'),
-        fetch('/api/market-data?action=fear-greed'),
-        fetch('/api/market-data?action=regime'),
+      const [indicesResult, fgResult, regimeResult] = await Promise.allSettled([
+        apiRequest<{ indices?: typeof marketIndices }>('/api/market-data?action=indices'),
+        apiRequest<FearGreedData>('/api/market-data?action=fear-greed'),
+        apiRequest<{ regime?: MarketRegime }>('/api/market-data?action=regime'),
       ]);
-      if (indicesRes.ok) {
-        const d = await indicesRes.json();
+
+      if (indicesResult.status === 'fulfilled') {
+        const d = indicesResult.value;
         if (d.indices) setMarketIndices(d.indices);
       }
-      if (fgRes.ok) {
-        const d = await fgRes.json();
+      if (fgResult.status === 'fulfilled') {
+        const d = fgResult.value;
         if (d.value !== undefined) setFearGreed(d);
       }
-      if (regimeRes.ok) {
-        const d = await regimeRes.json();
+      if (regimeResult.status === 'fulfilled') {
+        const d = regimeResult.value;
         if (d.regime) setMarketRegime(d.regime);
       }
     } catch {

@@ -2,17 +2,21 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/store/useStore';
+import { apiRequest } from '@/lib/api-client';
 
 interface Position {
   id: string;
   ticker: string;
+  name: string;
   sleeve: string;
   entryPrice: number;
   currentPrice: number;
   shares: number;
+  initialRisk: number;
+  currentStop: number;
   stopLoss: number;
   initialStop: number;
-  status: string;
+  status: 'OPEN' | 'CLOSED';
   rMultiple: number;
   protectionLevel: string;
   gainPercent: number;
@@ -36,19 +40,17 @@ export function usePositions(statusFilter?: string) {
         ? `/api/positions?status=${statusFilter}`
         : '/api/positions';
 
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Failed to fetch positions');
-
-      const data = await res.json();
-      setPositions(data.positions || []);
+      const data = await apiRequest<Position[] | { positions?: Position[] }>(url);
+      const list = Array.isArray(data) ? data : (data.positions || []);
+      setPositions(list);
 
       // Update store with open positions
-      const openPositions = (data.positions || []).filter(
+      const openPositions = list.filter(
         (p: Position) => p.status === 'OPEN'
       );
       setStorePositions(openPositions);
 
-      return data.positions;
+      return list;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
@@ -60,16 +62,11 @@ export function usePositions(statusFilter?: string) {
 
   const updateStop = useCallback(async (positionId: string, newStop: number, reason: string = 'Manual stop update') => {
     try {
-      const res = await fetch('/api/stops', {
+      await apiRequest('/api/stops', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ positionId, newStop, reason }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to update stop');
-      }
 
       // Refresh positions
       await fetchPositions();
@@ -83,7 +80,7 @@ export function usePositions(statusFilter?: string) {
 
   const closePosition = useCallback(async (positionId: string, exitPrice: number) => {
     try {
-      const res = await fetch('/api/positions', {
+      await apiRequest('/api/positions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -91,11 +88,6 @@ export function usePositions(statusFilter?: string) {
           exitPrice,
         }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to close position');
-      }
 
       await fetchPositions();
       return true;

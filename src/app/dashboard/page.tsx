@@ -17,6 +17,8 @@ import HedgeCard from '@/components/dashboard/HedgeCard';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { useStore } from '@/store/useStore';
 import { formatDate } from '@/lib/utils';
+import { apiRequest } from '@/lib/api-client';
+import type { FearGreedData, MarketRegime } from '@/types';
 import { Bell, Play, FileText } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
@@ -25,6 +27,14 @@ interface PublicationItem {
   date: string;
   title: string;
   type: 'summary' | 'scan' | 'alert' | 'trade';
+}
+
+interface MarketIndex {
+  ticker: string;
+  name: string;
+  value: number;
+  change: number;
+  changePercent: number;
 }
 
 export default function DashboardPage() {
@@ -41,23 +51,22 @@ export default function DashboardPage() {
 
   const fetchLiveMarketData = useCallback(async () => {
     try {
-      // Fetch indices, fear & greed, and regime in parallel
-      const [indicesRes, fgRes, regimeRes] = await Promise.all([
-        fetch('/api/market-data?action=indices'),
-        fetch('/api/market-data?action=fear-greed'),
-        fetch('/api/market-data?action=regime'),
+      const [indicesResult, fgResult, regimeResult] = await Promise.allSettled([
+        apiRequest<{ indices?: MarketIndex[] }>('/api/market-data?action=indices'),
+        apiRequest<FearGreedData>('/api/market-data?action=fear-greed'),
+        apiRequest<{ regime?: MarketRegime }>('/api/market-data?action=regime'),
       ]);
 
-      if (indicesRes.ok) {
-        const indicesData = await indicesRes.json();
+      if (indicesResult.status === 'fulfilled') {
+        const indicesData = indicesResult.value;
         if (indicesData.indices) setMarketIndices(indicesData.indices);
       }
-      if (fgRes.ok) {
-        const fgData = await fgRes.json();
+      if (fgResult.status === 'fulfilled') {
+        const fgData = fgResult.value;
         if (fgData.value !== undefined) setFearGreed(fgData);
       }
-      if (regimeRes.ok) {
-        const regimeData = await regimeRes.json();
+      if (regimeResult.status === 'fulfilled') {
+        const regimeData = regimeResult.value;
         if (regimeData.regime) setMarketRegime(regimeData.regime);
       }
     } catch (err) {
@@ -74,9 +83,7 @@ export default function DashboardPage() {
 
   const fetchPublications = useCallback(async () => {
     try {
-      const res = await fetch(`/api/publications?userId=${DEFAULT_USER_ID}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await apiRequest<{ publications?: PublicationItem[] }>(`/api/publications?userId=${DEFAULT_USER_ID}`);
       const items = (data.publications || []).map((item: PublicationItem) => ({
         ...item,
         date: formatDate(item.date),

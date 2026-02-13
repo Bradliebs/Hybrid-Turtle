@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const telegramTestSchema = z.object({
+  botToken: z.string().trim().min(1),
+  chatId: z.string().trim().min(1),
+});
 
 /**
  * POST /api/settings/telegram-test
@@ -6,14 +13,11 @@ import { NextRequest, NextResponse } from 'next/server';
  */
 export async function POST(request: NextRequest) {
   try {
-    const { botToken, chatId } = await request.json();
-
-    if (!botToken || !chatId) {
-      return NextResponse.json(
-        { error: 'Bot token and chat ID are required' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, telegramTestSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { botToken, chatId } = parsed.data;
 
     // First verify the bot token is valid
     const meResponse = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);

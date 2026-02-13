@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runHealthCheck } from '@/lib/health-check';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const healthCheckBodySchema = z.object({
+  userId: z.string().trim().min(1),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,14 +32,11 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await request.json();
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, healthCheckBodySchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { userId } = parsed.data;
 
     const report = await runHealthCheck(userId);
 

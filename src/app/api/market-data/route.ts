@@ -8,6 +8,7 @@ import {
   getBatchPrices,
   getDailyPrices,
 } from '@/lib/market-data';
+import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,18 +28,18 @@ export async function GET(request: NextRequest) {
     switch (action) {
       case 'quote': {
         if (!ticker) {
-          return NextResponse.json({ error: 'ticker parameter required' }, { status: 400 });
+          return apiError(400, 'INVALID_REQUEST', 'ticker parameter required');
         }
         const quote = await getStockQuote(ticker);
         if (!quote) {
-          return NextResponse.json({ error: `No data for ${ticker}` }, { status: 404 });
+          return apiError(404, 'QUOTE_NOT_FOUND', `No data for ${ticker}`);
         }
         return NextResponse.json(quote);
       }
 
       case 'quotes': {
         if (!tickersParam) {
-          return NextResponse.json({ error: 'tickers parameter required (comma-separated)' }, { status: 400 });
+          return apiError(400, 'INVALID_REQUEST', 'tickers parameter required (comma-separated)');
         }
         const tickers = tickersParam.split(',').map((t) => t.trim()).filter(Boolean);
         const quotes = await getBatchQuotes(tickers);
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
 
       case 'prices': {
         if (!tickersParam) {
-          return NextResponse.json({ error: 'tickers parameter required' }, { status: 400 });
+          return apiError(400, 'INVALID_REQUEST', 'tickers parameter required');
         }
         const tickers = tickersParam.split(',').map((t) => t.trim()).filter(Boolean);
         const prices = await getBatchPrices(tickers);
@@ -74,20 +75,17 @@ export async function GET(request: NextRequest) {
 
       case 'historical': {
         if (!ticker) {
-          return NextResponse.json({ error: 'ticker parameter required' }, { status: 400 });
+          return apiError(400, 'INVALID_REQUEST', 'ticker parameter required');
         }
         const bars = await getDailyPrices(ticker, 'full');
         return NextResponse.json({ ticker, bars, count: bars.length });
       }
 
       default:
-        return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
+        return apiError(400, 'UNKNOWN_ACTION', `Unknown action: ${action}`);
     }
   } catch (error) {
     console.error('Market data API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch market data', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'MARKET_DATA_FAILED', 'Failed to fetch market data', (error as Error).message, true);
   }
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/lib/utils';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 import {
   Shield,
   TrendingUp,
@@ -54,12 +55,12 @@ export default function HedgeCard() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/positions/hedge?userId=default');
-      if (!res.ok) throw new Error('Failed to fetch');
-      const json = await res.json();
+      const json = await apiRequest<HedgeData>('/api/positions/hedge?userId=default');
       setData(json);
-    } catch (err) {
-      setError('Unable to load hedge positions');
+    } catch (error) {
+      const message =
+        error instanceof ApiClientError ? error.message : 'Unable to load hedge positions';
+      setError(message);
     } finally {
       setLoading(false);
     }

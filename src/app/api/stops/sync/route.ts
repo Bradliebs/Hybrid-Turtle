@@ -6,6 +6,7 @@ import {
   updateStopLoss,
   StopLossError,
 } from '@/lib/stop-manager';
+import { apiError } from '@/lib/api-response';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -39,10 +40,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Trailing stop sync error:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate trailing stop recommendations' },
-      { status: 500 }
-    );
+    return apiError(500, 'TRAILING_STOPS_GENERATE_FAILED', 'Failed to generate trailing stop recommendations', (error as Error).message, true);
   }
 }
 
@@ -78,10 +76,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!csvContent) {
-      return NextResponse.json(
-        { error: 'positions_state.csv not found in Planning folder' },
-        { status: 404 }
-      );
+      return apiError(404, 'CSV_NOT_FOUND', 'positions_state.csv not found in Planning folder');
     }
 
     // Parse CSV
@@ -92,10 +87,7 @@ export async function POST(request: NextRequest) {
     const entryPriceIdx = headers.indexOf('entry_price');
 
     if (tickerIdx < 0 || activeStopIdx < 0) {
-      return NextResponse.json(
-        { error: 'CSV missing required columns: ticker, active_stop' },
-        { status: 400 }
-      );
+      return apiError(400, 'INVALID_CSV', 'CSV missing required columns: ticker, active_stop');
     }
 
     const csvStops: { ticker: string; activeStop: number; entryPrice: number }[] = [];
@@ -192,10 +184,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('CSV stop import error:', error);
-    return NextResponse.json(
-      { error: 'Failed to import stops from CSV', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'CSV_STOP_IMPORT_FAILED', 'Failed to import stops from CSV', (error as Error).message, true);
   }
 }
 
@@ -254,9 +243,6 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error) {
     console.error('Apply trailing stops error:', error);
-    return NextResponse.json(
-      { error: 'Failed to apply trailing stops' },
-      { status: 500 }
-    );
+    return apiError(500, 'TRAILING_STOPS_APPLY_FAILED', 'Failed to apply trailing stops', (error as Error).message, true);
   }
 }

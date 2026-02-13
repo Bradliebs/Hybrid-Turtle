@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 import { useStore } from '@/store/useStore';
+import { apiRequest } from '@/lib/api-client';
+import type { HealthStatus, MarketRegime, RiskProfileType } from '@/types';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -11,9 +13,7 @@ export default function LiveDataBootstrap() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const res = await fetch(`/api/settings?userId=${DEFAULT_USER_ID}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<{ riskProfile?: RiskProfileType; equity?: number }>(`/api/settings?userId=${DEFAULT_USER_ID}`);
         if (data?.riskProfile) setRiskProfile(data.riskProfile);
         if (data?.equity) setEquity(data.equity);
       } catch {
@@ -23,9 +23,7 @@ export default function LiveDataBootstrap() {
 
     const fetchHealth = async () => {
       try {
-        const res = await fetch(`/api/health-check?userId=${DEFAULT_USER_ID}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<{ overall?: HealthStatus }>(`/api/health-check?userId=${DEFAULT_USER_ID}`);
         if (data?.overall) {
           setHealthStatus(data.overall);
         }
@@ -36,9 +34,7 @@ export default function LiveDataBootstrap() {
 
     const recordHeartbeat = async () => {
       try {
-        const res = await fetch('/api/heartbeat', { method: 'POST' });
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<{ lastHeartbeat?: string }>('/api/heartbeat', { method: 'POST' });
         if (data?.lastHeartbeat) {
           setHeartbeat(new Date(data.lastHeartbeat));
         }
@@ -49,9 +45,7 @@ export default function LiveDataBootstrap() {
 
     const fetchHeartbeat = async () => {
       try {
-        const res = await fetch('/api/heartbeat');
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<{ lastHeartbeat?: string }>('/api/heartbeat');
         if (data?.lastHeartbeat) {
           setHeartbeat(new Date(data.lastHeartbeat));
         }
@@ -62,9 +56,7 @@ export default function LiveDataBootstrap() {
 
     const fetchRegime = async () => {
       try {
-        const res = await fetch('/api/market-data?action=regime');
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<{ regime?: MarketRegime }>('/api/market-data?action=regime');
         if (data?.regime) {
           setMarketRegime(data.regime);
         }

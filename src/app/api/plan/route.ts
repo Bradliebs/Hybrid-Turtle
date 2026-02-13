@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import type { WeeklyPhase } from '@/types';
 import { getCurrentWeeklyPhase } from '@/types';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const createPlanSchema = z.object({
+  userId: z.string().trim().min(1),
+  candidates: z.array(z.unknown()).optional(),
+  notes: z.string().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
     const userId = request.nextUrl.searchParams.get('userId');
 
     if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+      return apiError(400, 'INVALID_REQUEST', 'userId is required');
     }
 
     const currentPhase = getCurrentWeeklyPhase();
@@ -33,20 +42,18 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Plan error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch plan' },
-      { status: 500 }
-    );
+    return apiError(500, 'PLAN_FETCH_FAILED', 'Failed to fetch plan', (error as Error).message, true);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, candidates, notes } = await request.json();
-
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+    const parsed = await parseJsonBody(request, createPlanSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { userId, candidates, notes } = parsed.data;
+    const candidatesJson = JSON.stringify(candidates ?? []);
 
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
@@ -57,7 +64,7 @@ export async function POST(request: NextRequest) {
         userId,
         weekOf: weekStart,
         phase: getCurrentWeeklyPhase() as WeeklyPhase,
-        candidates: candidates || [],
+        candidates: candidatesJson,
         notes,
       },
     });
@@ -65,9 +72,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(plan, { status: 201 });
   } catch (error) {
     console.error('Create plan error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create plan', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'PLAN_CREATE_FAILED', 'Failed to create plan', (error as Error).message, true);
   }
 }

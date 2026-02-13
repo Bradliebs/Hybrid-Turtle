@@ -17,15 +17,37 @@ import { getRiskBudget } from '@/lib/risk-gates';
 import { canPyramid } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
 import type { RiskProfileType, Sleeve } from '@/types';
+import { z } from 'zod';
+import { apiError } from '@/lib/api-response';
+
+const nightlyBodySchema = z.object({
+  userId: z.string().trim().min(1).optional(),
+});
 
 export async function POST(request: NextRequest) {
   try {
     let userId = 'default-user';
-    try {
-      const body = await request.json();
-      if (body?.userId) userId = body.userId;
-    } catch {
-      // No body or invalid JSON — use default user
+    const contentLength = Number(request.headers.get('content-length') ?? '0');
+    const hasBody = Number.isFinite(contentLength) && contentLength > 0;
+
+    if (hasBody) {
+      let raw: unknown;
+      try {
+        raw = await request.json();
+      } catch {
+        return apiError(400, 'INVALID_JSON', 'Request body must be valid JSON');
+      }
+
+      const parsed = nightlyBodySchema.safeParse(raw);
+      if (!parsed.success) {
+        return apiError(
+          400,
+          'INVALID_REQUEST',
+          'Invalid nightly payload',
+          parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ')
+        );
+      }
+      if (parsed.data.userId) userId = parsed.data.userId;
     }
 
     // Step 1: Run health check

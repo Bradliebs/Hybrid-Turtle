@@ -10,6 +10,7 @@ import DualScoreTable from '@/components/scan/scores/DualScoreTable';
 import WhyCard from '@/components/scan/scores/WhyCard';
 import ScoringGuide from '@/components/scan/scores/ScoringGuide';
 import type { ScoredTicker } from '@/lib/dual-score';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 import { BarChart3, RefreshCw, ArrowLeft, CloudDownload, Database, FileText, GitMerge } from 'lucide-react';
 import Link from 'next/link';
 
@@ -51,15 +52,10 @@ export default function DualScoreDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/scan/scores');
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || body.error || `HTTP ${res.status}`);
-      }
-      const result: ScoresResponse = await res.json();
+      const result = await apiRequest<ScoresResponse>('/api/scan/scores');
       setData(result);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'Failed to load dual score data');
     } finally {
       setLoading(false);
     }
@@ -74,14 +70,13 @@ export default function DualScoreDashboard() {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const res = await fetch('/api/scan/snapshots/sync', { method: 'POST' });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.message || body.error);
-      setSyncMessage(body.message);
+      const body = await apiRequest<{ message?: string }>('/api/scan/snapshots/sync', { method: 'POST' });
+      setSyncMessage(body.message ?? 'Sync completed');
       // Reload scores from newly synced DB data
       await fetchScores();
-    } catch (err) {
-      setSyncMessage(`Sync failed: ${(err as Error).message}`);
+    } catch (error) {
+      const message = error instanceof ApiClientError ? error.message : 'Unknown sync error';
+      setSyncMessage(`Sync failed: ${message}`);
     } finally {
       setSyncing(false);
     }

@@ -160,9 +160,10 @@ export async function runFullScan(
       ? (currency === 'GBP' ? 1 : 0.01)
       : await getFXRate(currency, 'GBP');
 
+    const currentPriceNative = await getQuickPrice(p.stock.ticker) ?? p.entryPrice;
     const entryPriceGbp = p.entryPrice * fxToGbp;
     const currentStopGbp = p.currentStop * fxToGbp;
-    const currentPriceGbp = entryPriceGbp; // approximate for gate checks
+    const currentPriceGbp = currentPriceNative * fxToGbp;
 
     return {
       id: p.id,

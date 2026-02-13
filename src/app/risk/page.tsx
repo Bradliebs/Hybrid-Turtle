@@ -7,6 +7,7 @@ import StopLossPanel from '@/components/risk/StopLossPanel';
 import TrailingStopPanel from '@/components/risk/TrailingStopPanel';
 import ProtectionProgress from '@/components/risk/ProtectionProgress';
 import RiskBudgetMeter from '@/components/risk/RiskBudgetMeter';
+import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
 import { Shield, Lock, Loader2 } from 'lucide-react';
 
@@ -20,9 +21,7 @@ export default function RiskPage() {
   useEffect(() => {
     const fetchRisk = async () => {
       try {
-        const res = await fetch(`/api/risk?userId=${DEFAULT_USER_ID}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<any>(`/api/risk?userId=${DEFAULT_USER_ID}`);
         setRiskSummary(data);
         if (data?.riskProfile) {
           setRiskProfile(data.riskProfile);

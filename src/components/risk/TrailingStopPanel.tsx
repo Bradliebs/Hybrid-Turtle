@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { cn, formatCurrency, formatPrice } from '@/lib/utils';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 import {
   TrendingUp,
   RefreshCw,
@@ -45,9 +46,7 @@ export default function TrailingStopPanel() {
     setLoading(true);
     setLastAction(null);
     try {
-      const res = await fetch(`/api/stops/sync?userId=${DEFAULT_USER_ID}`);
-      if (!res.ok) throw new Error('Failed to fetch');
-      const data = await res.json();
+      const data = await apiRequest<{ recommendations: TrailingStopRec[] }>(`/api/stops/sync?userId=${DEFAULT_USER_ID}`);
       setRecommendations(data.recommendations || []);
       setSyncResults([]);
       setLastAction(
@@ -56,7 +55,9 @@ export default function TrailingStopPanel() {
           : `Found ${data.recommendations.length} trailing stop update(s)`
       );
     } catch (error) {
-      setLastAction('Failed to calculate trailing stops');
+      setLastAction(
+        error instanceof ApiClientError ? error.message : 'Failed to calculate trailing stops'
+      );
     } finally {
       setLoading(false);
     }
@@ -66,18 +67,16 @@ export default function TrailingStopPanel() {
     setApplying(true);
     setLastAction(null);
     try {
-      const res = await fetch(`/api/stops/sync?userId=${DEFAULT_USER_ID}`, {
+      const data = await apiRequest<{ results: SyncResult[]; applied: number; blocked: number }>(`/api/stops/sync?userId=${DEFAULT_USER_ID}`, {
         method: 'PUT',
       });
-      if (!res.ok) throw new Error('Failed to apply');
-      const data = await res.json();
       setSyncResults(data.results || []);
       setRecommendations([]);
       setLastAction(
         `Applied ${data.applied} trailing stop update(s)${data.blocked > 0 ? `, ${data.blocked} blocked` : ''}`
       );
     } catch (error) {
-      setLastAction('Failed to apply trailing stops');
+      setLastAction(error instanceof ApiClientError ? error.message : 'Failed to apply trailing stops');
     } finally {
       setApplying(false);
     }
@@ -87,18 +86,20 @@ export default function TrailingStopPanel() {
     setImporting(true);
     setLastAction(null);
     try {
-      const res = await fetch(`/api/stops/sync?userId=${DEFAULT_USER_ID}`, {
+      const data = await apiRequest<{ results?: SyncResult[]; matchedPositions: number }>(`/api/stops/sync?userId=${DEFAULT_USER_ID}`, {
         method: 'POST',
       });
-      if (!res.ok) throw new Error('Failed to import');
-      const data = await res.json();
       setSyncResults(data.results || []);
       setRecommendations([]);
       setLastAction(
         `Imported from CSV: ${data.results?.filter((r: SyncResult) => r.action === 'UPDATED').length || 0} updated, ${data.matchedPositions} matched`
       );
     } catch (error) {
-      setLastAction('Failed to import from CSV — ensure positions_state.csv exists in Planning/');
+      setLastAction(
+        error instanceof ApiClientError
+          ? error.message
+          : 'Failed to import from CSV — ensure positions_state.csv exists in Planning/'
+      );
     } finally {
       setImporting(false);
     }

@@ -21,6 +21,7 @@ import {
   Minus,
 } from 'lucide-react';
 import Link from 'next/link';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 
 // ── Types ──────────────────────────────────────────────────
 interface CrossRefTicker {
@@ -309,15 +310,10 @@ export default function CrossReferencePage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/scan/cross-ref');
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || body.error || `HTTP ${res.status}`);
-      }
-      const result: CrossRefData = await res.json();
+      const result = await apiRequest<CrossRefData>('/api/scan/cross-ref');
       setData(result);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'Failed to load cross-reference data');
     } finally {
       setLoading(false);
     }

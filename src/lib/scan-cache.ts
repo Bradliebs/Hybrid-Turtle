@@ -24,6 +24,8 @@ export interface CachedScanResult {
   equity: number;
 }
 
+export const SCAN_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 // Persist cache on globalThis so Next.js hot-reloads don't wipe it
 const globalForScan = globalThis as unknown as {
   __scanCache: CachedScanResult | null;
@@ -47,6 +49,17 @@ export function setScanCache(
 /** Retrieve the cached scan result (or null if none). */
 export function getScanCache(): CachedScanResult | null {
   return globalForScan.__scanCache;
+}
+
+/** Returns true when cache entry timestamp is within TTL window. */
+export function isScanCacheFresh(
+  cached: CachedScanResult,
+  now: number = Date.now(),
+  ttlMs: number = SCAN_CACHE_TTL_MS
+): boolean {
+  const cachedAt = new Date(cached.cachedAt).getTime();
+  if (!Number.isFinite(cachedAt)) return false;
+  return now - cachedAt <= ttlMs;
 }
 
 /** Clear the cache (e.g. before a new scan). */

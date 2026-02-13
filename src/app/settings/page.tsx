@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '@/components/shared/Navbar';
 import { useStore } from '@/store/useStore';
 import { RISK_PROFILES } from '@/types';
+import { apiRequest } from '@/lib/api-client';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
 import {
   Settings as SettingsIcon,
@@ -90,8 +91,7 @@ export default function SettingsPage() {
       const params = new URLSearchParams();
       if (stockSleeveFilter !== 'ALL') params.set('sleeve', stockSleeveFilter);
       if (stockSearch) params.set('search', stockSearch);
-      const res = await fetch(`/api/stocks?${params.toString()}`);
-      const data = await res.json();
+      const data = await apiRequest<any>(`/api/stocks?${params.toString()}`);
       setStocks(data.stocks || []);
       setStockSummary(data.summary || { total: 0, core: 0, etf: 0, highRisk: 0 });
     } catch {
@@ -108,7 +108,7 @@ export default function SettingsPage() {
   const handleAddStock = async () => {
     if (!addTicker.trim()) return;
     try {
-      await fetch('/api/stocks', {
+      await apiRequest('/api/stocks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker: addTicker.trim().toUpperCase(), sleeve: addSleeve }),
@@ -122,7 +122,7 @@ export default function SettingsPage() {
 
   const handleRemoveStock = async (ticker: string) => {
     try {
-      await fetch(`/api/stocks?ticker=${ticker}`, { method: 'DELETE' });
+      await apiRequest(`/api/stocks?ticker=${ticker}`, { method: 'DELETE' });
       fetchStocks();
     } catch {
       console.error('Failed to remove stock');
@@ -137,19 +137,14 @@ export default function SettingsPage() {
     setTelegramTesting(true);
     setTelegramTestResult(null);
     try {
-      const res = await fetch('/api/settings/telegram-test', {
+      const data = await apiRequest<any>('/api/settings/telegram-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ botToken: telegramToken, chatId: telegramChatId }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setTelegramTestResult({ success: true, message: `Test sent via ${data.botName}` });
-      } else {
-        setTelegramTestResult({ success: false, message: data.error || 'Test failed' });
-      }
-    } catch {
-      setTelegramTestResult({ success: false, message: 'Network error — is the server running?' });
+      setTelegramTestResult({ success: true, message: `Test sent via ${data.botName}` });
+    } catch (err) {
+      setTelegramTestResult({ success: false, message: err instanceof Error ? err.message : 'Network error — is the server running?' });
     } finally {
       setTelegramTesting(false);
       setTimeout(() => setTelegramTestResult(null), 5000);
@@ -163,7 +158,7 @@ export default function SettingsPage() {
     }
     // Persist to database
     try {
-      await fetch('/api/settings', {
+      await apiRequest('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -190,7 +185,7 @@ export default function SettingsPage() {
     setT212Success(null);
 
     try {
-      const res = await fetch('/api/trading212/connect', {
+      const data = await apiRequest<any>('/api/trading212/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -201,19 +196,12 @@ export default function SettingsPage() {
         }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setT212Error(data.error || 'Failed to connect');
-        return;
-      }
-
       setT212Connected(true);
       setT212AccountId(data.accountId?.toString());
       setT212Currency(data.currency);
       setT212Success(`Connected! Account: ${data.accountId} (${data.currency})`);
     } catch (err) {
-      setT212Error('Network error — could not reach Trading 212');
+      setT212Error(err instanceof Error ? err.message : 'Network error — could not reach Trading 212');
     } finally {
       setT212Connecting(false);
     }
@@ -221,7 +209,7 @@ export default function SettingsPage() {
 
   const handleT212Disconnect = async () => {
     try {
-      await fetch(`/api/trading212/connect?userId=${DEFAULT_USER_ID}`, { method: 'DELETE' });
+      await apiRequest(`/api/trading212/connect?userId=${DEFAULT_USER_ID}`, { method: 'DELETE' });
       setT212Connected(false);
       setT212AccountId(null);
       setT212Currency(null);
@@ -241,18 +229,11 @@ export default function SettingsPage() {
     setT212Success(null);
 
     try {
-      const res = await fetch('/api/trading212/sync', {
+      const data = await apiRequest<any>('/api/trading212/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: DEFAULT_USER_ID }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setT212Error(data.error || 'Sync failed');
-        return;
-      }
 
       setT212LastSync(data.syncedAt);
       setT212Success(
@@ -264,8 +245,8 @@ export default function SettingsPage() {
         setEquity(data.account.totalValue);
         setEquityInput(data.account.totalValue.toFixed(2));
       }
-    } catch {
-      setT212Error('Network error during sync');
+    } catch (err) {
+      setT212Error(err instanceof Error ? err.message : 'Network error during sync');
     } finally {
       setT212Syncing(false);
     }

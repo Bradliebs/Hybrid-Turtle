@@ -6,6 +6,7 @@ import KPIBanner from '@/components/portfolio/KPIBanner';
 import DistributionDonut from '@/components/portfolio/DistributionDonut';
 import PerformanceChart from '@/components/portfolio/PerformanceChart';
 import SleeveAllocation from '@/components/portfolio/SleeveAllocation';
+import { apiRequest } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/utils';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -23,9 +24,7 @@ export default function DistributionPage() {
   useEffect(() => {
     const fetchSummary = async () => {
       try {
-        const res = await fetch(`/api/portfolio/summary?userId=${DEFAULT_USER_ID}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<any>(`/api/portfolio/summary?userId=${DEFAULT_USER_ID}`);
         setSummary(data);
       } catch {
         // Silent fail

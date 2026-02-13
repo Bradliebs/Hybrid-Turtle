@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/store/useStore';
 import type { HealthStatus } from '@/types';
+import { apiRequest } from '@/lib/api-client';
 
 interface HealthCheckReport {
   overall: HealthStatus;
@@ -30,18 +31,15 @@ export function useHealthCheck(autoRun = false, userId = DEFAULT_USER_ID) {
     setError(null);
 
     try {
-      const res = await fetch('/api/health-check', {
+      const data = await apiRequest<HealthCheckReport>('/api/health-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
-      if (!res.ok) throw new Error('Health check failed');
-
-      const data = await res.json();
-      setReport(data as HealthCheckReport);
+      setReport(data);
       setHealthStatus(data.overall as HealthStatus);
 
-      return data as HealthCheckReport;
+      return data;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setError(msg);
@@ -53,11 +51,8 @@ export function useHealthCheck(autoRun = false, userId = DEFAULT_USER_ID) {
 
   const fetchLatestCheck = useCallback(async () => {
     try {
-      const res = await fetch(`/api/health-check?userId=${userId}`);
-      if (!res.ok) return;
-
-      const data = await res.json();
-      setReport(data as HealthCheckReport);
+      const data = await apiRequest<HealthCheckReport>(`/api/health-check?userId=${userId}`);
+      setReport(data);
       setHealthStatus(data.overall as HealthStatus);
     } catch (err) {
       // Silent fail for initial fetch

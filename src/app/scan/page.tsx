@@ -10,6 +10,7 @@ import TickerChart from '@/components/scan/TickerChart';
 import StatusBadge from '@/components/shared/StatusBadge';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { cn } from '@/lib/utils';
+import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
 import { Search, Play, Filter, Check, X, AlertTriangle, BarChart3, GitMerge } from 'lucide-react';
 import Link from 'next/link';
@@ -134,9 +135,7 @@ export default function ScanPage() {
   useEffect(() => {
     const fetchRisk = async () => {
       try {
-        const res = await fetch(`/api/risk?userId=${DEFAULT_USER_ID}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<any>(`/api/risk?userId=${DEFAULT_USER_ID}`);
         setRiskSummary(data);
       } catch {
         // Silent fail
@@ -145,9 +144,7 @@ export default function ScanPage() {
 
     const fetchCachedScan = async () => {
       try {
-        const res = await fetch('/api/scan');
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiRequest<any>('/api/scan');
         if (data.hasCache) {
           setScanResult(data);
           setCachedAt(data.cachedAt || null);
@@ -166,7 +163,7 @@ export default function ScanPage() {
   const runScan = async () => {
     setIsRunning(true);
     try {
-      const res = await fetch('/api/scan', {
+      const data = await apiRequest<any>('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -175,8 +172,6 @@ export default function ScanPage() {
           equity,
         }),
       });
-      if (!res.ok) return;
-      const data = await res.json();
       setScanResult(data);
       setCachedAt(data.cachedAt || new Date().toISOString());
       // Persist to sessionStorage for instant recovery on navigation

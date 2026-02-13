@@ -30,6 +30,7 @@ import {
   scanReEntrySignals,
 } from '@/lib/modules';
 import type { RiskProfileType, Sleeve, MarketRegime, ModuleStatus, AllModulesResult, FastFollowerSignal, ReEntrySignal, PyramidAlert } from '@/types';
+import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
       select: { equity: true, riskProfile: true },
     });
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
     const riskProfile = user.riskProfile as RiskProfileType;
@@ -467,9 +468,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Modules API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to run module checks', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'MODULES_RUN_FAILED', 'Failed to run module checks', (error as Error).message, true);
   }
 }

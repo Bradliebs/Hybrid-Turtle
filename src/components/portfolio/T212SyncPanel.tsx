@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { formatCurrency, formatPercent } from '@/lib/utils';
+import { formatCurrency } from '@/lib/utils';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 import {
   RefreshCw,
   TrendingUp,
@@ -70,12 +71,11 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
 
   const loadStatus = async () => {
     try {
-      const res = await fetch(`/api/trading212/sync?userId=${DEFAULT_USER_ID}`);
-      const data = await res.json();
+      const data = await apiRequest<SyncStatus>(`/api/trading212/sync?userId=${DEFAULT_USER_ID}`);
       setStatus(data);
       setLoaded(true);
-    } catch {
-      setError('Failed to load sync status');
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'Failed to load sync status');
     }
   };
 
@@ -84,26 +84,19 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
     setError(null);
 
     try {
-      const res = await fetch('/api/trading212/sync', {
+      const data = await apiRequest<SyncResult>('/api/trading212/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: DEFAULT_USER_ID }),
       });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error);
-        return;
-      }
 
       setLastResult(data);
       onSyncComplete?.();
 
       // Reload status
       await loadStatus();
-    } catch {
-      setError('Sync failed — check your connection');
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'Sync failed — check your connection');
     } finally {
       setSyncing(false);
     }

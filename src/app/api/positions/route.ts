@@ -2,6 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { calculateRMultiple, calculateGainPercent, calculateGainDollars } from '@/lib/position-sizer';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const createPositionSchema = z.object({
+  userId: z.string().trim().min(1),
+  stockId: z.string().trim().min(1),
+  entryPrice: z.coerce.number().positive(),
+  entryDate: z.string().optional(),
+  shares: z.coerce.number().positive(),
+  stopLoss: z.coerce.number().positive(),
+  notes: z.string().optional(),
+});
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,7 +24,7 @@ export async function GET(request: NextRequest) {
     const source = searchParams.get('source'); // manual | trading212 | all
 
     if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+      return apiError(400, 'INVALID_REQUEST', 'userId is required');
     }
 
     const where: any = { userId };
@@ -112,39 +125,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(enriched);
   } catch (error) {
     console.error('Positions error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch positions' },
-      { status: 500 }
-    );
+    return apiError(500, 'POSITIONS_FETCH_FAILED', 'Failed to fetch positions', (error as Error).message, true);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const {
-      userId,
-      stockId,
-      entryPrice,
-      entryDate,
-      shares,
-      stopLoss,
-      notes,
-    } = body;
-
-    if (!userId || !stockId || !entryPrice || !shares || !stopLoss) {
-      return NextResponse.json(
-        { error: 'Missing required fields: userId, stockId, entryPrice, shares, stopLoss' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, createPositionSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { userId, stockId, entryPrice, entryDate, shares, stopLoss, notes } = parsed.data;
 
     // SAFETY: Stop-loss must be set before confirming trade
     if (stopLoss >= entryPrice) {
-      return NextResponse.json(
-        { error: 'Stop-loss must be below entry price' },
-        { status: 400 }
-      );
+      return apiError(400, 'INVALID_STOP_LOSS', 'Stop-loss must be below entry price');
     }
 
     const initialRisk = entryPrice - stopLoss;
@@ -169,10 +164,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(position, { status: 201 });
   } catch (error) {
     console.error('Create position error:', error);
-    return NextResponse.json(
-      { error: 'Failed to create position', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'POSITION_CREATE_FAILED', 'Failed to create position', (error as Error).message, true);
   }
 }
 
@@ -185,10 +177,7 @@ export async function PATCH(request: NextRequest) {
     const { positionId, exitPrice } = await request.json();
 
     if (!positionId || exitPrice === undefined) {
-      return NextResponse.json(
-        { error: 'positionId and exitPrice are required' },
-        { status: 400 }
-      );
+      return apiError(400, 'INVALID_REQUEST', 'positionId and exitPrice are required');
     }
 
     const position = await prisma.position.findUnique({
@@ -196,11 +185,11 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (!position) {
-      return NextResponse.json({ error: 'Position not found' }, { status: 404 });
+      return apiError(404, 'POSITION_NOT_FOUND', 'Position not found');
     }
 
     if (position.status === 'CLOSED') {
-      return NextResponse.json({ error: 'Position is already closed' }, { status: 400 });
+      return apiError(400, 'POSITION_ALREADY_CLOSED', 'Position is already closed');
     }
 
     const updated = await prisma.position.update({
@@ -216,9 +205,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true, position: updated });
   } catch (error) {
     console.error('Close position error:', error);
-    return NextResponse.json(
-      { error: 'Failed to close position', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'POSITION_CLOSE_FAILED', 'Failed to close position', (error as Error).message, true);
   }
 }

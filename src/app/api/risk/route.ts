@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
-import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
+import { getBatchPrices, normalizeBatchPricesToGBP, normalizePriceToGBP } from '@/lib/market-data';
 import { calculateRMultiple } from '@/lib/position-sizer';
 import { getRiskBudget } from '@/lib/risk-gates';
 import { getWeeklyEquityChangePercent, recordEquitySnapshot } from '@/lib/equity-snapshot';
 import type { RiskProfileType, Sleeve } from '@/types';
+import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
     const positions = await prisma.position.findMany({
@@ -43,15 +44,17 @@ export async function GET(request: NextRequest) {
       ? await normalizeBatchPricesToGBP(livePrices, stockCurrencies)
       : {};
 
-    const enriched = positions.map((p) => {
-      const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
-      const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
-      const fxRatio = rawPrice > 0 ? gbpPrice / rawPrice : 1;
-      const rMultiple = calculateRMultiple(rawPrice, p.entryPrice, p.initialRisk);
+    const enriched = await Promise.all(positions.map(async (p) => {
+      const currentPriceRaw = livePrices[p.stock.ticker] || p.entryPrice;
+      const currentPriceGbp = gbpPrices[p.stock.ticker]
+        ?? await normalizePriceToGBP(currentPriceRaw, p.stock.ticker, p.stock.currency);
+      const entryPriceGbp = await normalizePriceToGBP(p.entryPrice, p.stock.ticker, p.stock.currency);
+      const currentStopGbp = await normalizePriceToGBP(p.currentStop, p.stock.ticker, p.stock.currency);
+      const fxRatio = currentPriceRaw > 0 ? currentPriceGbp / currentPriceRaw : 1;
+      const rMultiple = calculateRMultiple(currentPriceRaw, p.entryPrice, p.initialRisk);
       const initialStop = p.entryPrice - p.initialRisk;
       const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
       const priceCurrency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
-      const currentStopGbp = p.currentStop * fxRatio;
 
       return {
         id: p.id,
@@ -60,17 +63,21 @@ export async function GET(request: NextRequest) {
         sector: p.stock.sector || 'Unassigned',
         cluster: p.stock.cluster || 'Unassigned',
         entryPrice: p.entryPrice,
-        currentPrice: rawPrice,
+        currentPrice: currentPriceRaw,
         currentStop: p.currentStop,
         initialStop,
         shares: p.shares,
         rMultiple,
         protectionLevel: p.protectionLevel,
-        value: gbpPrice * p.shares,
-        riskDollars: Math.max(0, (gbpPrice - currentStopGbp) * p.shares),
+        fxRatio,
+        entryPriceGbp,
+        currentPriceGbp,
+        currentStopGbp,
+        value: currentPriceGbp * p.shares,
+        riskDollars: Math.max(0, (currentPriceGbp - currentStopGbp) * p.shares),
         priceCurrency,
       };
-    });
+    }));
 
     const budget = getRiskBudget(
       enriched,
@@ -96,9 +103,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Risk summary error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch risk summary' },
-      { status: 500 }
-    );
+    return apiError(500, 'RISK_SUMMARY_FAILED', 'Failed to fetch risk summary', (error as Error).message, true);
   }
 }

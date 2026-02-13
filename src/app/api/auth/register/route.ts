@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const registerSchema = z.object({
+  name: z.string().trim().min(1),
+  email: z.string().trim().email(),
+  password: z.string().min(8),
+});
 
 export async function POST(request: NextRequest) {
   try {
-    const { name, email, password } = await request.json();
-
-    if (!name || !email || !password) {
-      return NextResponse.json(
-        { error: 'Name, email, and password are required' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, registerSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
-
-    if (password.length < 8) {
-      return NextResponse.json(
-        { error: 'Password must be at least 8 characters' },
-        { status: 400 }
-      );
-    }
+    const { name, email, password } = parsed.data;
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -26,10 +25,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
-      return NextResponse.json(
-        { error: 'An account with this email already exists' },
-        { status: 409 }
-      );
+      return apiError(409, 'EMAIL_ALREADY_EXISTS', 'An account with this email already exists');
     }
 
     // Hash password
@@ -52,9 +48,6 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error('Registration error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return apiError(500, 'REGISTRATION_FAILED', 'Internal server error', (error as Error).message, true);
   }
 }

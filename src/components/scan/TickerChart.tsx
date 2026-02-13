@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, ColorType, CrosshairMode, LineStyle } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 import { TrendingUp, Activity, Hash, Loader2, RotateCcw } from 'lucide-react';
 
 // ── Types ──
@@ -175,14 +176,12 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/market-data?action=historical&ticker=${ticker}`);
-      if (!res.ok) throw new Error('Failed to fetch data');
-      const data = await res.json();
+      const data = await apiRequest<{ bars?: DailyBar[] }>(`/api/market-data?action=historical&ticker=${ticker}`);
       // API returns newest-first; chart needs oldest-first
       const sorted = [...(data.bars || [])].reverse();
       setBars(sorted);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'Failed to fetch data');
       setBars([]);
     } finally {
       setLoading(false);

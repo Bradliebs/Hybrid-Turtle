@@ -11,6 +11,7 @@ import PositionSizerWidget from '@/components/plan/PositionSizerWidget';
 import SwapSuggestionsWidget from '@/components/plan/SwapSuggestionsWidget';
 import LaggardAlertsWidget from '@/components/plan/LaggardAlertsWidget';
 import { useStore } from '@/store/useStore';
+import { apiRequest } from '@/lib/api-client';
 import { ClipboardList, Calendar, Loader2 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
@@ -95,12 +96,9 @@ export default function PlanPage() {
 
   const fetchPositions = useCallback(async () => {
     try {
-      const res = await fetch(
+      const data = await apiRequest<any[]>(
         `/api/positions?userId=${DEFAULT_USER_ID}&source=trading212&status=OPEN`
       );
-      if (!res.ok) return;
-
-      const data = await res.json();
       const mapped: PositionData[] = data.map((p: any) => ({
         ticker: p.stock?.ticker || 'N/A',
         name: p.stock?.name || '',
@@ -133,24 +131,22 @@ export default function PlanPage() {
   useEffect(() => {
     const fetchHealthRiskAndScan = async () => {
       try {
-        const [healthRes, riskRes, crossRefRes] = await Promise.all([
-          fetch(`/api/health-check?userId=${DEFAULT_USER_ID}`),
-          fetch(`/api/risk?userId=${DEFAULT_USER_ID}`),
-          fetch('/api/scan/cross-ref'),
+        const [healthResult, riskResult, crossRefResult] = await Promise.allSettled([
+          apiRequest(`/api/health-check?userId=${DEFAULT_USER_ID}`),
+          apiRequest(`/api/risk?userId=${DEFAULT_USER_ID}`),
+          apiRequest<{ tickers?: any[] }>('/api/scan/cross-ref'),
         ]);
 
-        if (healthRes.ok) {
-          const healthData = await healthRes.json();
-          setHealthReport(healthData);
+        if (healthResult.status === 'fulfilled') {
+          setHealthReport(healthResult.value);
         }
 
-        if (riskRes.ok) {
-          const riskData = await riskRes.json();
-          setRiskSummary(riskData);
+        if (riskResult.status === 'fulfilled') {
+          setRiskSummary(riskResult.value);
         }
 
-        if (crossRefRes.ok) {
-          const crossRefData = await crossRefRes.json();
+        if (crossRefResult.status === 'fulfilled') {
+          const crossRefData = crossRefResult.value;
           // Only show actionable candidates (not BOTH_REJECT)
           const actionable = (crossRefData.tickers || []).filter(
             (t: any) => t.matchType !== 'BOTH_REJECT'

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserPlus, Shield, Eye, EyeOff, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { ApiClientError, apiRequest } from '@/lib/api-client';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -33,20 +34,14 @@ export default function RegisterPage() {
     }
 
     try {
-      const res = await fetch('/api/auth/register', {
+      await apiRequest('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || 'Registration failed');
-      } else {
-        router.push('/login?registered=true');
-      }
-    } catch (err) {
-      setError('An error occurred. Please try again.');
+      router.push('/login?registered=true');
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }

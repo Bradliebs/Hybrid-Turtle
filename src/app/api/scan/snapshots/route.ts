@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
 
 // ── CSV parser (handles quoted fields) ──────────────────────────────
 function parseCSV(text: string): Record<string, string>[] {
@@ -56,6 +58,12 @@ function safeBool(v: string | undefined, fallback = false): boolean {
   return ['true', '1', 'yes'].includes(v.toLowerCase());
 }
 
+const snapshotJsonSchema = z.object({
+  csv: z.string().min(1),
+  filename: z.string().optional(),
+  source: z.string().optional(),
+});
+
 // ── POST: Upload CSV text → store in DB ─────────────────────────────
 export async function POST(request: NextRequest) {
   try {
@@ -69,24 +77,34 @@ export async function POST(request: NextRequest) {
       const file = formData.get('file') as File | null;
       source = (formData.get('source') as string) || 'upload';
       if (!file) {
-        return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+        return apiError(400, 'INVALID_REQUEST', 'No file uploaded');
       }
       filename = file.name;
       csvText = await file.text();
     } else {
       // Accept raw JSON body with csv field
-      const body = await request.json();
+      const rawBody = await request.json().catch(() => null);
+      if (rawBody === null) {
+        return apiError(400, 'INVALID_JSON', 'Request body must be valid JSON');
+      }
+      const bodyParsed = snapshotJsonSchema.safeParse(rawBody);
+      if (!bodyParsed.success) {
+        return apiError(
+          400,
+          'INVALID_REQUEST',
+          'Invalid snapshot payload',
+          bodyParsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ')
+        );
+      }
+      const body = bodyParsed.data;
       csvText = body.csv;
       filename = body.filename || filename;
       source = body.source || source;
-      if (!csvText) {
-        return NextResponse.json({ error: 'No CSV data provided' }, { status: 400 });
-      }
     }
 
     const rawRows = parseCSV(csvText);
     if (rawRows.length === 0) {
-      return NextResponse.json({ error: 'CSV is empty or malformed' }, { status: 400 });
+      return apiError(400, 'INVALID_CSV', 'CSV is empty or malformed');
     }
 
     // Create snapshot + tickers in a transaction
@@ -172,10 +190,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('[Snapshot Import] Error:', error);
-    return NextResponse.json(
-      { error: 'Import failed', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'SNAPSHOT_IMPORT_FAILED', 'Import failed', (error as Error).message, true);
   }
 }
 
@@ -195,10 +210,7 @@ export async function GET() {
     return NextResponse.json({ snapshots });
   } catch (error) {
     console.error('[Snapshot List] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to list snapshots', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'SNAPSHOT_LIST_FAILED', 'Failed to list snapshots', (error as Error).message, true);
   }
 }
 
@@ -207,7 +219,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { id } = await request.json();
     if (!id) {
-      return NextResponse.json({ error: 'Snapshot id is required' }, { status: 400 });
+      return apiError(400, 'INVALID_REQUEST', 'Snapshot id is required');
     }
     // Delete tickers first (cascade), then snapshot
     await prisma.snapshotTicker.deleteMany({ where: { snapshotId: id } });
@@ -215,9 +227,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ message: 'Snapshot deleted' });
   } catch (error) {
     console.error('[Snapshot Delete] Error:', error);
-    return NextResponse.json(
-      { error: 'Delete failed', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'SNAPSHOT_DELETE_FAILED', 'Delete failed', (error as Error).message, true);
   }
 }

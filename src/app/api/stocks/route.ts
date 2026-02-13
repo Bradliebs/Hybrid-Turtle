@@ -1,7 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
 
 const prisma = new PrismaClient();
+
+const stockPayloadSchema = z.object({
+  ticker: z.string().trim().min(1),
+  name: z.string().optional(),
+  sleeve: z.enum(['CORE', 'ETF', 'HIGH_RISK', 'HEDGE']).optional(),
+  sector: z.string().optional().nullable(),
+  cluster: z.string().optional().nullable(),
+  superCluster: z.string().optional().nullable(),
+  region: z.string().optional().nullable(),
+  currency: z.string().optional().nullable(),
+  t212Ticker: z.string().optional().nullable(),
+  active: z.boolean().optional(),
+});
+
+const bulkStocksSchema = z.object({
+  stocks: z.array(stockPayloadSchema).min(1),
+});
 
 // GET /api/stocks — List all stocks. Optional filters: ?sleeve=CORE&active=true&search=AAPL
 export async function GET(request: NextRequest) {
@@ -48,17 +67,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ stocks, summary });
   } catch (error) {
     console.error('GET /api/stocks error:', error);
-    return NextResponse.json({ error: 'Failed to fetch stocks' }, { status: 500 });
+    return apiError(500, 'STOCKS_FETCH_FAILED', 'Failed to fetch stocks', (error as Error).message, true);
   }
 }
 
 // POST /api/stocks — Add a new stock or bulk-add
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const rawBody = await request.json().catch(() => null);
+    if (!rawBody || typeof rawBody !== 'object') {
+      return apiError(400, 'INVALID_JSON', 'Request body must be valid JSON');
+    }
 
     // Bulk add: { stocks: [...] }
-    if (Array.isArray(body.stocks)) {
+    if (Array.isArray((rawBody as { stocks?: unknown[] }).stocks)) {
+      const bulkParsed = bulkStocksSchema.safeParse(rawBody);
+      if (!bulkParsed.success) {
+        return apiError(400, 'INVALID_REQUEST', 'Invalid bulk stock payload', bulkParsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '));
+      }
+
+      const body = bulkParsed.data;
       const results = [];
       for (const stock of body.stocks) {
         const result = await prisma.stock.upsert({
@@ -96,9 +124,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Single add
-    if (!body.ticker) {
-      return NextResponse.json({ error: 'ticker is required' }, { status: 400 });
+    const singleParsed = stockPayloadSchema.safeParse(rawBody);
+    if (!singleParsed.success) {
+      return apiError(400, 'INVALID_REQUEST', 'Invalid stock payload', singleParsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; '));
     }
+    const body = singleParsed.data;
 
     const stock = await prisma.stock.upsert({
       where: { ticker: body.ticker },
@@ -130,7 +160,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ stock });
   } catch (error) {
     console.error('POST /api/stocks error:', error);
-    return NextResponse.json({ error: 'Failed to add stock' }, { status: 500 });
+    return apiError(500, 'STOCK_ADD_FAILED', 'Failed to add stock', (error as Error).message, true);
   }
 }
 
@@ -142,7 +172,7 @@ export async function DELETE(request: NextRequest) {
     const hard = searchParams.get('hard') === 'true';
 
     if (!ticker) {
-      return NextResponse.json({ error: 'ticker is required' }, { status: 400 });
+      return apiError(400, 'INVALID_REQUEST', 'ticker is required');
     }
 
     if (hard) {
@@ -151,10 +181,7 @@ export async function DELETE(request: NextRequest) {
         where: { stock: { ticker } },
       });
       if (positionCount > 0) {
-        return NextResponse.json(
-          { error: `Cannot delete ${ticker} — has ${positionCount} positions. Use soft delete.` },
-          { status: 409 }
-        );
+        return apiError(409, 'STOCK_DELETE_CONFLICT', `Cannot delete ${ticker} — has ${positionCount} positions. Use soft delete.`);
       }
       await prisma.stock.delete({ where: { ticker } });
     } else {
@@ -167,6 +194,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ message: `${ticker} ${hard ? 'deleted' : 'deactivated'}` });
   } catch (error) {
     console.error('DELETE /api/stocks error:', error);
-    return NextResponse.json({ error: 'Failed to delete stock' }, { status: 500 });
+    return apiError(500, 'STOCK_DELETE_FAILED', 'Failed to delete stock', (error as Error).message, true);
   }
 }

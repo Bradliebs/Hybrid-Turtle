@@ -3,6 +3,14 @@ import prisma from '@/lib/prisma';
 import { Trading212Client, Trading212Error } from '@/lib/trading212';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { updateStopLoss, StopLossError } from '@/lib/stop-manager';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const setStopSchema = z.object({
+  positionId: z.string().trim().min(1),
+  stopPrice: z.coerce.number().positive(),
+});
 
 // ============================================================
 // Trading 212 Stop Order API
@@ -117,15 +125,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Trading212Error) {
-      return NextResponse.json(
-        { error: error.message, code: 'T212_ERROR' },
-        { status: error.statusCode === 429 ? 429 : 400 }
-      );
+      return apiError(error.statusCode === 429 ? 429 : 400, 'T212_ERROR', error.message, undefined, error.statusCode === 429);
     }
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_STOPS_FETCH_FAILED', (error as Error).message, undefined, true);
   }
 }
 
@@ -139,15 +141,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { positionId, stopPrice } = body;
-
-    if (!positionId || !stopPrice) {
-      return NextResponse.json(
-        { error: 'positionId and stopPrice are required' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, setStopSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { positionId, stopPrice } = parsed.data;
 
     // Load position with stock info
     const position = await prisma.position.findUnique({
@@ -156,24 +154,21 @@ export async function POST(request: NextRequest) {
     });
 
     if (!position) {
-      return NextResponse.json({ error: 'Position not found' }, { status: 404 });
+      return apiError(404, 'POSITION_NOT_FOUND', 'Position not found');
     }
 
     if (position.status === 'CLOSED') {
-      return NextResponse.json({ error: 'Cannot set stop on a closed position' }, { status: 400 });
+      return apiError(400, 'POSITION_CLOSED', 'Cannot set stop on a closed position');
     }
 
     const t212Ticker = position.t212Ticker || position.stock.t212Ticker;
     if (!t212Ticker) {
-      return NextResponse.json(
-        { error: `No Trading 212 ticker mapped for ${position.stock.ticker}. Sync with T212 first.` },
-        { status: 400 }
-      );
+      return apiError(400, 'MISSING_T212_TICKER', `No Trading 212 ticker mapped for ${position.stock.ticker}. Sync with T212 first.`);
     }
 
     // Validate stop price
     if (stopPrice <= 0) {
-      return NextResponse.json({ error: 'Stop price must be positive' }, { status: 400 });
+      return apiError(400, 'INVALID_STOP_PRICE', 'Stop price must be positive');
     }
 
     const client = await getT212Client(position.userId);
@@ -188,12 +183,11 @@ export async function POST(request: NextRequest) {
       0
     );
     if (highestT212Stop > 0 && stopPrice < highestT212Stop) {
-      return NextResponse.json(
-        {
-          error: `Monotonic rule: T212 already has a stop at ${highestT212Stop.toFixed(2)}. New stop (${stopPrice.toFixed(2)}) cannot be lower. Stops can only move UP.`,
-          existingT212Stop: highestT212Stop,
-        },
-        { status: 400 }
+      return apiError(
+        400,
+        'STOP_MONOTONIC_VIOLATION',
+        `Monotonic rule: T212 already has a stop at ${highestT212Stop.toFixed(2)}. New stop (${stopPrice.toFixed(2)}) cannot be lower. Stops can only move UP.`,
+        `existingT212Stop=${highestT212Stop.toFixed(2)}`
       );
     }
 
@@ -230,15 +224,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Trading212Error) {
-      return NextResponse.json(
-        { error: error.message, code: 'T212_ERROR' },
-        { status: error.statusCode === 429 ? 429 : 400 }
-      );
+      return apiError(error.statusCode === 429 ? 429 : 400, 'T212_ERROR', error.message, undefined, error.statusCode === 429);
     }
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_STOPS_SET_FAILED', (error as Error).message, undefined, true);
   }
 }
 
@@ -257,7 +245,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (!positionId) {
-      return NextResponse.json({ error: 'positionId is required' }, { status: 400 });
+      return apiError(400, 'INVALID_REQUEST', 'positionId is required');
     }
 
     const position = await prisma.position.findUnique({
@@ -266,12 +254,12 @@ export async function DELETE(request: NextRequest) {
     });
 
     if (!position) {
-      return NextResponse.json({ error: 'Position not found' }, { status: 404 });
+      return apiError(404, 'POSITION_NOT_FOUND', 'Position not found');
     }
 
     const t212Ticker = position.t212Ticker || position.stock.t212Ticker;
     if (!t212Ticker) {
-      return NextResponse.json({ error: 'No T212 ticker mapped' }, { status: 400 });
+      return apiError(400, 'MISSING_T212_TICKER', 'No T212 ticker mapped');
     }
 
     const client = await getT212Client(position.userId);
@@ -287,15 +275,9 @@ export async function DELETE(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Trading212Error) {
-      return NextResponse.json(
-        { error: error.message, code: 'T212_ERROR' },
-        { status: error.statusCode === 429 ? 429 : 400 }
-      );
+      return apiError(error.statusCode === 429 ? 429 : 400, 'T212_ERROR', error.message, undefined, error.statusCode === 429);
     }
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_STOPS_DELETE_FAILED', (error as Error).message, undefined, true);
   }
 }
 
@@ -381,14 +363,8 @@ export async function PUT(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Trading212Error) {
-      return NextResponse.json(
-        { error: error.message, code: 'T212_ERROR' },
-        { status: error.statusCode === 429 ? 429 : 400 }
-      );
+      return apiError(error.statusCode === 429 ? 429 : 400, 'T212_ERROR', error.message, undefined, error.statusCode === 429);
     }
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_STOPS_BULK_SYNC_FAILED', (error as Error).message, undefined, true);
   }
 }

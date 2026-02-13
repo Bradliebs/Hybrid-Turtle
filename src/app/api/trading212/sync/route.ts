@@ -3,12 +3,22 @@ import prisma from '@/lib/prisma';
 import { Trading212Client, mapT212Position, mapT212AccountSummary } from '@/lib/trading212';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const syncRequestSchema = z.object({
+  userId: z.string().trim().min(1).optional(),
+});
 
 // POST /api/trading212/sync — Sync positions from Trading 212
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    let { userId } = body;
+    const parsed = await parseJsonBody(request, syncRequestSchema);
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    let { userId } = parsed.data;
 
     if (!userId) {
       userId = await ensureDefaultUser();
@@ -25,10 +35,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user || !user.t212ApiKey || !user.t212ApiSecret) {
-      return NextResponse.json(
-        { error: 'Trading 212 API credentials not configured. Go to Settings to add them.' },
-        { status: 400 }
-      );
+      return apiError(400, 'T212_NOT_CONFIGURED', 'Trading 212 API credentials not configured. Go to Settings to add them.');
     }
 
     // Create API client
@@ -172,10 +179,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Trading 212 sync error:', error);
-    return NextResponse.json(
-      { error: (error as Error).message || 'Failed to sync with Trading 212' },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_SYNC_FAILED', (error as Error).message || 'Failed to sync with Trading 212', undefined, true);
   }
 }
 
@@ -205,7 +209,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
     const t212PositionCount = await prisma.position.count({
@@ -228,9 +232,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Sync status error:', error);
-    return NextResponse.json(
-      { error: 'Failed to get sync status' },
-      { status: 500 }
-    );
+    return apiError(500, 'T212_SYNC_STATUS_FAILED', 'Failed to get sync status', (error as Error).message, true);
   }
 }

@@ -1,20 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runFullScan } from '@/lib/scan-engine';
-import { getScanCache, setScanCache } from '@/lib/scan-cache';
+import {
+  clearScanCache,
+  getScanCache,
+  isScanCacheFresh,
+  SCAN_CACHE_TTL_MS,
+  setScanCache,
+} from '@/lib/scan-cache';
 import type { RiskProfileType } from '@/types';
 import prisma from '@/lib/prisma';
+import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+import { parseJsonBody } from '@/lib/request-validation';
+
+const scanRequestSchema = z.object({
+  userId: z.string().trim().min(1),
+  riskProfile: z.enum(['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT', 'AGGRESSIVE']),
+  equity: z.coerce.number().positive(),
+});
 
 // ── POST: Run a fresh scan, persist to DB + cache in memory ─────────
 export async function POST(request: NextRequest) {
   try {
-    const { userId, riskProfile, equity } = await request.json();
-
-    if (!userId || !riskProfile || !equity) {
-      return NextResponse.json(
-        { error: 'userId, riskProfile, and equity are required' },
-        { status: 400 }
-      );
+    const parsed = await parseJsonBody(request, scanRequestSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { userId, riskProfile, equity } = parsed.data;
 
     const result = await runFullScan(
       userId,
@@ -77,9 +89,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ...result, cachedAt: cached.cachedAt });
   } catch (error) {
     console.error('Scan error:', error);
-    return NextResponse.json(
-      { error: 'Scan failed', message: (error as Error).message },
-      { status: 500 }
+    return apiError(
+      500,
+      'SCAN_FAILED',
+      'Scan failed',
+      (error as Error).message,
+      true
     );
   }
 }
@@ -89,8 +104,20 @@ export async function GET() {
   try {
     // Try in-memory cache first
     const cached = getScanCache();
-    if (cached) {
+    if (cached && isScanCacheFresh(cached)) {
       return NextResponse.json({ ...cached, hasCache: true, source: 'memory' });
+    }
+    if (cached && !isScanCacheFresh(cached)) {
+      clearScanCache();
+    }
+
+    if (!process.env.DATABASE_URL) {
+      return apiError(
+        404,
+        'SCAN_CACHE_MISS',
+        'No fresh scan cache available',
+        'Run Full Scan to generate fresh results.'
+      );
     }
 
     // Fallback: load most recent scan from database
@@ -105,13 +132,21 @@ export async function GET() {
     });
 
     if (!latestScan || latestScan.results.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'No cached scan',
-          message: 'Click "Run Full Scan" to generate results. They will be persisted across restarts.',
-          hasCache: false,
-        },
-        { status: 404 }
+      return apiError(
+        404,
+        'SCAN_CACHE_MISS',
+        'No cached scan',
+        'Click "Run Full Scan" to generate results. They will be persisted across restarts.'
+      );
+    }
+
+    const latestScanAgeMs = Date.now() - latestScan.runDate.getTime();
+    if (latestScanAgeMs > SCAN_CACHE_TTL_MS) {
+      return apiError(
+        404,
+        'SCAN_CACHE_STALE',
+        'Latest scan cache is stale',
+        'Run Full Scan to refresh candidates.'
       );
     }
 
@@ -187,9 +222,12 @@ export async function GET() {
     return NextResponse.json(dbResult);
   } catch (error) {
     console.error('Scan cache error:', error);
-    return NextResponse.json(
-      { error: 'Failed to retrieve scan data', message: (error as Error).message },
-      { status: 500 }
+    return apiError(
+      500,
+      'SCAN_CACHE_ERROR',
+      'Failed to retrieve scan data',
+      (error as Error).message,
+      true
     );
   }
 }

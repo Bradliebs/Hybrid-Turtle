@@ -9,6 +9,7 @@ import { formatCurrency, formatPercent } from '@/lib/utils';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { PORTFOLIO_SUB_NAV } from '@/types';
+import { apiRequest } from '@/lib/api-client';
 import { Loader2 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
@@ -53,12 +54,9 @@ export default function PositionsPage() {
   // Fetch T212 positions from the database (enriched with live Yahoo prices)
   const fetchPositions = useCallback(async () => {
     try {
-      const res = await fetch(
+      const data = await apiRequest<any[]>(
         `/api/positions?userId=${DEFAULT_USER_ID}&source=trading212&status=OPEN`
       );
-      if (!res.ok) return;
-
-      const data = await res.json();
 
       // Map API response to table format
       const mapped: PositionData[] = data.map((p: any) => ({
@@ -92,10 +90,7 @@ export default function PositionsPage() {
   // Fetch T212 account summary (cached from last sync)
   const fetchAccount = useCallback(async () => {
     try {
-      const res = await fetch(`/api/trading212/sync?userId=${DEFAULT_USER_ID}`);
-      if (!res.ok) return;
-
-      const data = await res.json();
+      const data = await apiRequest<{ lastSync?: string; currency?: string; account?: AccountData }>(`/api/trading212/sync?userId=${DEFAULT_USER_ID}`);
       if (data.lastSync) {
         setLastSync(data.lastSync);
       }
@@ -128,12 +123,11 @@ export default function PositionsPage() {
   // ── Action handlers for PositionsTable ──
   const handleUpdateStop = useCallback(async (positionId: string, newStop: number, reason: string): Promise<boolean> => {
     try {
-      const res = await fetch('/api/stops', {
+      await apiRequest('/api/stops', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ positionId, newStop, reason }),
       });
-      if (!res.ok) return false;
       await fetchPositions();
       return true;
     } catch {
@@ -143,12 +137,11 @@ export default function PositionsPage() {
 
   const handleExitPosition = useCallback(async (positionId: string, exitPrice: number): Promise<boolean> => {
     try {
-      const res = await fetch('/api/positions', {
+      await apiRequest('/api/positions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ positionId, exitPrice }),
       });
-      if (!res.ok) return false;
       await Promise.all([fetchPositions(), fetchAccount()]);
       return true;
     } catch {
