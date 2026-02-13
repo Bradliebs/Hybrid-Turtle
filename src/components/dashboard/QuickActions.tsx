@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { TrendingUp, PieChart, ShieldCheck, Scale } from 'lucide-react';
+import { TrendingUp, PieChart, ShieldCheck, Scale, BookOpen } from 'lucide-react';
 
 const actions = [
   {
@@ -36,17 +36,28 @@ const actions = [
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/10',
   },
+  {
+    label: 'Open User Guide',
+    description: 'Read full system instructions',
+    href: '/user-guide.md',
+    icon: BookOpen,
+    color: 'text-primary-400',
+    bgColor: 'bg-primary/10',
+    newTab: true,
+  },
 ];
 
 export default function QuickActions() {
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {actions.map((action) => {
         const Icon = action.icon;
         return (
           <Link
             key={action.label}
             href={action.href}
+            target={action.newTab ? '_blank' : undefined}
+            rel={action.newTab ? 'noopener noreferrer' : undefined}
             className="card-surface p-4 hover:shadow-glow transition-all group cursor-pointer"
           >
             <div className={`${action.bgColor} w-10 h-10 rounded-lg flex items-center justify-center mb-3`}>

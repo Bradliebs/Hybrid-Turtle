@@ -268,16 +268,27 @@ export default function SettingsPage() {
               Configure your HybridTurtle trading system
             </p>
           </div>
-          <button
-            onClick={handleSave}
-            className={cn(
-              'btn-primary flex items-center gap-2',
-              saved && 'bg-profit hover:bg-profit'
-            )}
-          >
-            {saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-            {saved ? 'Saved!' : 'Save Changes'}
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              href="/user-guide.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-2 rounded-lg border border-white/10 text-sm text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors flex items-center gap-2"
+            >
+              <Link className="w-4 h-4" />
+              Open User Guide
+            </a>
+            <button
+              onClick={handleSave}
+              className={cn(
+                'btn-primary flex items-center gap-2',
+                saved && 'bg-profit hover:bg-profit'
+              )}
+            >
+              {saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              {saved ? 'Saved!' : 'Save Changes'}
+            </button>
+          </div>
         </div>
 
         {/* Account & Equity */}

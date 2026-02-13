@@ -33,6 +33,7 @@ A systematic trading dashboard built on the Turtle Trading methodology with mode
 |------|---------|
 | `install.bat` | One-time setup — installs Node.js deps, database, desktop shortcut |
 | `start.bat` | Daily launcher — starts the server and opens your browser |
+| `run-dashboard.bat` | Compatibility alias — redirects to `start.bat` |
 | `update.bat` | Run after getting new code — updates deps and database |
 
 ---
@@ -40,7 +41,7 @@ A systematic trading dashboard built on the Turtle Trading methodology with mode
 ## System Requirements
 
 - **Windows 10 or 11**
-- **Node.js 18+** (the installer will help you get this)
+- **Node.js 20 or 22 LTS** (choose the **LTS** tab on nodejs.org)
 - **4 GB RAM** minimum
 - **Internet connection** (for live market data from Yahoo Finance)
 
@@ -103,3 +104,7 @@ npx prisma db seed     # Re-seed stock universe
 ---
 
 *Built with Next.js 14, Prisma, TailwindCSS, and lightweight-charts.*
+
+---
+
+For complete end-user instructions (full system walkthrough), see `USER-GUIDE.md`.
