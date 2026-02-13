@@ -30,21 +30,33 @@ if %errorlevel% neq 0 (
     echo.
     echo  !! Node.js is NOT installed.
     echo  !! Opening the Node.js download page...
-    echo  !! Please install Node.js LTS, then re-run this installer.
+    echo  !! Please install Node.js LTS.
+    echo  !! Important: after install finishes, close this window
+    echo  !! and run install.bat again.
     echo.
     start https://nodejs.org/en/download/
-    echo  Press any key after you have installed Node.js...
+    echo  Press any key to exit installer...
     pause >nul
-    where node >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo.
-        echo  !! Node.js still not found. Please install it and try again.
-        pause
-        exit /b 1
-    )
+    exit /b 1
 )
 for /f "tokens=*" %%i in ('node --version') do set NODE_VER=%%i
 echo         Found Node.js %NODE_VER%
+
+:: ── Node.js version compatibility check ──
+set "NODE_VER_NO_V=%NODE_VER:v=%"
+for /f "tokens=1 delims=." %%i in ("%NODE_VER_NO_V%") do set NODE_MAJOR=%%i
+if not "%NODE_MAJOR%"=="20" if not "%NODE_MAJOR%"=="22" (
+    echo.
+    echo  !! This installer currently supports Node.js 20 or 22 LTS.
+    echo  !! You have Node.js %NODE_VER% installed.
+    echo  !! Please install Node.js 22 LTS or 20 LTS, then run install.bat again.
+    echo  !! On the Node.js website, choose the LTS tab.
+    echo.
+    echo  !! Opening Node.js download page...
+    start https://nodejs.org/en/download/
+    pause
+    exit /b 1
+)
 
 :: ── Step 2: Check npm ──
 echo  [2/7] Checking npm...
@@ -63,7 +75,8 @@ echo  [3/7] Setting up environment...
 if not exist ".env" (
     echo DATABASE_URL="file:./dev.db"> .env
     echo NEXTAUTH_URL="http://localhost:3000">> .env
-    echo NEXTAUTH_SECRET="hybridturtle-local-secret-%RANDOM%%RANDOM%">> .env
+    for /f "tokens=*" %%i in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString(''N'')"') do set NEXTAUTH_SECRET=hybridturtle-local-secret-%%i
+    echo NEXTAUTH_SECRET="!NEXTAUTH_SECRET!">> .env
     echo         Created .env with SQLite database
 ) else (
     echo         .env already exists — keeping existing config
@@ -76,7 +89,7 @@ call npm install
 if %errorlevel% neq 0 (
     echo.
     echo  !! npm install failed.
-    echo  !! Try: 1) Close antivirus  2) Run as Administrator  3) Reboot
+    echo  !! Try this: close antivirus, run installer as Administrator, then reboot.
     pause
     exit /b 1
 )
@@ -123,7 +136,7 @@ powershell -NoProfile -Command ^
 if %errorlevel% equ 0 (
     echo         Desktop shortcut created!
 ) else (
-    echo         Could not create shortcut — you can run start.bat manually.
+    echo         Could not create shortcut. No problem — you can run start.bat manually.
 )
 
 :: ── Step 7: Optional — Nightly Telegram Scheduled Task ──
@@ -139,6 +152,10 @@ echo     - TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in your .env
 echo     - PC must be on at 21:10 (runs late if missed)
 echo.
 set /p SETUP_TELEGRAM="  Set up the nightly Telegram task? (Y/N): "
+if /i not "%SETUP_TELEGRAM%"=="Y" if /i not "%SETUP_TELEGRAM%"=="N" (
+    echo         Input not recognized, defaulting to N.
+    set "SETUP_TELEGRAM=N"
+)
 if /i "%SETUP_TELEGRAM%"=="Y" (
     echo.
     echo         Registering scheduled task...
@@ -192,6 +209,10 @@ echo  ===========================================================
 echo.
 
 set /p LAUNCH="  Launch the dashboard now? (Y/N): "
+if /i not "%LAUNCH%"=="Y" if /i not "%LAUNCH%"=="N" (
+    echo         Input not recognized, defaulting to N.
+    set "LAUNCH=N"
+)
 if /i "%LAUNCH%"=="Y" (
     call "%~dp0start.bat"
 )
