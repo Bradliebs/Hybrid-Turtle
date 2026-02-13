@@ -51,6 +51,7 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 - `install.bat` — first-time setup
 - `start.bat` — primary launcher
 - `run-dashboard.bat` — compatibility alias (redirects to `start.bat`)
+- `seed-tickers.bat` — re-seed ticker universe from Planning files
 - `update.bat` — update dependencies/database after pulling new code
 
 ## Documentation
