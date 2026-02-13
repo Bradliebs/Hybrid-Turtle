@@ -77,9 +77,13 @@ if not exist ".env" (
     echo NEXTAUTH_URL="http://localhost:3000">> .env
     for /f "tokens=*" %%i in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString(''N'')"') do set NEXTAUTH_SECRET=hybridturtle-local-secret-%%i
     echo NEXTAUTH_SECRET="!NEXTAUTH_SECRET!">> .env
+    echo.>> .env
+    echo # Telegram nightly reports - fill these in during Step 7 or later>> .env
+    echo # TELEGRAM_BOT_TOKEN=your-bot-token-here>> .env
+    echo # TELEGRAM_CHAT_ID=your-chat-id-here>> .env
     echo         Created .env with SQLite database
 ) else (
-    echo         .env already exists — keeping existing config
+    echo         .env already exists - keeping existing config
 )
 
 :: ── Step 4: Install dependencies ──
@@ -88,8 +92,12 @@ echo.
 call npm install
 if %errorlevel% neq 0 (
     echo.
-    echo  !! npm install failed.
-    echo  !! Try this: close antivirus, run installer as Administrator, then reboot.
+    echo  !! npm install failed. Common fixes:
+    echo  !!   1. Close VS Code and any other editors, then re-run
+    echo  !!   2. Run: npm install --ignore-scripts
+    echo  !!      then: npx prisma generate
+    echo  !!   3. Disable antivirus temporarily
+    echo  !!   4. Run installer as Administrator
     pause
     exit /b 1
 )
@@ -141,7 +149,8 @@ echo   weeknight at 21:10 to send a Telegram summary of your
 echo   portfolio - stops, risk gates, laggards, module alerts.
 echo.
 echo   Requirements:
-echo     - TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in your .env
+echo     - A Telegram bot token (from @BotFather)
+echo     - Your Telegram chat ID (from @userinfobot)
 echo     - PC must be on at 21:10 (runs late if missed)
 echo.
 set /p SETUP_TELEGRAM="  Set up the nightly Telegram task? (Y/N): "
@@ -150,6 +159,61 @@ if /i not "%SETUP_TELEGRAM%"=="Y" if /i not "%SETUP_TELEGRAM%"=="N" (
     set "SETUP_TELEGRAM=N"
 )
 if /i "%SETUP_TELEGRAM%"=="Y" (
+    echo.
+    echo   --- Telegram Credentials ---
+    echo.
+    echo   To get your bot token:
+    echo     1. Open Telegram and message @BotFather
+    echo     2. Send /newbot and follow the prompts
+    echo     3. Copy the token it gives you
+    echo.
+    echo   To get your chat ID:
+    echo     1. Open Telegram and message @userinfobot
+    echo     2. It replies with your numeric ID
+    echo.
+
+    :: Check if credentials already exist in .env
+    set "HAS_TOKEN="
+    set "HAS_CHATID="
+    for /f "usebackq tokens=1,2 delims==" %%a in (".env") do (
+        if "%%a"=="TELEGRAM_BOT_TOKEN" if not "%%b"=="" if not "%%b"=="" set "HAS_TOKEN=1"
+        if "%%a"=="TELEGRAM_CHAT_ID" if not "%%b"=="" set "HAS_CHATID=1"
+    )
+
+    if defined HAS_TOKEN if defined HAS_CHATID (
+        echo         Telegram credentials already found in .env
+        echo.
+        set /p TG_REPLACE="  Replace existing credentials? (Y/N): "
+        if /i not "!TG_REPLACE!"=="Y" (
+            echo         Keeping existing credentials.
+            goto :skip_tg_creds
+        )
+    )
+
+    set /p TG_TOKEN="  Paste your Bot Token: "
+    if "!TG_TOKEN!"=="" (
+        echo         No token entered - skipping Telegram setup.
+        set "SETUP_TELEGRAM=N"
+        goto :skip_tg_setup
+    )
+
+    set /p TG_CHATID="  Paste your Chat ID: "
+    if "!TG_CHATID!"=="" (
+        echo         No chat ID entered - skipping Telegram setup.
+        set "SETUP_TELEGRAM=N"
+        goto :skip_tg_setup
+    )
+
+    :: Remove any existing Telegram lines from .env, then append new ones
+    powershell -NoProfile -Command "$f = Get-Content '.env' | Where-Object { $_ -notmatch '^TELEGRAM_BOT_TOKEN=' -and $_ -notmatch '^TELEGRAM_CHAT_ID=' }; $f += 'TELEGRAM_BOT_TOKEN=!TG_TOKEN!'; $f += 'TELEGRAM_CHAT_ID=!TG_CHATID!'; Set-Content '.env' $f"
+    echo         Telegram credentials saved to .env
+
+    :: Send a test message to confirm it works
+    echo.
+    echo         Sending test message to your Telegram...
+    powershell -NoProfile -Command "$r = Invoke-RestMethod -Uri 'https://api.telegram.org/bot!TG_TOKEN!/sendMessage' -Method Post -ContentType 'application/json' -Body ('{\"chat_id\":\"!TG_CHATID!\",\"text\":\"HybridTurtle connected! Nightly reports will arrive here at 21:10 Mon-Fri.\"}'); if ($r.ok) { Write-Output '         Test message sent successfully!' } else { Write-Output '         !! Test message failed - check your token and chat ID.' }" 2>nul || echo         !! Could not reach Telegram API - check your internet connection.
+
+    :skip_tg_creds
     echo.
     echo         Registering scheduled task...
 
@@ -184,6 +248,7 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
     echo         Skipped - you can set this up later by running:
     echo         install.bat or manually in Task Scheduler.
 )
+:skip_tg_setup
 
 :: ── Done! ──
 echo.
