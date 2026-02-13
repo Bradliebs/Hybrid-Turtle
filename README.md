@@ -10,9 +10,8 @@ Systematic trading workspace built around a Hybrid Turtle process: scan opportun
 
 ## Preview
 
-![HybridTurtle Dashboard Preview](docs/preview.svg)
+![HybridTurtle Dashboard Preview](docs/turtlehybrid.png)
 
-Replace `docs/preview.svg` with a real dashboard screenshot when ready.
 
 ## Why this project exists
 
