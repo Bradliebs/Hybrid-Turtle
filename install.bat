@@ -8,7 +8,7 @@
 
 title HybridTurtle Installer v6.0
 color 0A
-setlocal EnableDelayedExpansion
+setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
 echo.
@@ -123,20 +123,13 @@ echo  [6/7] Creating desktop shortcut...
 set SCRIPT_DIR=%~dp0
 set SHORTCUT_NAME=HybridTurtle Dashboard
 
-:: Use PowerShell to create a proper shortcut
-powershell -NoProfile -Command ^
-  "$ws = New-Object -ComObject WScript.Shell; ^
-   $sc = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\%SHORTCUT_NAME%.lnk'); ^
-   $sc.TargetPath = '%SCRIPT_DIR%start.bat'; ^
-   $sc.WorkingDirectory = '%SCRIPT_DIR%'; ^
-   $sc.Description = 'Launch HybridTurtle Trading Dashboard'; ^
-   $sc.IconLocation = 'shell32.dll,21'; ^
-   $sc.Save()"
+:: Use PowerShell to create a proper shortcut (single line for reliability)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $desktop = [Environment]::GetFolderPath('Desktop'); $lnk = Join-Path $desktop '%SHORTCUT_NAME%.lnk'; $sc = $ws.CreateShortcut($lnk); $sc.TargetPath = Join-Path '%SCRIPT_DIR%' 'start.bat'; $sc.WorkingDirectory = '%SCRIPT_DIR%'; $sc.Description = 'Launch HybridTurtle Trading Dashboard'; $sc.IconLocation = 'shell32.dll,21'; $sc.Save()"
 
 if %errorlevel% equ 0 (
     echo         Desktop shortcut created!
 ) else (
-    echo         Could not create shortcut. No problem — you can run start.bat manually.
+    echo         Could not create shortcut. No problem - you can run start.bat manually.
 )
 
 :: ── Step 7: Optional — Nightly Telegram Scheduled Task ──
@@ -145,7 +138,7 @@ echo  [7/7] Nightly Telegram Notifications (optional)
 echo.
 echo   This sets up a Windows Scheduled Task that runs every
 echo   weeknight at 21:10 to send a Telegram summary of your
-echo   portfolio — stops, risk gates, laggards, module alerts.
+echo   portfolio - stops, risk gates, laggards, module alerts.
 echo.
 echo   Requirements:
 echo     - TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in your .env
@@ -169,12 +162,8 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         echo echo [%%date%% %%time%%] Nightly process finished ^(exit code: %%ERRORLEVEL%%^) ^>^> nightly.log
     ) > "%~dp0nightly-task.bat"
 
-    :: Create the Windows Scheduled Task
-    powershell -NoProfile -Command ^
-      "$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c \"%SCRIPT_DIR%nightly-task.bat\"' -WorkingDirectory '%SCRIPT_DIR%'; ^
-       $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '21:10'; ^
-       $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd; ^
-       Register-ScheduledTask -TaskName 'HybridTurtle-Nightly' -Action $action -Trigger $trigger -Settings $settings -Description 'HybridTurtle nightly Telegram summary' -Force"
+        :: Create the Windows Scheduled Task (single line for reliability)
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c \"' + (Join-Path '%SCRIPT_DIR%' 'nightly-task.bat') + '\"') -WorkingDirectory '%SCRIPT_DIR%'; $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At '21:10'; $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd; Register-ScheduledTask -TaskName 'HybridTurtle-Nightly' -Action $action -Trigger $trigger -Settings $settings -Description 'HybridTurtle nightly Telegram summary' -Force"
 
     if !errorlevel! equ 0 (
         echo         Scheduled task 'HybridTurtle-Nightly' created!
@@ -184,7 +173,7 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         echo         !! Try running this installer as Administrator.
     )
 ) else (
-    echo         Skipped — you can set this up later by running:
+    echo         Skipped - you can set this up later by running:
     echo         install.bat or manually in Task Scheduler.
 )
 
