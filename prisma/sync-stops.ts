@@ -1,7 +1,7 @@
 /**
  * Sync trailing stops from Planning/positions_state.csv into the database.
  * 
- * Usage: npx ts-node prisma/sync-stops.ts
+ * Usage: npx tsx prisma/sync-stops.ts
  */
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';

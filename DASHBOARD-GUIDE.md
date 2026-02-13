@@ -512,7 +512,7 @@ The nightly cron executes at **9:30 PM UK time**, Monday–Friday.
 ### Manual Trigger
 
 ```bash
-npx ts-node src/cron/nightly.ts --run-now
+npx tsx src/cron/nightly.ts --run-now
 ```
 
 Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.

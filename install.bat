@@ -222,7 +222,7 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         echo @echo off
         echo cd /d "%%~dp0"
         echo echo [%%date%% %%time%%] Starting nightly process... ^>^> nightly.log
-        echo call npx ts-node src/cron/nightly.ts --run-now ^>^> nightly.log 2^>^&1
+        echo call npx tsx src/cron/nightly.ts --run-now ^>^> nightly.log 2^>^&1
         echo echo [%%date%% %%time%%] Nightly process finished ^(exit code: %%ERRORLEVEL%%^) ^>^> nightly.log
     ) > "%~dp0nightly-task.bat"
 

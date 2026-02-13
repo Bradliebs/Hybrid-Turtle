@@ -14,7 +14,8 @@
     "incremental": true,
     "plugins": [{ "name": "next" }],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "server-only": ["./src/test/server-only.ts"]
     },
     "baseUrl": "."
   },
