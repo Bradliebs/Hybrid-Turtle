@@ -10,7 +10,7 @@ import type {
   TechnicalData,
   RiskProfileType,
 } from '@/types';
-import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK } from '@/types';
+import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK, ATR_STOP_MULTIPLIER } from '@/types';
 import { getTechnicalData, getMarketRegime, getQuickPrice, getFXRate } from './market-data';
 import { calculateAdaptiveBuffer } from './modules/adaptive-atr-buffer';
 import { calculatePositionSize } from './position-sizer';
@@ -219,7 +219,7 @@ export async function runFullScan(
           technicals.atrPercent
         );
         const entryTrigger = adaptiveBuffer.adjustedEntryTrigger;
-        const stopPrice = entryTrigger - technicals.atr * 1.5;
+        const stopPrice = entryTrigger - technicals.atr * ATR_STOP_MULTIPLIER;
         const distancePercent = ((entryTrigger - price) / price) * 100;
         let status = classifyCandidate(price, entryTrigger);
         let passesAllFilters = filterResults.passesAll;

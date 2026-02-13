@@ -146,14 +146,16 @@ Both must pass to clear the guard.
 
 All 6 gates must pass before a new position is allowed:
 
-| # | Gate | Rule | Thresholds |
-|---|------|------|------------|
+| # | Gate | Rule | Default Thresholds |
+|---|------|------|--------------------|
 | 1 | **Total Open Risk** | `(currentOpenRisk + newRiskDollars) / equity × 100 ≤ maxOpenRisk` | CON=7%, BAL=5.5%, SMALL=10%, AGG=6% |
 | 2 | **Max Positions** | `openPositions < maxPositions` (ex-HEDGE) | CON=8, BAL=5, SMALL=4, AGG=2 |
 | 3 | **Sleeve Limit** | `sleeveValue / totalPortfolioValue ≤ SLEEVE_CAPS[sleeve]` | CORE=80%, ETF=80%, HIGH_RISK=40%, HEDGE=100% |
-| 4 | **Cluster Concentration** | `clusterValue / totalPortfolioValue ≤ 20%` | CLUSTER_CAP = 20% |
-| 5 | **Sector Concentration** | `sectorValue / totalPortfolioValue ≤ 25%` | SECTOR_CAP = 25% |
-| 6 | **Position Size Cap** | `newValue / totalPortfolioValue ≤ cap` | CORE=16%, ETF=16%, HIGH_RISK=12%, HEDGE=20% |
+| 4 | **Cluster Concentration** | `clusterValue / totalPortfolioValue ≤ clusterCap` | Default 20% — **SMALL_ACCOUNT: 25%** |
+| 5 | **Sector Concentration** | `sectorValue / totalPortfolioValue ≤ sectorCap` | Default 25% — **SMALL_ACCOUNT: 30%** |
+| 6 | **Position Size Cap** | `newValue / totalPortfolioValue ≤ cap` | See profile-aware table below |
+
+> **Profile-Aware Overrides:** Gates 4–6 support per-profile cap overrides via `getProfileCaps(riskProfile)` in `src/types/index.ts`. Profiles without overrides use the default constants.
 
 **CRITICAL:** HEDGE positions are **excluded** from open risk counting and max position counting.
 
@@ -194,7 +196,9 @@ Rounds to 3 decimal places (fractional shares supported).
 
 ### Position Size Cap Enforcement
 
-If `shares × entryPrice × fxToGbp > equity × POSITION_SIZE_CAPS[sleeve]`, clamp shares down.
+If `shares × entryPrice × fxToGbp > equity × positionSizeCap[sleeve]`, clamp shares down.
+
+Position size caps are **profile-aware** — see [Concentration Caps](#concentration-caps) for per-profile values.
 
 ### Risk Per Trade by Profile
 
@@ -707,22 +711,37 @@ Replaces the Python `master_snapshot` pipeline.
 
 ### Sleeve Caps
 
-| Sleeve | Allocation Cap | Position Size Cap |
-|--------|---------------|-------------------|
-| CORE | 80% | 16% |
+| Sleeve | Allocation Cap | Position Size Cap (default) |
+|--------|---------------|----------------------------|
+| CORE | 80% | 16% (SMALL_ACCOUNT: 20%, BALANCED: 18%) |
 | ETF | 80% | 16% |
 | HIGH_RISK | 40% | 12% |
 | HEDGE | 100% | 20% |
 
 ### Concentration Caps
 
-| Cap | Value |
-|-----|-------|
+Default values (used for CONSERVATIVE and AGGRESSIVE profiles):
+
+| Cap | Default Value |
+|-----|---------------|
 | Cluster | 20% |
 | Sector | 25% |
 | Super-Cluster | 50% |
 | ATR Volatility (all) | 8% |
 | ATR Volatility (HIGH_RISK) | 7% |
+
+#### Profile-Aware Overrides
+
+Certain profiles receive looser caps via `getProfileCaps()`. Add new overrides in `PROFILE_CAP_OVERRIDES` in `src/types/index.ts`.
+
+| Override | SMALL_ACCOUNT | BALANCED | Others |
+|----------|---------------|----------|--------|
+| Cluster Cap | **25%** | 20% (default) | 20% (default) |
+| Sector Cap | **30%** | 25% (default) | 25% (default) |
+| Position Size Cap (CORE) | **20%** | **18%** | 16% (default) |
+| Position Size Cap (ETF) | 16% (default) | 16% (default) | 16% (default) |
+| Position Size Cap (HIGH_RISK) | 12% (default) | 12% (default) | 12% (default) |
+| Position Size Cap (HEDGE) | 20% (default) | 20% (default) | 20% (default) |
 
 ### Protection Levels
 

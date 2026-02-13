@@ -5,7 +5,7 @@
 // Always rounds DOWN to whole shares.
 
 import type { PositionSizingResult, RiskProfileType } from '@/types';
-import { RISK_PROFILES, POSITION_SIZE_CAPS, type Sleeve } from '@/types';
+import { RISK_PROFILES, POSITION_SIZE_CAPS, getProfileCaps, type Sleeve } from '@/types';
 
 export interface PositionSizeInput {
   equity: number;
@@ -42,9 +42,10 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
   // Calculate shares — fractional to 0.001
   let shares = Math.floor((riskAmount / riskPerShare) * 1000) / 1000;
 
-  // Enforce position size cap: totalCost ≤ cap% × equity
+  // Enforce position size cap: totalCost ≤ cap% × equity (profile-aware)
   if (shares > 0 && sleeve) {
-    const cap = POSITION_SIZE_CAPS[sleeve];
+    const caps = getProfileCaps(riskProfile);
+    const cap = caps.positionSizeCaps[sleeve] ?? POSITION_SIZE_CAPS.CORE;
     const maxCost = equity * cap;
     const totalCostInGbp = shares * entryPrice * fxToGbp;
     if (totalCostInGbp > maxCost) {

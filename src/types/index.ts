@@ -65,6 +65,57 @@ export const SUPER_CLUSTER_CAP = 0.50; // Module 12: Super-Cluster Risk Cap
 export const ATR_VOLATILITY_CAP_ALL = 8; // ATR% cap for Sleep-Well filter
 export const ATR_VOLATILITY_CAP_HIGH_RISK = 7; // Stricter cap for HIGH_RISK
 
+// Initial stop distance: entry minus ATR × this multiplier
+export const ATR_STOP_MULTIPLIER = 1.5;
+
+// ---- Snapshot Early-Warning Thresholds ----
+// Looser thresholds used in snapshot rows to flag exposure *before*
+// it reaches the hard trading-gate caps above. These are display/
+// warning values only — not enforced by risk gates or position sizer.
+export const SNAPSHOT_CLUSTER_WARNING = 0.35;
+export const SNAPSHOT_SUPER_CLUSTER_WARNING = 0.60;
+
+// ---- Profile-Aware Cap Overrides ----
+// Per-profile overrides for concentration & position size caps.
+// Profiles not listed here use the default constants above.
+export interface ProfileCapOverrides {
+  clusterCap: number;
+  sectorCap: number;
+  positionSizeCaps: Record<string, number>;
+}
+
+const PROFILE_CAP_OVERRIDES: Partial<Record<RiskProfileType, Partial<ProfileCapOverrides>>> = {
+  SMALL_ACCOUNT: {
+    clusterCap: 0.25,
+    sectorCap: 0.30,
+    positionSizeCaps: { CORE: 0.20 },
+  },
+  BALANCED: {
+    positionSizeCaps: { CORE: 0.18 },
+  },
+};
+
+/**
+ * Get effective caps for a given risk profile.
+ * Returns default constants merged with any per-profile overrides.
+ * Makes it easy to add overrides for other profiles later.
+ */
+export function getProfileCaps(profile: RiskProfileType): {
+  clusterCap: number;
+  sectorCap: number;
+  positionSizeCaps: Record<string, number>;
+} {
+  const overrides = PROFILE_CAP_OVERRIDES[profile];
+  return {
+    clusterCap: overrides?.clusterCap ?? CLUSTER_CAP,
+    sectorCap: overrides?.sectorCap ?? SECTOR_CAP,
+    positionSizeCaps: {
+      ...POSITION_SIZE_CAPS,
+      ...(overrides?.positionSizeCaps ?? {}),
+    },
+  };
+}
+
 // ---- Enums ----
 export type Sleeve = 'CORE' | 'HIGH_RISK' | 'ETF' | 'HEDGE';
 export type PositionStatus = 'OPEN' | 'CLOSED';
