@@ -45,11 +45,11 @@ echo         Found Node.js %NODE_VER%
 :: ── Node.js version compatibility check ──
 set "NODE_VER_NO_V=%NODE_VER:v=%"
 for /f "tokens=1 delims=." %%i in ("%NODE_VER_NO_V%") do set NODE_MAJOR=%%i
-if not "%NODE_MAJOR%"=="20" if not "%NODE_MAJOR%"=="22" (
+if %NODE_MAJOR% LSS 18 (
     echo.
-    echo  !! This installer currently supports Node.js 20 or 22 LTS.
+    echo  !! This installer requires Node.js 18 or higher.
     echo  !! You have Node.js %NODE_VER% installed.
-    echo  !! Please install Node.js 22 LTS or 20 LTS, then run install.bat again.
+    echo  !! Please install a current Node.js LTS version, then run install.bat again.
     echo  !! On the Node.js website, choose the LTS tab.
     echo.
     echo  !! Opening Node.js download page...
