@@ -9,6 +9,8 @@ import {
   getDailyPrices,
 } from '@/lib/market-data';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/market-data?action=quote&ticker=AAPL
 // GET /api/market-data?action=quotes&tickers=AAPL,MSFT,NVDA
 // GET /api/market-data?action=indices

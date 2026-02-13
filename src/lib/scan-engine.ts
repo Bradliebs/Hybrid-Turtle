@@ -254,36 +254,10 @@ export async function runFullScan(
         let passesAntiChase = true;
 
         if (passesAllFilters && status !== 'FAR') {
-          // ── Stage 5: Risk Gates ──
           const fxToGbp = await getFxToGbp(stock.currency, stock.ticker);
-          const estimatedValue = entryTrigger * 10 * fxToGbp; // rough size estimate for gate check
-          const estimatedRisk = (entryTrigger - stopPrice) * 10 * fxToGbp;
-          riskGateResults = validateRiskGates(
-            {
-              sleeve: stock.sleeve,
-              sector: stock.sector,
-              cluster: stock.cluster,
-              value: estimatedValue,
-              riskDollars: estimatedRisk,
-            },
-            positionsForGates,
-            equity,
-            riskProfile
-          );
-          passesRiskGates = riskGateResults.every((g) => g.passed);
-
-          // ── Stage 6: Anti-Chase / Execution Guard ──
-          antiChaseResult = checkAntiChasingGuard(
-            price,
-            entryTrigger,
-            technicals.atr,
-            new Date().getDay()
-          );
-          passesAntiChase = antiChaseResult.passed;
 
           // ── Stage 7: Position Sizing (with position size cap) ──
           try {
-            const fxToGbp = await getFxToGbp(stock.currency, stock.ticker);
             const sizing = calculatePositionSize({
               equity,
               riskProfile,
@@ -299,6 +273,32 @@ export async function runFullScan(
           } catch {
             // Skip if sizing fails
           }
+
+          // ── Stage 5: Risk Gates ──
+          const gateValue = totalCost ?? 0;
+          const gateRisk = riskDollars ?? 0;
+          riskGateResults = validateRiskGates(
+            {
+              sleeve: stock.sleeve,
+              sector: stock.sector,
+              cluster: stock.cluster,
+              value: gateValue,
+              riskDollars: gateRisk,
+            },
+            positionsForGates,
+            equity,
+            riskProfile
+          );
+          passesRiskGates = riskGateResults.every((g) => g.passed);
+
+          // ── Stage 6: Anti-Chase / Execution Guard ──
+          antiChaseResult = checkAntiChasingGuard(
+            price,
+            entryTrigger,
+            technicals.atr,
+            new Date().getDay()
+          );
+          passesAntiChase = antiChaseResult.passed;
         }
 
         // Determine native price currency (matches what T212/Yahoo shows)

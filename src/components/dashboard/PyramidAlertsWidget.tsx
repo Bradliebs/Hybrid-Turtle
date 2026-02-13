@@ -132,7 +132,7 @@ export default function PyramidAlertsWidget() {
       {actionable.length === 0 && upcoming.length === 0 && (
         <div className="text-center py-4">
           <div className="text-xs text-muted-foreground">
-            No pyramid opportunities — positions haven't reached trigger levels yet
+            No pyramid opportunities — positions have not reached trigger levels yet
           </div>
         </div>
       )}

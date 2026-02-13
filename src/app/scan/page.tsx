@@ -34,11 +34,11 @@ export default function ScanPage() {
     { num: 7, label: 'Position Sizing' },
   ];
 
-  const candidates = scanResult?.candidates || [];
-  const passesAll = candidates.filter((c: any) => c.passesAllFilters);
-  const readyCandidates = passesAll.filter((c: any) => c.status === 'READY');
-  const watchCandidates = passesAll.filter((c: any) => c.status === 'WATCH');
-  const farCandidates = candidates.filter((c: any) => c.status === 'FAR');
+  const candidates = useMemo(() => scanResult?.candidates ?? [], [scanResult]);
+  const passesAll = useMemo(() => candidates.filter((c: any) => c.passesAllFilters), [candidates]);
+  const readyCandidates = useMemo(() => passesAll.filter((c: any) => c.status === 'READY'), [passesAll]);
+  const watchCandidates = useMemo(() => passesAll.filter((c: any) => c.status === 'WATCH'), [passesAll]);
+  const farCandidates = useMemo(() => candidates.filter((c: any) => c.status === 'FAR'), [candidates]);
 
   const filterResults = useMemo(() => {
     return candidates.slice(0, 12).map((c: any) => ({
@@ -70,7 +70,7 @@ export default function ScanPage() {
       { label: 'Stage 6: Anti-Chase', count: antiChaseCount, color: '#f59e0b' },
       { label: 'Stage 7: Sized', count: sizedCount, color: '#ef4444' },
     ];
-  }, [scanResult, candidates.length, passesAll.length, antiChaseResults]);
+  }, [scanResult, candidates.length, passesAll, antiChaseResults]);
 
   const sleeveCounts = useMemo(() => {
     const counts = { CORE: 0, ETF: 0, HIGH_RISK: 0 };

@@ -5,6 +5,8 @@ import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/l
 import * as fs from 'fs';
 import * as path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 // ── Locate master_snapshot.csv as fallback ──────────────────
 const PLANNING_SIBLING = path.resolve(process.cwd(), '../Planning');
 const PLANNING_LOCAL = path.resolve(process.cwd(), 'Planning');
@@ -90,20 +92,27 @@ function dbRowToSnapshotRow(row: Record<string, unknown>): SnapshotRow {
 // ── Load dual-score tickers ─────────────────────────────────
 async function getDualScoreTickers(): Promise<ScoredTicker[]> {
   // Try DB first
-  const snapshot = await prisma.snapshot.findFirst({
-    orderBy: { createdAt: 'desc' },
-  });
-  if (snapshot) {
-    const dbRows = await prisma.snapshotTicker.findMany({
-      where: { snapshotId: snapshot.id },
-    });
-    if (dbRows.length > 0) {
-      const snapshotRows: SnapshotRow[] = dbRows.map((r) =>
-        dbRowToSnapshotRow(r as unknown as Record<string, unknown>)
-      );
-      return scoreAll(snapshotRows);
+  if (process.env.DATABASE_URL) {
+    try {
+      const snapshot = await prisma.snapshot.findFirst({
+        orderBy: { createdAt: 'desc' },
+      });
+      if (snapshot) {
+        const dbRows = await prisma.snapshotTicker.findMany({
+          where: { snapshotId: snapshot.id },
+        });
+        if (dbRows.length > 0) {
+          const snapshotRows: SnapshotRow[] = dbRows.map((r) =>
+            dbRowToSnapshotRow(r as unknown as Record<string, unknown>)
+          );
+          return scoreAll(snapshotRows);
+        }
+      }
+    } catch (dbError) {
+      console.warn('[CrossRef] DB unavailable, falling back to CSV:', (dbError as Error).message);
     }
   }
+
   // Fallback to CSV
   if (fs.existsSync(CSV_PATH)) {
     const csvText = fs.readFileSync(CSV_PATH, 'utf-8');

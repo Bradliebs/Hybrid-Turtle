@@ -133,7 +133,7 @@ export async function updateStopLoss(
   if (newStop === position.currentStop) return;
 
   const rMultiple = position.initialRisk > 0
-    ? (newStop - position.entryPrice + position.initialRisk) / position.initialRisk
+    ? (newStop - position.entryPrice) / position.initialRisk
     : 0;
   const newLevel = getProtectionLevel(rMultiple);
 

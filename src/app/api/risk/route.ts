@@ -7,6 +7,8 @@ import { getRiskBudget } from '@/lib/risk-gates';
 import { getWeeklyEquityChangePercent, recordEquitySnapshot } from '@/lib/equity-snapshot';
 import type { RiskProfileType, Sleeve } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;

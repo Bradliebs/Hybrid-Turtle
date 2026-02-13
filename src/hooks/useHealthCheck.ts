@@ -49,7 +49,7 @@ export function useHealthCheck(autoRun = false, userId = DEFAULT_USER_ID) {
     } finally {
       setLoading(false);
     }
-  }, [setHealthStatus]);
+  }, [setHealthStatus, userId]);
 
   const fetchLatestCheck = useCallback(async () => {
     try {

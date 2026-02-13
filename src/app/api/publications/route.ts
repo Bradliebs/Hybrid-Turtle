@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
 
+export const dynamic = 'force-dynamic';
+
 interface PublicationItem {
   date: string;
   title: string;

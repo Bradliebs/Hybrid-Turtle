@@ -4,6 +4,8 @@ import { ensureDefaultUser } from '@/lib/default-user';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import { calculateGainDollars, calculateGainPercent } from '@/lib/position-sizer';
 
+export const dynamic = 'force-dynamic';
+
 interface DistributionItem {
   name: string;
   value: number;

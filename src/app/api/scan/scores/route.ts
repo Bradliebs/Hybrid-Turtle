@@ -4,6 +4,8 @@ import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/l
 import * as fs from 'fs';
 import * as path from 'path';
 
+export const dynamic = 'force-dynamic';
+
 // ── Locate master_snapshot.csv as fallback ──────────────────
 const PLANNING_SIBLING = path.resolve(process.cwd(), '../Planning');
 const PLANNING_LOCAL = path.resolve(process.cwd(), 'Planning');
@@ -122,29 +124,34 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
     const preferCSV = searchParams.get('source') === 'csv';
+    const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
 
     // ── Strategy 1: Database (latest synced snapshot) ────────
-    if (!preferCSV) {
-      const snapshot = await prisma.snapshot.findFirst({
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (snapshot) {
-        const dbRows = await prisma.snapshotTicker.findMany({
-          where: { snapshotId: snapshot.id },
+    if (!preferCSV && hasDatabaseUrl) {
+      try {
+        const snapshot = await prisma.snapshot.findFirst({
+          orderBy: { createdAt: 'desc' },
         });
 
-        if (dbRows.length > 0) {
-          const snapshotRows: SnapshotRow[] = dbRows.map((r) =>
-            dbRowToSnapshotRow(r as unknown as Record<string, unknown>)
-          );
-          const scored = scoreAll(snapshotRows);
-          scored.sort((a, b) => b.NCS - a.NCS);
+        if (snapshot) {
+          const dbRows = await prisma.snapshotTicker.findMany({
+            where: { snapshotId: snapshot.id },
+          });
 
-          return NextResponse.json(
-            buildResponse(scored, snapshot.createdAt.toISOString(), snapshot.source || 'database')
-          );
+          if (dbRows.length > 0) {
+            const snapshotRows: SnapshotRow[] = dbRows.map((r) =>
+              dbRowToSnapshotRow(r as unknown as Record<string, unknown>)
+            );
+            const scored = scoreAll(snapshotRows);
+            scored.sort((a, b) => b.NCS - a.NCS);
+
+            return NextResponse.json(
+              buildResponse(scored, snapshot.createdAt.toISOString(), snapshot.source || 'database')
+            );
+          }
         }
+      } catch (dbError) {
+        console.warn('[DualScore] DB unavailable, falling back to CSV:', (dbError as Error).message);
       }
     }
 

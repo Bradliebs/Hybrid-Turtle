@@ -46,9 +46,9 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
   if (shares > 0 && sleeve) {
     const cap = POSITION_SIZE_CAPS[sleeve];
     const maxCost = equity * cap;
-    const totalCost = shares * entryPrice;
-    if (totalCost > maxCost) {
-      shares = Math.floor((maxCost / entryPrice) * 1000) / 1000;
+    const totalCostInGbp = shares * entryPrice * fxToGbp;
+    if (totalCostInGbp > maxCost) {
+      shares = Math.floor((maxCost / (entryPrice * fxToGbp)) * 1000) / 1000;
     }
   }
 
@@ -64,7 +64,7 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
     };
   }
 
-  const totalCost = shares * entryPrice;
+  const totalCost = shares * entryPrice * fxToGbp;
   const actualRiskDollars = shares * riskPerShare;
   const actualRiskPercent = (actualRiskDollars / equity) * 100;
 

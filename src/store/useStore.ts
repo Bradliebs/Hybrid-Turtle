@@ -109,7 +109,7 @@ interface AppState {
   isMarketDataStale: () => boolean;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>()((set, get) => ({
   // System State
   healthStatus: 'YELLOW',
   marketRegime: 'SIDEWAYS',
@@ -183,12 +183,12 @@ export const useStore = create<AppState>((set) => ({
   setModulesData: (data) => set({ modulesData: data, modulesFetchedAt: Date.now(), modulesFetching: false }),
   setModulesFetching: (fetching) => set({ modulesFetching: fetching }),
   isModulesStale: () => {
-    const state = useStore.getState();
+    const state = get();
     return !state.modulesData || Date.now() - state.modulesFetchedAt > CACHE_TTL;
   },
   setMarketDataFetchedAt: (ts) => set({ marketDataFetchedAt: ts }),
   isMarketDataStale: () => {
-    const state = useStore.getState();
+    const state = get();
     return Date.now() - state.marketDataFetchedAt > CACHE_TTL;
   },
 }));

@@ -4,6 +4,8 @@ import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import { calculateStopRecommendation } from '@/lib/stop-manager';
 import type { ProtectionLevel } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * GET /api/positions/hedge
  * Returns all HEDGE sleeve positions with live prices, P&L, and stop guidance.

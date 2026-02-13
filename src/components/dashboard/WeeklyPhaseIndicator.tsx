@@ -2,10 +2,12 @@
 
 import { useStore } from '@/store/useStore';
 import { PHASE_CONFIG } from '@/types';
+import type { WeeklyPhase } from '@/types';
 import { cn } from '@/lib/utils';
 import { Calendar, Eye, Zap, Wrench } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
-const phaseIcons = {
+const phaseIcons: Record<WeeklyPhase, LucideIcon> = {
   PLANNING: Calendar,
   OBSERVATION: Eye,
   EXECUTION: Zap,

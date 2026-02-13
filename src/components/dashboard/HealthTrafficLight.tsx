@@ -3,11 +3,12 @@
 import { useStore } from '@/store/useStore';
 import TrafficLight, { TrafficLightFull } from '@/components/shared/TrafficLight';
 import { cn } from '@/lib/utils';
+import type { HealthStatus } from '@/types';
 
 export default function HealthTrafficLight() {
   const { healthStatus } = useStore();
 
-  const statusMessages = {
+  const statusMessages: Record<HealthStatus, string> = {
     GREEN: 'All systems operational — Trading allowed',
     YELLOW: 'Warnings detected — Trade with caution',
     RED: 'Issues detected — Review before trading',
