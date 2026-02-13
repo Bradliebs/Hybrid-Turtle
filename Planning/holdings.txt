@@ -1,3 +1,0 @@
-BATS.L
-DVN
-GSK.L
