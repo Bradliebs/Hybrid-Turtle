@@ -1,5 +1,7 @@
 # HybridTurtle Trading Dashboard
 
+> **⚠️ Disclaimer:** This software is **experimental** and provided **as-is** with no warranty of any kind. It is intended for educational and personal research purposes only. It does **not** constitute financial advice, and no guarantee is made regarding the accuracy, reliability, or completeness of any data or output. **Use entirely at your own risk.** The author(s) accept no liability for any financial losses, damages, or other consequences arising from the use of this software. Always do your own research and consult a qualified financial adviser before making investment decisions.
+
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
 ![Node](https://img.shields.io/badge/node-20%20or%2022%20LTS-339933)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
