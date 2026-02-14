@@ -2,6 +2,7 @@
 
 > **⚠️ Disclaimer:** This software is **experimental** and provided **as-is** with no warranty of any kind. It is intended for educational and personal research purposes only. It does **not** constitute financial advice, and no guarantee is made regarding the accuracy, reliability, or completeness of any data or output. **Use entirely at your own risk.** The author(s) accept no liability for any financial losses, damages, or other consequences arising from the use of this software. Always do your own research and consult a qualified financial adviser before making investment decisions.
 
+![Version](https://img.shields.io/badge/version-6.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
 ![Node](https://img.shields.io/badge/node-20%20or%2022%20LTS-339933)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
@@ -28,6 +29,8 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 ## Core capabilities
 
 - **7-stage scan engine** for candidate discovery and qualification
+- **Dual Score system** (BQS / FWS / NCS) for quantitative screening
+- **Cross-Reference engine** to reconcile scan and dual score recommendations
 - **Risk controls** (position sizing, open risk caps, concentration limits)
 - **Portfolio management** with stop updates and R-multiple tracking
 - **Plan workspace** for pre-trade checks and weekly execution
@@ -55,12 +58,16 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 - `run-dashboard.bat` — compatibility alias (redirects to `start.bat`)
 - `seed-tickers.bat` — re-seed ticker universe from Planning files
 - `update.bat` — update dependencies/database after pulling new code
+- `nightly-task.bat` — run nightly automation checks (can be scheduled via Task Scheduler)
+- `package-for-distribution.bat` — package the app for offline distribution
 
 ## Documentation
 
 - [USER-GUIDE.md](USER-GUIDE.md) — complete end-user guide (non-technical)
 - [SETUP-README.md](SETUP-README.md) — concise setup + troubleshooting
 - [DASHBOARD-GUIDE.md](DASHBOARD-GUIDE.md) — full feature and operations reference
+- [TRADING-LOGIC.md](TRADING-LOGIC.md) — trading rules, risk logic, and system constraints
+- [Agent.md](Agent.md) — AI agent ruleset for codebase contributions
 
 ## Tech stack
 
@@ -83,6 +90,7 @@ npm run test:unit
 npx prisma generate
 npx prisma db push
 npx prisma db seed
+npm run db:studio   # launch Prisma Studio GUI
 ```
 
 ## Notes
