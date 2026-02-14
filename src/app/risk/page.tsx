@@ -10,18 +10,38 @@ import RiskBudgetMeter from '@/components/risk/RiskBudgetMeter';
 import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
 import { Shield, Lock, Loader2 } from 'lucide-react';
+import type { RiskProfileType, Sleeve, PositionData } from '@/types';
+
+interface RiskBudget {
+  usedRiskPercent: number;
+  availableRiskPercent: number;
+  maxRiskPercent: number;
+  usedPositions: number;
+  maxPositions: number;
+  sleeveUtilization: Record<Sleeve, { used: number; max: number }>;
+}
+
+interface RiskSummaryResponse {
+  riskProfile: RiskProfileType;
+  equity: number;
+  budget: RiskBudget;
+  riskEfficiency: number | null;
+  weeklyEquityChangePercent: number | null;
+  maxOpenRiskUsedPercent: number;
+  positions: PositionData[];
+}
 
 const DEFAULT_USER_ID = 'default-user';
 
 export default function RiskPage() {
   const { riskProfile, setRiskProfile, setEquity } = useStore();
-  const [riskSummary, setRiskSummary] = useState<any | null>(null);
+  const [riskSummary, setRiskSummary] = useState<RiskSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchRisk = async () => {
       try {
-        const data = await apiRequest<any>(`/api/risk?userId=${DEFAULT_USER_ID}`);
+        const data = await apiRequest<RiskSummaryResponse>(`/api/risk?userId=${DEFAULT_USER_ID}`);
         setRiskSummary(data);
         if (data?.riskProfile) {
           setRiskProfile(data.riskProfile);

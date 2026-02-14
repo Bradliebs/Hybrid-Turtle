@@ -24,7 +24,7 @@ const phaseOrder = ['PLANNING', 'OBSERVATION', 'EXECUTION', 'MAINTENANCE'] as co
 export default function PhaseTimeline() {
   const { weeklyPhase } = useStore();
 
-  const currentPhaseIdx = phaseOrder.indexOf(weeklyPhase as any);
+  const currentPhaseIdx = phaseOrder.indexOf(weeklyPhase as typeof phaseOrder[number]);
 
   return (
     <div className="card-surface p-4">

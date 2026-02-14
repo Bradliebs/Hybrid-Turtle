@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncSnapshot } from '@/lib/snapshot-sync';
+import { apiError } from '@/lib/api-response';
 
 // ── POST: Trigger a full data sync from Yahoo Finance ───────
 // Fetches live market data for every stock in the universe,
@@ -21,9 +22,6 @@ export async function POST() {
     });
   } catch (error) {
     console.error('[Snapshot Sync] Error:', error);
-    return NextResponse.json(
-      { error: 'Sync failed', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'SNAPSHOT_SYNC_FAILED', 'Sync failed', (error as Error).message, true);
   }
 }

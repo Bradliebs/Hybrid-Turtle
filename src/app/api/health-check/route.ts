@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runHealthCheck } from '@/lib/health-check';
 import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
+import { apiError } from '@/lib/api-response';
 
 const healthCheckBodySchema = z.object({
   userId: z.string().trim().min(1),
@@ -12,10 +13,7 @@ export async function GET(request: NextRequest) {
     const userId = request.nextUrl.searchParams.get('userId');
     
     if (!userId) {
-      return NextResponse.json(
-        { error: 'userId is required' },
-        { status: 400 }
-      );
+      return apiError(400, 'MISSING_USER_ID', 'userId is required');
     }
 
     const report = await runHealthCheck(userId);
@@ -23,10 +21,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(report);
   } catch (error) {
     console.error('Health check error:', error);
-    return NextResponse.json(
-      { error: 'Health check failed', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'HEALTH_CHECK_FAILED', 'Health check failed', (error as Error).message, true);
   }
 }
 
@@ -43,9 +38,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(report);
   } catch (error) {
     console.error('Health check error:', error);
-    return NextResponse.json(
-      { error: 'Health check failed', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'HEALTH_CHECK_FAILED', 'Health check failed', (error as Error).message, true);
   }
 }

@@ -29,7 +29,7 @@ import {
   scanFastFollowers,
   scanReEntrySignals,
 } from '@/lib/modules';
-import type { RiskProfileType, Sleeve, MarketRegime, ModuleStatus, AllModulesResult, FastFollowerSignal, ReEntrySignal, PyramidAlert } from '@/types';
+import type { RiskProfileType, Sleeve, MarketRegime, ModuleStatus, AllModulesResult, FastFollowerSignal, ReEntrySignal, PyramidAlert, TradeLogEntry } from '@/types';
 import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -203,7 +203,7 @@ export async function GET(request: NextRequest) {
         ticker: p.stock.ticker,
         exitDate: p.exitDate || new Date(),
         exitReason: p.exitReason,
-        whipsawCount: (p as any).whipsawCount ?? 0,
+        whipsawCount: p.whipsawCount ?? 0,
       }))
     );
 
@@ -232,11 +232,11 @@ export async function GET(request: NextRequest) {
     // ── Module 9: Regime Stability ──
     let regimeHistoryRecords: { regime: string; date: Date }[] = [];
     try {
-      const rh = await (prisma as any).regimeHistory?.findMany({
+      const rh: { regime: string; date: Date }[] | undefined = await (prisma as unknown as Record<string, { findMany: (opts: unknown) => Promise<{ regime: string; date: Date }[]> }>).regimeHistory?.findMany({
         orderBy: { date: 'desc' },
         take: 10,
       });
-      if (rh) regimeHistoryRecords = rh.map((r: any) => ({ regime: r.regime, date: r.date }));
+      if (rh) regimeHistoryRecords = rh.map((r) => ({ regime: r.regime, date: r.date }));
     } catch { /* table may not exist yet */ }
     const regimeStability = checkRegimeStability(regime, regimeHistoryRecords);
 
@@ -268,7 +268,7 @@ export async function GET(request: NextRequest) {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     let tradeCount30d = 0;
     try {
-      tradeCount30d = await (prisma as any).tradeLog?.count({
+      tradeCount30d = await (prisma as unknown as Record<string, { count: (opts: unknown) => Promise<number> }>).tradeLog?.count({
         where: { userId, createdAt: { gte: thirtyDaysAgo } },
       }) || 0;
     } catch { /* table may not exist yet */ }
@@ -283,7 +283,7 @@ export async function GET(request: NextRequest) {
     );
 
     // ── Module 15: Recent Trades ──
-    let recentTrades: any[] = [];
+    let recentTrades: TradeLogEntry[] = [];
     try {
       recentTrades = await getTradeLog(userId, 10);
     } catch { /* table may not exist yet */ }

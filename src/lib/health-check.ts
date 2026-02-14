@@ -7,6 +7,16 @@ import { HEALTH_CHECK_ITEMS, RISK_PROFILES } from '@/types';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import prisma from './prisma';
 
+/** Shape of a position as loaded by the health-check Prisma query. */
+interface HealthCheckPosition {
+  entryPrice: number;
+  shares: number;
+  currentStop: number;
+  status: string;
+  stock: { ticker: string; sleeve: string; currency: string | null };
+  stopHistory: { oldStop: number; newStop: number }[];
+}
+
 export interface HealthCheckReport {
   overall: HealthStatus;
   checks: Record<string, HealthStatus>;
@@ -192,14 +202,14 @@ function checkEquityPositive(equity: number): HealthCheckResult {
 }
 
 function checkOpenRiskCap(
-  positions: any[],
+  positions: HealthCheckPosition[],
   equity: number,
   riskProfile: RiskProfileType,
   livePrices: Record<string, number>,
   gbpPrices: Record<string, number>
 ): HealthCheckResult {
   const profile = RISK_PROFILES[riskProfile];
-  const totalRisk = positions.reduce((sum, p) => {
+  const totalRisk = positions.reduce((sum: number, p: HealthCheckPosition) => {
     const ticker = p.stock?.ticker as string | undefined;
     const rawPrice = ticker ? (livePrices[ticker] || p.entryPrice) : p.entryPrice;
     const gbpPrice = ticker ? (gbpPrices[ticker] ?? rawPrice) : rawPrice;
@@ -219,12 +229,12 @@ function checkOpenRiskCap(
   return { id: 'C2', label: 'Open Risk Within Cap', category: 'Risk', status: 'GREEN', message: `Open risk: ${riskPercent.toFixed(1)}% / ${profile.maxOpenRisk}%` };
 }
 
-function checkPositionSizes(positions: any[], equity: number): HealthCheckResult {
+function checkPositionSizes(positions: HealthCheckPosition[], equity: number): HealthCheckResult {
   if (positions.length === 0) {
     return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'No open positions' };
   }
-  const totalValue = positions.reduce((sum: number, p: any) => sum + (p.entryPrice * p.shares), 0);
-  const oversized = positions.filter((p: any) => {
+  const totalValue = positions.reduce((sum: number, p: HealthCheckPosition) => sum + (p.entryPrice * p.shares), 0);
+  const oversized = positions.filter((p: HealthCheckPosition) => {
     const posValue = p.entryPrice * p.shares;
     const pct = totalValue > 0 ? posValue / totalValue : 0;
     const cap = p.stock?.sleeve === 'HIGH_RISK' ? 0.12 : p.stock?.sleeve === 'HEDGE' ? 0.20 : 0.16;
@@ -237,7 +247,7 @@ function checkPositionSizes(positions: any[], equity: number): HealthCheckResult
   return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'All positions within size limits' };
 }
 
-async function checkStopMonotonicity(positions: any[]): Promise<HealthCheckResult> {
+async function checkStopMonotonicity(positions: HealthCheckPosition[]): Promise<HealthCheckResult> {
   for (const p of positions) {
     if (p.stopHistory && p.stopHistory.length > 0) {
       const lastHistory = p.stopHistory[0];
@@ -262,15 +272,15 @@ function checkConfigCoherence(riskProfile: RiskProfileType): HealthCheckResult {
   return { id: 'F', label: 'Config Coherence', category: 'Logic', status: 'GREEN', message: `Config is coherent for ${profile.name} profile` };
 }
 
-function checkSleeveLimits(positions: any[], equity: number): HealthCheckResult {
+function checkSleeveLimits(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
   return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'GREEN', message: 'Sleeve allocations within limits' };
 }
 
-function checkClusterConcentration(positions: any[], equity: number): HealthCheckResult {
+function checkClusterConcentration(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
   return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'Cluster concentrations within 20% cap' };
 }
 
-function checkSectorConcentration(positions: any[], equity: number): HealthCheckResult {
+function checkSectorConcentration(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
   return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'Sector concentrations within 33% cap' };
 }
 

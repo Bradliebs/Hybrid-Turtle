@@ -243,7 +243,7 @@ async function runNightlyProcess() {
           ticker: p.stock.ticker,
           exitDate: p.exitDate || new Date(),
           exitReason: p.exitReason,
-          whipsawCount: (p as any).whipsawCount ?? 0,
+          whipsawCount: p.whipsawCount ?? 0,
         }))
       );
       whipsawAlerts = blocks.map((w) => ({

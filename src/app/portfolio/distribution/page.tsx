@@ -17,14 +17,48 @@ const DEFAULT_USER_ID = 'default-user';
 
 const palette = ['#7c3aed', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#84cc16', '#475569'];
 
+/** Shape of a distribution item (sleeve/cluster/protection) */
+interface DistributionItem {
+  name: string;
+  value: number;
+}
+
+/** Shape of a position summary entry from the API */
+interface PortfolioPositionSummary {
+  ticker: string;
+  sleeve: string;
+  protectionLevel: string;
+  sector?: string;
+  cluster?: string;
+}
+
+/** Shape of the /api/portfolio/summary response */
+interface PortfolioSummary {
+  kpis?: {
+    totalValue: number;
+    unrealisedPL: number;
+    cash?: number;
+    equity: number;
+    openPositions: number;
+    currency?: string;
+  };
+  distributions?: {
+    protectionLevels: DistributionItem[];
+    sleeves: DistributionItem[];
+    clusters: DistributionItem[];
+  };
+  positions?: PortfolioPositionSummary[];
+  performance?: { date: string; value: number }[];
+}
+
 export default function DistributionPage() {
-  const [summary, setSummary] = useState<any | null>(null);
+  const [summary, setSummary] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchSummary = async () => {
       try {
-        const data = await apiRequest<any>(`/api/portfolio/summary?userId=${DEFAULT_USER_ID}`);
+        const data = await apiRequest<PortfolioSummary>(`/api/portfolio/summary?userId=${DEFAULT_USER_ID}`);
         setSummary(data);
       } catch {
         // Silent fail
@@ -42,17 +76,17 @@ export default function DistributionPage() {
     const clusters = summary?.distributions?.clusters || [];
 
     return {
-      protection: protectionLevels.map((item: any, idx: number) => ({
+      protection: protectionLevels.map((item: DistributionItem, idx: number) => ({
         name: item.name,
         value: item.value,
         color: palette[idx % palette.length],
       })),
-      sleeves: sleeves.map((item: any, idx: number) => ({
+      sleeves: sleeves.map((item: DistributionItem, idx: number) => ({
         name: item.name,
         value: item.value,
         color: palette[idx % palette.length],
       })),
-      clusters: clusters.map((item: any, idx: number) => ({
+      clusters: clusters.map((item: DistributionItem, idx: number) => ({
         name: item.name,
         value: item.value,
         color: palette[idx % palette.length],
@@ -69,9 +103,9 @@ export default function DistributionPage() {
 
   const sleeveAllocations = useMemo(() => {
     const sleeves = summary?.distributions?.sleeves || [];
-    const total = sleeves.reduce((sum: number, s: any) => sum + s.value, 0);
+    const total = sleeves.reduce((sum: number, s: DistributionItem) => sum + s.value, 0);
     const posCount = summary?.kpis?.openPositions ?? 0;
-    return sleeves.map((s: any, idx: number) => {
+    return sleeves.map((s: DistributionItem, idx: number) => {
       const nominalMax = s.name === 'High-Risk' ? 40 : 80;
       // With very few positions, relax caps — they only matter for diversification at scale
       const effectiveMax = posCount <= 3 ? 100 : nominalMax;
@@ -137,7 +171,7 @@ export default function DistributionPage() {
                 title="Protection Levels"
                 centerLabel="Positions"
                 centerValue={String(openPositions)}
-                tickers={(summary?.positions || []).map((p: any) => ({
+                tickers={(summary?.positions || []).map((p: PortfolioPositionSummary) => ({
                   ticker: p.ticker,
                   label: p.protectionLevel,
                 }))}
@@ -152,7 +186,7 @@ export default function DistributionPage() {
                 title="Sleeve Distribution"
                 centerLabel="Sleeve Mix"
                 centerValue={String(distributions.sleeves.length)}
-                tickers={(summary?.positions || []).map((p: any) => ({
+                tickers={(summary?.positions || []).map((p: PortfolioPositionSummary) => ({
                   ticker: p.ticker,
                   label: p.sleeve === 'CORE' ? 'Core' : p.sleeve === 'ETF' ? 'ETF' : p.sleeve === 'HEDGE' ? 'Hedge' : 'High-Risk',
                 }))}
@@ -162,7 +196,7 @@ export default function DistributionPage() {
                 title="Cluster Concentration"
                 centerLabel="Clusters"
                 centerValue={String(distributions.clusters.length)}
-                tickers={(summary?.positions || []).map((p: any) => ({
+                tickers={(summary?.positions || []).map((p: PortfolioPositionSummary) => ({
                   ticker: p.ticker,
                   label: (p.cluster && p.cluster !== 'Unassigned' ? p.cluster : p.sector) || 'N/A',
                 }))}

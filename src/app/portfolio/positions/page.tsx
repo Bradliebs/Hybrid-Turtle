@@ -54,12 +54,12 @@ export default function PositionsPage() {
   // Fetch T212 positions from the database (enriched with live Yahoo prices)
   const fetchPositions = useCallback(async () => {
     try {
-      const data = await apiRequest<any[]>(
+      const data = await apiRequest<PositionData[]>(
         `/api/positions?userId=${DEFAULT_USER_ID}&source=trading212&status=OPEN`
       );
 
       // Map API response to table format
-      const mapped: PositionData[] = data.map((p: any) => ({
+      const mapped: PositionData[] = data.map((p) => ({
         id: p.id,
         ticker: p.stock?.ticker || p.t212Ticker || 'N/A',
         name: p.stock?.name || '',

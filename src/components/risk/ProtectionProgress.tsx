@@ -28,7 +28,7 @@ const levelThresholds = [0, 1.5, 2.5, 3.0];
 
 export default function ProtectionProgress({ positions = [] }: ProtectionProgressProps) {
   const progressPositions: PositionProgress[] = positions.map((pos) => {
-    const currentIdx = levelOrder.indexOf(pos.protectionLevel as any);
+    const currentIdx = levelOrder.indexOf(pos.protectionLevel);
     const nextIdx = currentIdx + 1;
     const nextLevel = levelOrder[nextIdx] || null;
     const nextThreshold = nextLevel ? levelThresholds[nextIdx] : null;

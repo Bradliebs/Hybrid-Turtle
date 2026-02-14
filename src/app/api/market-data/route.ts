@@ -8,6 +8,7 @@ import {
   getBatchPrices,
   getDailyPrices,
 } from '@/lib/market-data';
+import type { StockQuote } from '@/types';
 import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
         const tickers = tickersParam.split(',').map((t) => t.trim()).filter(Boolean);
         const quotes = await getBatchQuotes(tickers);
         // Convert Map to object for JSON
-        const obj: Record<string, any> = {};
+        const obj: Record<string, StockQuote> = {};
         quotes.forEach((v, k) => { obj[k] = v; });
         return NextResponse.json({ quotes: obj, count: quotes.size });
       }

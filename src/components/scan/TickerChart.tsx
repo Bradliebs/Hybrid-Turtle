@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { createChart, ColorType, CrosshairMode, LineStyle } from 'lightweight-charts';
+import { createChart, ColorType, CrosshairMode, LineStyle, type Time } from 'lightweight-charts';
 import { cn } from '@/lib/utils';
 import { ApiClientError, apiRequest } from '@/lib/api-client';
 import { TrendingUp, Activity, Hash, Loader2, RotateCcw } from 'lucide-react';
@@ -309,8 +309,8 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
       });
 
       const rsiPoints = bars
-        .map((b, i) => (rsiData[i] !== null ? { time: b.date, value: rsiData[i] as number } : null))
-        .filter(Boolean) as any[];
+        .map((b, i) => (rsiData[i] !== null ? { time: b.date as Time, value: rsiData[i] as number } : null))
+        .filter((p): p is { time: Time; value: number } => p !== null);
       rsiSeries.setData(rsiPoints);
 
       // Overbought / Oversold lines
@@ -318,10 +318,10 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
       const os = rsiChart.addLineSeries({ color: 'rgba(34, 197, 94, 0.4)', lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false });
       const mid = rsiChart.addLineSeries({ color: 'rgba(139, 92, 246, 0.25)', lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false });
 
-      const timeRange = rsiPoints.map((p: any) => ({ time: p.time }));
-      ob.setData(timeRange.map((t: any) => ({ ...t, value: 70 })));
-      os.setData(timeRange.map((t: any) => ({ ...t, value: 30 })));
-      mid.setData(timeRange.map((t: any) => ({ ...t, value: 50 })));
+      const timeRange = rsiPoints.map((p) => ({ time: p.time }));
+      ob.setData(timeRange.map((t) => ({ ...t, value: 70 })));
+      os.setData(timeRange.map((t) => ({ ...t, value: 30 })));
+      mid.setData(timeRange.map((t) => ({ ...t, value: 50 })));
 
       // Sync time scale
       mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -333,11 +333,11 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
 
       // Crosshair sync
       mainChart.subscribeCrosshairMove((param) => {
-        if (param.time) rsiChart.setCrosshairPosition(NaN, param.time as any, rsiSeries);
+        if (param.time) rsiChart.setCrosshairPosition(NaN, param.time as unknown as number, rsiSeries);
         else rsiChart.clearCrosshairPosition();
       });
       rsiChart.subscribeCrosshairMove((param) => {
-        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as any, candleSeries);
+        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as unknown as number, candleSeries);
         else mainChart.clearCrosshairPosition();
       });
     }
@@ -377,8 +377,8 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
         priceLineVisible: false,
       });
       const macdPoints = bars
-        .map((b, i) => (macd[i] !== null ? { time: b.date, value: macd[i] as number } : null))
-        .filter(Boolean) as any[];
+        .map((b, i) => (macd[i] !== null ? { time: b.date as Time, value: macd[i] as number } : null))
+        .filter((p): p is { time: Time; value: number } => p !== null);
       macdLineSeries.setData(macdPoints);
 
       // Signal line
@@ -388,8 +388,8 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
         priceLineVisible: false,
       });
       const signalPoints = bars
-        .map((b, i) => (signal[i] !== null ? { time: b.date, value: signal[i] as number } : null))
-        .filter(Boolean) as any[];
+        .map((b, i) => (signal[i] !== null ? { time: b.date as Time, value: signal[i] as number } : null))
+        .filter((p): p is { time: Time; value: number } => p !== null);
       signalSeries.setData(signalPoints);
 
       // Histogram
@@ -400,13 +400,13 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
         .map((b, i) =>
           hist[i] !== null
             ? {
-                time: b.date,
+                time: b.date as Time,
                 value: hist[i] as number,
                 color: (hist[i] as number) >= 0 ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
               }
             : null
         )
-        .filter(Boolean) as any[];
+        .filter((p): p is { time: Time; value: number; color: string } => p !== null);
       histSeries.setData(histPoints);
 
       // Sync time scale
@@ -419,11 +419,11 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
 
       // Crosshair sync
       mainChart.subscribeCrosshairMove((param) => {
-        if (param.time) macdChart.setCrosshairPosition(NaN, param.time as any, macdLineSeries);
+        if (param.time) macdChart.setCrosshairPosition(NaN, param.time as unknown as number, macdLineSeries);
         else macdChart.clearCrosshairPosition();
       });
       macdChart.subscribeCrosshairMove((param) => {
-        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as any, candleSeries);
+        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as unknown as number, candleSeries);
         else mainChart.clearCrosshairPosition();
       });
     }

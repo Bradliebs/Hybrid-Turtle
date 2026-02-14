@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       return apiError(400, 'INVALID_REQUEST', 'userId is required');
     }
 
-    const where: any = { userId };
+    const where: { userId: string; status?: string; source?: string } = { userId };
     if (status && status !== 'all') {
       where.status = status;
     }

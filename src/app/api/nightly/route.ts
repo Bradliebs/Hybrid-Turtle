@@ -248,7 +248,7 @@ export async function POST(request: NextRequest) {
           ticker: p.stock.ticker,
           exitDate: p.exitDate || new Date(),
           exitReason: p.exitReason,
-          whipsawCount: (p as any).whipsawCount ?? 0,
+          whipsawCount: p.whipsawCount ?? 0,
         }))
       );
       whipsawAlerts = blocks.map((w) => ({
@@ -527,9 +527,6 @@ export async function POST(request: NextRequest) {
       });
     } catch {}
 
-    return NextResponse.json(
-      { error: 'Nightly process failed', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'NIGHTLY_FAILED', 'Nightly process failed', (error as Error).message, true);
   }
 }

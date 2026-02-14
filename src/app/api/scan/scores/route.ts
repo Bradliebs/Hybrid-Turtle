@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/lib/dual-score';
+import { apiError } from '@/lib/api-response';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -172,19 +173,9 @@ export async function GET(request: NextRequest) {
     }
 
     // ── No data available ───────────────────────────────────
-    return NextResponse.json(
-      {
-        error: 'No snapshot data available',
-        message: 'Click "Sync from Yahoo" to fetch live data, or place a master_snapshot.csv in the Planning folder.',
-        hasData: false,
-      },
-      { status: 404 }
-    );
+    return apiError(404, 'NO_SNAPSHOT_DATA', 'Click "Sync from Yahoo" to fetch live data, or place a master_snapshot.csv in the Planning folder.');
   } catch (error) {
     console.error('[DualScore] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to compute scores', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'DUAL_SCORE_FAILED', 'Failed to compute scores', (error as Error).message, true);
   }
 }

@@ -17,11 +17,36 @@ import Link from 'next/link';
 
 const DEFAULT_USER_ID = 'default-user';
 
+/** Shape of the /api/scan response */
+interface ScanApiResult {
+  candidates: ScanCandidate[];
+  totalScanned?: number;
+  passedFilters?: number;
+  passedRiskGates?: number;
+  passedAntiChase?: number;
+  cachedAt?: string;
+  hasCache?: boolean;
+  source?: string;
+}
+
+/** Shape of the /api/risk response budget */
+interface RiskBudgetSummary {
+  budget?: {
+    maxRiskPercent: number;
+    usedRiskPercent: number;
+    maxPositions: number;
+    usedPositions: number;
+    sleeveUtilization: Record<string, { used: number; max: number }>;
+  };
+}
+
+import type { ScanCandidate } from '@/types';
+
 export default function ScanPage() {
   const [activeStage, setActiveStage] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
-  const [scanResult, setScanResult] = useState<any | null>(null);
-  const [riskSummary, setRiskSummary] = useState<any | null>(null);
+  const [scanResult, setScanResult] = useState<ScanApiResult | null>(null);
+  const [riskSummary, setRiskSummary] = useState<RiskBudgetSummary | null>(null);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
   const { marketRegime, riskProfile, equity } = useStore();
 
@@ -36,13 +61,13 @@ export default function ScanPage() {
   ];
 
   const candidates = useMemo(() => scanResult?.candidates ?? [], [scanResult]);
-  const passesAll = useMemo(() => candidates.filter((c: any) => c.passesAllFilters), [candidates]);
-  const readyCandidates = useMemo(() => passesAll.filter((c: any) => c.status === 'READY'), [passesAll]);
-  const watchCandidates = useMemo(() => passesAll.filter((c: any) => c.status === 'WATCH'), [passesAll]);
-  const farCandidates = useMemo(() => candidates.filter((c: any) => c.status === 'FAR'), [candidates]);
+  const passesAll = useMemo(() => candidates.filter((c) => c.passesAllFilters), [candidates]);
+  const readyCandidates = useMemo(() => passesAll.filter((c) => c.status === 'READY'), [passesAll]);
+  const watchCandidates = useMemo(() => passesAll.filter((c) => c.status === 'WATCH'), [passesAll]);
+  const farCandidates = useMemo(() => candidates.filter((c) => c.status === 'FAR'), [candidates]);
 
   const filterResults = useMemo(() => {
-    return candidates.slice(0, 12).map((c: any) => ({
+    return candidates.slice(0, 12).map((c) => ({
       ticker: c.ticker,
       name: c.name,
       ...c.filterResults,
@@ -52,16 +77,16 @@ export default function ScanPage() {
 
   const antiChaseResults = useMemo(() => {
     // Use server-side anti-chase results
-    return passesAll.map((c: any) => ({
+    return passesAll.map((c) => ({
       ...c,
       guard: c.antiChaseResult || { passed: true, reason: 'Not evaluated' },
     }));
   }, [passesAll]);
 
   const funnelStages = useMemo(() => {
-    const sizedCount = passesAll.filter((c: any) => (c.shares || 0) > 0).length;
-    const riskGateCount = scanResult?.passedRiskGates ?? passesAll.filter((c: any) => c.passesRiskGates !== false).length;
-    const antiChaseCount = scanResult?.passedAntiChase ?? antiChaseResults.filter((c: any) => c.guard.passed).length;
+    const sizedCount = passesAll.filter((c) => (c.shares || 0) > 0).length;
+    const riskGateCount = scanResult?.passedRiskGates ?? passesAll.filter((c) => c.passesRiskGates !== false).length;
+    const antiChaseCount = scanResult?.passedAntiChase ?? antiChaseResults.filter((c) => c.guard.passed).length;
     return [
       { label: 'Stage 1: Universe', count: scanResult?.totalScanned || 0, color: '#7c3aed' },
       { label: 'Stage 2: Technical', count: scanResult?.passedFilters || 0, color: '#3b82f6' },
@@ -75,7 +100,7 @@ export default function ScanPage() {
 
   const sleeveCounts = useMemo(() => {
     const counts = { CORE: 0, ETF: 0, HIGH_RISK: 0 };
-    candidates.forEach((c: any) => {
+    candidates.forEach((c) => {
       counts[c.sleeve as keyof typeof counts] += 1;
     });
     return counts;
@@ -135,7 +160,7 @@ export default function ScanPage() {
   useEffect(() => {
     const fetchRisk = async () => {
       try {
-        const data = await apiRequest<any>(`/api/risk?userId=${DEFAULT_USER_ID}`);
+        const data = await apiRequest<RiskBudgetSummary>(`/api/risk?userId=${DEFAULT_USER_ID}`);
         setRiskSummary(data);
       } catch {
         // Silent fail
@@ -144,7 +169,7 @@ export default function ScanPage() {
 
     const fetchCachedScan = async () => {
       try {
-        const data = await apiRequest<any>('/api/scan');
+        const data = await apiRequest<ScanApiResult>('/api/scan');
         if (data.hasCache) {
           setScanResult(data);
           setCachedAt(data.cachedAt || null);
@@ -163,7 +188,7 @@ export default function ScanPage() {
   const runScan = async () => {
     setIsRunning(true);
     try {
-      const data = await apiRequest<any>('/api/scan', {
+      const data = await apiRequest<ScanApiResult>('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -290,7 +315,7 @@ export default function ScanPage() {
               <div className="space-y-4">
                 {/* Triggered Banner — compact */}
                 {(() => {
-                  const triggeredCandidates = passesAll.filter((c: any) => c.distancePercent <= 0);
+                  const triggeredCandidates = passesAll.filter((c) => c.distancePercent <= 0);
                   if (triggeredCandidates.length === 0) return null;
                   return (
                     <div className="bg-emerald-500/10 border-2 border-emerald-500/40 rounded-xl px-5 py-3 animate-pulse">
@@ -309,7 +334,7 @@ export default function ScanPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-wrap justify-end">
-                          {triggeredCandidates.map((c: any) => (
+                          {triggeredCandidates.map((c) => (
                             <span
                               key={c.ticker}
                               className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-bold border border-emerald-500/30"
@@ -345,7 +370,7 @@ export default function ScanPage() {
                     <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">By Sleeve</div>
                     {(() => {
                       const sleeveMap: Record<string, { ready: number; watch: number; far: number }> = {};
-                      candidates.forEach((c: any) => {
+                      candidates.forEach((c) => {
                         const s = c.sleeve || 'UNKNOWN';
                         if (!sleeveMap[s]) sleeveMap[s] = { ready: 0, watch: 0, far: 0 };
                         if (c.status === 'READY') sleeveMap[s].ready++;
@@ -404,8 +429,8 @@ export default function ScanPage() {
                       </thead>
                       <tbody>
                         {[...readyCandidates, ...watchCandidates]
-                          .sort((a: any, b: any) => a.distancePercent - b.distancePercent)
-                          .map((c: any, i: number) => {
+                          .sort((a, b) => a.distancePercent - b.distancePercent)
+                          .map((c, i: number) => {
                             const isTriggered = c.distancePercent <= 0;
                             return (
                               <tr
@@ -466,8 +491,8 @@ export default function ScanPage() {
                     <div className="px-3 pb-3">
                       <div className="flex flex-wrap gap-2">
                         {farCandidates
-                          .sort((a: any, b: any) => a.distancePercent - b.distancePercent)
-                          .map((c: any) => (
+                          .sort((a, b) => a.distancePercent - b.distancePercent)
+                          .map((c) => (
                             <span
                               key={c.ticker}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-navy-800 text-xs"
@@ -518,8 +543,8 @@ export default function ScanPage() {
                 {passesAll.length > 0 && (
                   <div className="space-y-3">
                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Per-Candidate Gate Results</h4>
-                    {passesAll.filter((c: any) => c.riskGateResults).map((c: any) => {
-                      const failed = c.riskGateResults.filter((g: any) => !g.passed);
+                    {passesAll.filter((c) => c.riskGateResults).map((c) => {
+                      const failed = c.riskGateResults!.filter((g) => !g.passed);
                       return (
                         <div key={c.ticker} className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg">
                           {failed.length === 0 ? (
@@ -531,7 +556,7 @@ export default function ScanPage() {
                           <span className="text-sm text-muted-foreground flex-1">
                             {failed.length === 0
                               ? `All ${c.riskGateResults.length} gates passed`
-                              : failed.map((g: any) => g.message).join(' | ')}
+                              : failed.map((g) => g.message).join(' | ')}
                           </span>
                         </div>
                       );
@@ -559,7 +584,7 @@ export default function ScanPage() {
                       Run a scan to evaluate anti-chase checks.
                     </div>
                   )}
-                  {antiChaseResults.map((c: any) => (
+                  {antiChaseResults.map((c) => (
                     <div key={c.ticker} className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg">
                       {c.guard.passed ? (
                         <Check className="w-4 h-4 text-profit" />
@@ -597,7 +622,7 @@ export default function ScanPage() {
         {/* Technical Chart — select a candidate ticker to see price + indicators */}
         {candidates.length > 0 && (
           <TickerChart
-            tickers={candidates.map((c: any) => ({
+            tickers={candidates.map((c) => ({
               ticker: c.ticker,
               sleeve: c.sleeve,
               status: c.status,

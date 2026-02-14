@@ -51,7 +51,7 @@ export default function TechnicalFilterGrid({ results }: TechnicalFilterGridProp
                 </div>
               </td>
               {filterLabels.map((f) => {
-                const passed = (result as any)[f.key];
+                const passed = result[f.key as keyof FilterResult];
                 return (
                   <td key={f.key} className="text-center">
                     {passed ? (

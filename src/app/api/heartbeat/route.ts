@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { apiError } from '@/lib/api-response';
 
 export async function GET(_request: NextRequest) {
   try {
@@ -26,10 +27,7 @@ export async function GET(_request: NextRequest) {
     });
   } catch (error) {
     console.error('Heartbeat fetch error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch heartbeat' },
-      { status: 500 }
-    );
+    return apiError(500, 'HEARTBEAT_FETCH_FAILED', 'Failed to fetch heartbeat', (error as Error).message, true);
   }
 }
 
@@ -49,9 +47,6 @@ export async function POST(_request: NextRequest) {
     });
   } catch (error) {
     console.error('Heartbeat record error:', error);
-    return NextResponse.json(
-      { error: 'Failed to record heartbeat' },
-      { status: 500 }
-    );
+    return apiError(500, 'HEARTBEAT_RECORD_FAILED', 'Failed to record heartbeat', (error as Error).message, true);
   }
 }

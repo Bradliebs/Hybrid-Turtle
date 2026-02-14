@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getScanCache, setScanCache, isScanCacheFresh, SCAN_CACHE_TTL_MS, type CachedScanResult } from '@/lib/scan-cache';
 import prisma from '@/lib/prisma';
 import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/lib/dual-score';
+import type { ScanCandidate } from '@/types';
+import { apiError } from '@/lib/api-response';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -269,21 +271,13 @@ export async function GET() {
     const hasDualData = dualTickers.length > 0;
 
     if (!hasScanData && !hasDualData) {
-      return NextResponse.json(
-        {
-          error: 'No data available',
-          message: 'Run the 7-Stage Scan and/or sync Dual Score data first.',
-          hasScanData: false,
-          hasDualData: false,
-        },
-        { status: 404 }
-      );
+      return apiError(404, 'NO_CROSS_REF_DATA', 'Run the 7-Stage Scan and/or sync Dual Score data first.');
     }
 
     // ── Build lookup maps ───────────────────────────────────
-    const scanMap = new Map<string, any>();
+    const scanMap = new Map<string, ScanCandidate>();
     if (hasScanData) {
-      for (const c of scanCache!.candidates as any[]) {
+      for (const c of scanCache!.candidates as ScanCandidate[]) {
         scanMap.set(c.ticker, c);
       }
     }
@@ -413,9 +407,6 @@ export async function GET() {
     return NextResponse.json({ tickers: crossRef, summary });
   } catch (error) {
     console.error('[CrossRef] Error:', error);
-    return NextResponse.json(
-      { error: 'Failed to build cross-reference', message: (error as Error).message },
-      { status: 500 }
-    );
+    return apiError(500, 'CROSS_REF_FAILED', 'Failed to build cross-reference', (error as Error).message, true);
   }
 }

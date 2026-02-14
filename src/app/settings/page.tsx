@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Navbar from '@/components/shared/Navbar';
 import { useStore } from '@/store/useStore';
-import { RISK_PROFILES } from '@/types';
+import { RISK_PROFILES, type RiskProfileType } from '@/types';
 import { apiRequest } from '@/lib/api-client';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
 import {
@@ -91,7 +91,7 @@ export default function SettingsPage() {
       const params = new URLSearchParams();
       if (stockSleeveFilter !== 'ALL') params.set('sleeve', stockSleeveFilter);
       if (stockSearch) params.set('search', stockSearch);
-      const data = await apiRequest<any>(`/api/stocks?${params.toString()}`);
+      const data = await apiRequest<{ stocks: StockItem[]; summary: { total: number; core: number; etf: number; highRisk: number } }>(`/api/stocks?${params.toString()}`);
       setStocks(data.stocks || []);
       setStockSummary(data.summary || { total: 0, core: 0, etf: 0, highRisk: 0 });
     } catch {
@@ -137,7 +137,7 @@ export default function SettingsPage() {
     setTelegramTesting(true);
     setTelegramTestResult(null);
     try {
-      const data = await apiRequest<any>('/api/settings/telegram-test', {
+      const data = await apiRequest<{ botName: string }>('/api/settings/telegram-test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ botToken: telegramToken, chatId: telegramChatId }),
@@ -185,7 +185,7 @@ export default function SettingsPage() {
     setT212Success(null);
 
     try {
-      const data = await apiRequest<any>('/api/trading212/connect', {
+      const data = await apiRequest<{ accountId: number; currency: string }>('/api/trading212/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -229,7 +229,7 @@ export default function SettingsPage() {
     setT212Success(null);
 
     try {
-      const data = await apiRequest<any>('/api/trading212/sync', {
+      const data = await apiRequest<{ syncedAt: string; sync: { created: number; updated: number; closed: number }; account?: { totalValue: number } }>('/api/trading212/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: DEFAULT_USER_ID }),
@@ -317,7 +317,7 @@ export default function SettingsPage() {
               <label className="block text-sm text-muted-foreground mb-1">Risk Profile</label>
               <select
                 value={riskProfile}
-                onChange={(e) => setRiskProfile(e.target.value as any)}
+                onChange={(e) => setRiskProfile(e.target.value as RiskProfileType)}
                 className="input-field w-full"
               >
                 <option value="CONSERVATIVE">Conservative (0.75% / 8 pos)</option>

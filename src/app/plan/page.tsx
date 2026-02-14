@@ -16,6 +16,81 @@ import { ClipboardList, Calendar, Loader2 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
 
+/** Shape of a position as returned by /api/positions */
+interface PositionApiResponse {
+  id: string;
+  stock?: { ticker: string; name: string; sleeve: string };
+  status: string;
+  entryPrice: number;
+  currentPrice?: number;
+  currentStop?: number;
+  stopLoss?: number;
+  initialRisk?: number;
+  protectionLevel?: string;
+  rMultiple?: number;
+  gainPercent?: number;
+  shares: number;
+  priceCurrency?: string;
+}
+
+/** Shape of a candidate for the ReadyCandidates widget */
+interface ReadyCandidate {
+  ticker: string;
+  name: string;
+  sleeve: string;
+  status: string;
+  price: number;
+  entryTrigger: number;
+  stopPrice: number;
+  distancePercent: number;
+  shares?: number;
+  riskDollars?: number;
+  matchType?: string;
+  agreementScore?: number;
+  dualNCS?: number;
+  dualBQS?: number;
+  dualFWS?: number;
+  dualAction?: string;
+  scanRankScore?: number;
+  scanPassesFilters?: boolean;
+}
+
+/** Shape of a cross-ref ticker from /api/scan/cross-ref */
+interface CrossRefTicker {
+  ticker: string;
+  name: string;
+  sleeve: string;
+  matchType: string;
+  scanStatus?: string;
+  scanPrice?: number;
+  scanEntryTrigger?: number;
+  scanDistancePercent?: number;
+  scanShares?: number;
+  scanRankScore?: number;
+  scanPassesFilters?: boolean;
+  agreementScore?: number;
+  dualNCS?: number;
+  dualBQS?: number;
+  dualFWS?: number;
+  dualAction?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface HealthReportData {
+  overall: string;
+  checks: Record<string, string>;
+  results: { id: string; label: string; category: string; status: string; message: string }[];
+}
+
+interface RiskSummaryData {
+  budget?: {
+    maxRiskPercent: number;
+    usedRiskPercent: number;
+    maxPositions: number;
+    usedPositions: number;
+  };
+}
+
 interface PositionData {
   ticker: string;
   name: string;
@@ -89,17 +164,17 @@ export default function PlanPage() {
   const { weeklyPhase, marketRegime } = useStore();
   const [positions, setPositions] = useState<PositionData[]>([]);
   const [stopUpdates, setStopUpdates] = useState<StopUpdate[]>([]);
-  const [scanCandidates, setScanCandidates] = useState<any[]>([]);
+  const [scanCandidates, setScanCandidates] = useState<ReadyCandidate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [healthReport, setHealthReport] = useState<any | null>(null);
-  const [riskSummary, setRiskSummary] = useState<any | null>(null);
+  const [healthReport, setHealthReport] = useState<HealthReportData | null>(null);
+  const [riskSummary, setRiskSummary] = useState<RiskSummaryData | null>(null);
 
   const fetchPositions = useCallback(async () => {
     try {
-      const data = await apiRequest<any[]>(
+      const data = await apiRequest<PositionApiResponse[]>(
         `/api/positions?userId=${DEFAULT_USER_ID}&source=trading212&status=OPEN`
       );
-      const mapped: PositionData[] = data.map((p: any) => ({
+      const mapped: PositionData[] = data.map((p) => ({
         ticker: p.stock?.ticker || 'N/A',
         name: p.stock?.name || '',
         sleeve: p.stock?.sleeve || 'CORE',
@@ -134,7 +209,7 @@ export default function PlanPage() {
         const [healthResult, riskResult, crossRefResult] = await Promise.allSettled([
           apiRequest(`/api/health-check?userId=${DEFAULT_USER_ID}`),
           apiRequest(`/api/risk?userId=${DEFAULT_USER_ID}`),
-          apiRequest<{ tickers?: any[] }>('/api/scan/cross-ref'),
+          apiRequest<{ tickers?: CrossRefTicker[] }>('/api/scan/cross-ref'),
         ]);
 
         if (healthResult.status === 'fulfilled') {
@@ -149,12 +224,12 @@ export default function PlanPage() {
           const crossRefData = crossRefResult.value;
           // Only show actionable candidates (not BOTH_REJECT)
           const actionable = (crossRefData.tickers || []).filter(
-            (t: any) => t.matchType !== 'BOTH_REJECT'
+            (t) => t.matchType !== 'BOTH_REJECT'
           );
           // Map to ReadyCandidates shape with cross-ref enrichment
           const mapped = actionable
-            .filter((t: any) => t.scanStatus === 'READY' || t.scanStatus === 'WATCH' || t.matchType === 'DUAL_ONLY')
-            .map((t: any) => ({
+            .filter((t) => t.scanStatus === 'READY' || t.scanStatus === 'WATCH' || t.matchType === 'DUAL_ONLY')
+            .map((t) => ({
               ticker: t.ticker,
               name: t.name,
               sleeve: t.sleeve,

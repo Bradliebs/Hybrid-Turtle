@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
+import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
 
@@ -93,9 +94,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ publications: sorted });
   } catch (error) {
     console.error('Publications fetch error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch publications' },
-      { status: 500 }
-    );
+    return apiError(500, 'PUBLICATIONS_FETCH_FAILED', 'Failed to fetch publications', (error as Error).message, true);
   }
 }

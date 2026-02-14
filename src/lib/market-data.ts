@@ -14,7 +14,39 @@ import YahooFinance from 'yahoo-finance2';
 import type { StockQuote, TechnicalData, MarketIndex, FearGreedData } from '@/types';
 
 // yahoo-finance2 v3 requires instantiation
-const yf = new (YahooFinance as any)({ suppressNotices: ['yahooSurvey'] });
+const yf = new (YahooFinance as unknown as new (opts: { suppressNotices: string[] }) => YahooFinanceInstance)({ suppressNotices: ['yahooSurvey'] });
+
+/** Minimal shape returned by yf.quote() */
+interface YahooQuoteResult {
+  symbol?: string;
+  shortName?: string;
+  longName?: string;
+  regularMarketPrice?: number;
+  regularMarketChange?: number;
+  regularMarketChangePercent?: number;
+  regularMarketVolume?: number;
+  regularMarketPreviousClose?: number;
+  regularMarketDayHigh?: number;
+  regularMarketDayLow?: number;
+  regularMarketOpen?: number;
+}
+
+/** Minimal shape returned by yf.historical() */
+interface YahooHistoricalBar {
+  date: string | Date;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  adjClose?: number;
+  volume: number;
+}
+
+/** Shape of the yahoo-finance2 instance */
+interface YahooFinanceInstance {
+  quote(ticker: string): Promise<YahooQuoteResult | null>;
+  historical(ticker: string, opts: { period1: string; period2: string; interval: string }): Promise<YahooHistoricalBar[]>;
+}
 
 // ── In-memory cache to avoid hammering Yahoo ──
 interface CacheEntry<T> {
@@ -62,7 +94,7 @@ export async function getStockQuote(ticker: string): Promise<StockQuote | null> 
   const yahooTicker = toYahooTicker(ticker);
 
   try {
-    const result: any = await yf.quote(yahooTicker);
+    const result = await yf.quote(yahooTicker);
     if (!result || !result.regularMarketPrice) return null;
 
     const quote: StockQuote = {
@@ -103,7 +135,7 @@ export async function getDailyPrices(
     period1.setDate(period1.getDate() - (outputSize === 'full' ? 400 : 120));
 
     const yahooTicker = toYahooTicker(ticker);
-    const result: any[] = await yf.historical(yahooTicker, {
+    const result = await yf.historical(yahooTicker, {
       period1: period1.toISOString().split('T')[0],
       period2: new Date().toISOString().split('T')[0],
       interval: '1d',
@@ -113,8 +145,8 @@ export async function getDailyPrices(
 
     // Sort newest first (scan-engine expects this order)
     const bars: DailyBar[] = result
-      .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .map((bar: any) => ({
+      .sort((a: YahooHistoricalBar, b: YahooHistoricalBar) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map((bar: YahooHistoricalBar) => ({
         date: new Date(bar.date).toISOString().split('T')[0],
         open: bar.open,
         high: bar.high,
@@ -286,7 +318,7 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
 
   for (const idx of INDEX_MAP) {
     try {
-      const q: any = await yf.quote(idx.ticker);
+      const q = await yf.quote(idx.ticker);
       if (q && q.regularMarketPrice) {
         results.push({
           name: idx.name,
@@ -308,7 +340,7 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
 // ── Fear & Greed — approximation from VIX ──
 export async function getFearGreedIndex(): Promise<FearGreedData> {
   try {
-    const vix: any = await yf.quote('^VIX');
+    const vix = await yf.quote('^VIX');
     const vixPrice = vix?.regularMarketPrice || 20;
 
     let value: number;
@@ -342,7 +374,7 @@ export async function getFXRate(fromCurrency: string, toCurrency: string): Promi
   if (cached && cached.expiry > Date.now()) return cached.data;
 
   try {
-    const result: any = await yf.quote(`${pair}=X`);
+    const result = await yf.quote(`${pair}=X`);
     const rate = result?.regularMarketPrice;
     if (rate && rate > 0) {
       fxCache.set(cacheKey, { data: rate, expiry: Date.now() + FX_TTL });

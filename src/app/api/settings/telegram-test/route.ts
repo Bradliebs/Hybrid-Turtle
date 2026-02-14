@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
+import { apiError } from '@/lib/api-response';
 
 const telegramTestSchema = z.object({
   botToken: z.string().trim().min(1),
@@ -22,10 +23,7 @@ export async function POST(request: NextRequest) {
     // First verify the bot token is valid
     const meResponse = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
     if (!meResponse.ok) {
-      return NextResponse.json(
-        { error: 'Invalid bot token — check the token and try again' },
-        { status: 400 }
-      );
+      return apiError(400, 'INVALID_BOT_TOKEN', 'Invalid bot token — check the token and try again');
     }
 
     const meData = await meResponse.json();
@@ -51,18 +49,12 @@ export async function POST(request: NextRequest) {
     if (!sendResponse.ok) {
       const err = await sendResponse.json();
       const description = err?.description || 'Failed to send message';
-      return NextResponse.json(
-        { error: `Telegram error: ${description}` },
-        { status: 400 }
-      );
+      return apiError(400, 'TELEGRAM_SEND_FAILED', `Telegram error: ${description}`);
     }
 
     return NextResponse.json({ success: true, botName });
   } catch (error) {
     console.error('Telegram test error:', error);
-    return NextResponse.json(
-      { error: 'Failed to test Telegram connection' },
-      { status: 500 }
-    );
+    return apiError(500, 'TELEGRAM_TEST_FAILED', 'Failed to test Telegram connection', (error as Error).message, true);
   }
 }

@@ -72,8 +72,8 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   });
 
   const sorted = [...filtered].sort((a, b) => {
-    const aVal = (a as any)[sortField];
-    const bVal = (b as any)[sortField];
+    const aVal = a[sortField as keyof Position];
+    const bVal = b[sortField as keyof Position];
     if (typeof aVal === 'string') return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
     return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
   });
