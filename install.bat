@@ -11,6 +11,12 @@ color 0A
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 
+:: ── Install log ──
+set "LOG=%~dp0install.log"
+>> "%LOG%" echo.
+>> "%LOG%" echo [%date% %time%] ====== Starting install ======
+echo  (logging to install.log)
+
 echo.
 echo  ===========================================================
 echo       _  _      _        _    _  _____          _   _
@@ -41,6 +47,7 @@ if %errorlevel% neq 0 (
 )
 for /f "tokens=*" %%i in ('node --version') do set NODE_VER=%%i
 echo         Found Node.js %NODE_VER%
+>> "%LOG%" echo [%date% %time%] Node.js %NODE_VER%
 
 :: ── Node.js version compatibility check ──
 set "NODE_VER_NO_V=%NODE_VER:v=%"
@@ -53,7 +60,21 @@ if %NODE_MAJOR% LSS 18 (
     echo  !! On the Node.js website, choose the LTS tab.
     echo.
     echo  !! Opening Node.js download page...
+    >> "%LOG%" echo [%date% %time%] FAIL: Node.js too old: %NODE_VER%
     start https://nodejs.org/en/download/
+    pause
+    exit /b 1
+)
+
+:: ── Node.js architecture check ──
+for /f "tokens=*" %%i in ('node -e "console.log(process.arch)"') do set NODE_ARCH=%%i
+echo         Architecture: %NODE_ARCH%
+echo %NODE_ARCH% | findstr /i "x64 arm64" >nul
+if %errorlevel% neq 0 (
+    echo.
+    echo  !! 64-bit Node.js is required. You have: %NODE_ARCH%
+    echo  !! Please install the 64-bit ^(x64^) version from https://nodejs.org
+    >> "%LOG%" echo [%date% %time%] FAIL: Wrong architecture: %NODE_ARCH%
     pause
     exit /b 1
 )
@@ -73,23 +94,31 @@ echo         Found npm v%NPM_VER%
 :: ── Step 3: Create .env if missing ──
 echo  [3/7] Setting up environment...
 if not exist ".env" (
-    echo DATABASE_URL="file:./dev.db"> .env
-    echo NEXTAUTH_URL="http://localhost:3000">> .env
-    for /f "tokens=*" %%i in ('powershell -NoProfile -Command "[guid]::NewGuid().ToString(''N'')"') do set NEXTAUTH_SECRET=hybridturtle-local-secret-%%i
-    echo NEXTAUTH_SECRET="!NEXTAUTH_SECRET!">> .env
-    echo.>> .env
-    echo # Telegram nightly reports - fill these in during Step 7 or later>> .env
-    echo # TELEGRAM_BOT_TOKEN=your-bot-token-here>> .env
-    echo # TELEGRAM_CHAT_ID=your-chat-id-here>> .env
+    :: Generate a cryptographically random secret (32 bytes, base64)
+    for /f "tokens=*" %%i in ('powershell -NoProfile -Command "$b = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)"') do set NEXTAUTH_SECRET=%%i
+    > ".env" echo DATABASE_URL=file:./dev.db
+    >> ".env" echo NEXTAUTH_URL=http://localhost:3000
+    >> ".env" echo NEXTAUTH_SECRET=!NEXTAUTH_SECRET!
+    >> ".env" echo.
+    >> ".env" echo # Telegram nightly reports - fill these in during Step 7 or later
+    >> ".env" echo # TELEGRAM_BOT_TOKEN=your-bot-token-here
+    >> ".env" echo # TELEGRAM_CHAT_ID=your-chat-id-here
     echo         Created .env with SQLite database
+    >> "%LOG%" echo [%date% %time%] Created .env
 ) else (
     echo         .env already exists - keeping existing config
+    >> "%LOG%" echo [%date% %time%] .env already exists - skipped
 )
 
 :: ── Step 4: Install dependencies ──
 echo  [4/7] Installing dependencies (this may take 2-5 minutes)...
 echo.
-call npm install
+:: Use npm ci for reproducible installs when lockfile exists; fall back to npm install
+if exist "package-lock.json" (
+    call npm ci
+) else (
+    call npm install
+)
 if %errorlevel% neq 0 (
     echo.
     echo  !! npm install failed. Common fixes:
@@ -98,41 +127,47 @@ if %errorlevel% neq 0 (
     echo  !!      then: npx prisma generate
     echo  !!   3. Disable antivirus temporarily
     echo  !!   4. Run installer as Administrator
+    echo  !! See install.log for details.
+    >> "%LOG%" echo [%date% %time%] FAIL: npm install
     pause
     exit /b 1
 )
+>> "%LOG%" echo [%date% %time%] npm install OK
 
 :: ── Step 5: Setup database ──
 echo.
 echo  [5/7] Setting up database...
 call npx prisma generate
 if %errorlevel% neq 0 (
-    echo  !! Prisma generate failed.
+    echo  !! Prisma generate failed. See install.log for details.
+    >> "%LOG%" echo [%date% %time%] FAIL: prisma generate
     pause
     exit /b 1
 )
 
 call npx prisma db push
 if %errorlevel% neq 0 (
-    echo  !! Database push failed.
+    echo  !! Database push failed. See install.log for details.
+    >> "%LOG%" echo [%date% %time%] FAIL: prisma db push
     pause
     exit /b 1
 )
 
-:: Seed the database with stock universe
+:: Seed the database with stock universe (idempotent — safe to re-run)
 echo         Seeding stock universe...
 call npx prisma db seed 2>nul
 if %errorlevel% neq 0 (
     echo         Note: Seed may have already been applied — continuing.
 )
+>> "%LOG%" echo [%date% %time%] Database setup OK
 
 :: ── Step 6: Create desktop shortcut ──
 echo  [6/7] Creating desktop shortcut...
 set SCRIPT_DIR=%~dp0
 set SHORTCUT_NAME=HybridTurtle Dashboard
 
-:: Use PowerShell to create a proper shortcut (single line for reliability)
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $desktop = [Environment]::GetFolderPath('Desktop'); $lnk = Join-Path $desktop '%SHORTCUT_NAME%.lnk'; $sc = $ws.CreateShortcut($lnk); $sc.TargetPath = Join-Path '%SCRIPT_DIR%' 'start.bat'; $sc.WorkingDirectory = '%SCRIPT_DIR%'; $sc.Description = 'Launch HybridTurtle Trading Dashboard'; $sc.IconLocation = 'shell32.dll,21'; $sc.Save()"
+:: Use PowerShell to create a proper shortcut (paths are escaped to handle special chars)
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptDir = '%SCRIPT_DIR%' -replace \"'\", \"''\"; $ws = New-Object -ComObject WScript.Shell; $desktop = [Environment]::GetFolderPath('Desktop'); $lnk = Join-Path $desktop '%SHORTCUT_NAME%.lnk'; $sc = $ws.CreateShortcut($lnk); $sc.TargetPath = Join-Path $scriptDir 'start.bat'; $sc.WorkingDirectory = $scriptDir; $sc.Description = 'Launch HybridTurtle Trading Dashboard'; $sc.IconLocation = 'shell32.dll,21'; $sc.Save()"
 
 if %errorlevel% equ 0 (
     echo         Desktop shortcut created!
@@ -176,8 +211,8 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
     set "HAS_TOKEN="
     set "HAS_CHATID="
     for /f "usebackq tokens=1,2 delims==" %%a in (".env") do (
-        if "%%a"=="TELEGRAM_BOT_TOKEN" if not "%%b"=="" if not "%%b"=="" set "HAS_TOKEN=1"
-        if "%%a"=="TELEGRAM_CHAT_ID" if not "%%b"=="" set "HAS_CHATID=1"
+        if "%%a"=="TELEGRAM_BOT_TOKEN" if not "%%b"=="" if not "%%b"=="your-bot-token-here" set "HAS_TOKEN=1"
+        if "%%a"=="TELEGRAM_CHAT_ID" if not "%%b"=="" if not "%%b"=="your-chat-id-here" set "HAS_CHATID=1"
     )
 
     if defined HAS_TOKEN if defined HAS_CHATID (
@@ -205,26 +240,37 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
     )
 
     :: Remove any existing Telegram lines from .env, then append new ones
-    powershell -NoProfile -Command "$f = Get-Content '.env' | Where-Object { $_ -notmatch '^TELEGRAM_BOT_TOKEN=' -and $_ -notmatch '^TELEGRAM_CHAT_ID=' }; $f += 'TELEGRAM_BOT_TOKEN=!TG_TOKEN!'; $f += 'TELEGRAM_CHAT_ID=!TG_CHATID!'; Set-Content '.env' $f"
+    :: Credentials are passed via environment variables (not command-line args)
+    :: to avoid leaking them in process listings.
+    set "_TG_TOKEN=!TG_TOKEN!"
+    set "_TG_CHATID=!TG_CHATID!"
+    powershell -NoProfile -Command "$tok = $env:_TG_TOKEN; $cid = $env:_TG_CHATID; $f = Get-Content '.env' | Where-Object { $_ -notmatch '^TELEGRAM_BOT_TOKEN=' -and $_ -notmatch '^TELEGRAM_CHAT_ID=' }; $f += \"TELEGRAM_BOT_TOKEN=$tok\"; $f += \"TELEGRAM_CHAT_ID=$cid\"; Set-Content '.env' $f"
     echo         Telegram credentials saved to .env
 
     :: Send a test message to confirm it works
+    :: Token and chat ID are read from env vars, not embedded in args.
     echo.
     echo         Sending test message to your Telegram...
-    powershell -NoProfile -Command "$r = Invoke-RestMethod -Uri 'https://api.telegram.org/bot!TG_TOKEN!/sendMessage' -Method Post -ContentType 'application/json' -Body ('{\"chat_id\":\"!TG_CHATID!\",\"text\":\"HybridTurtle connected! Nightly reports will arrive here at 21:10 Mon-Fri.\"}'); if ($r.ok) { Write-Output '         Test message sent successfully!' } else { Write-Output '         !! Test message failed - check your token and chat ID.' }" 2>nul || echo         !! Could not reach Telegram API - check your internet connection.
+    powershell -NoProfile -Command "$tok = $env:_TG_TOKEN; $cid = $env:_TG_CHATID; $r = Invoke-RestMethod -Uri \"https://api.telegram.org/bot$tok/sendMessage\" -Method Post -ContentType 'application/json' -Body ('{\"chat_id\":\"' + $cid + '\",\"text\":\"HybridTurtle connected! Nightly reports will arrive here at 21:10 Mon-Fri.\"}'); if ($r.ok) { Write-Output '         Test message sent successfully!' } else { Write-Output '         !! Test message failed - check your token and chat ID.' }" 2>nul || echo         !! Could not reach Telegram API - check your internet connection.
 
     :skip_tg_creds
     echo.
     echo         Registering scheduled task...
 
-    :: Update nightly-task.bat to use the current install path
-    (
-        echo @echo off
-        echo cd /d "%%~dp0"
-        echo echo [%%date%% %%time%%] Starting nightly process... ^>^> nightly.log
-        echo call npx tsx src/cron/nightly.ts --run-now ^>^> nightly.log 2^>^&1
-        echo echo [%%date%% %%time%%] Nightly process finished ^(exit code: %%ERRORLEVEL%%^) ^>^> nightly.log
-    ) > "%~dp0nightly-task.bat"
+    :: Check for admin privileges (schtasks usually requires elevation)
+    net session >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo.
+        echo  !! Creating a scheduled task requires Administrator privileges.
+        echo  !! Please re-run install.bat as Administrator to set up the nightly task.
+        echo  !! ^(Right-click install.bat ^> Run as administrator^)
+        echo  !! Everything else is installed — only the scheduled task was skipped.
+        >> "%LOG%" echo [%date% %time%] WARN: Skipped schtasks - no admin
+        goto :skip_tg_setup
+    )
+
+    :: Write nightly-task.bat via PowerShell to avoid %-escaping pitfalls
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-Content -Path (Join-Path '%~dp0' 'nightly-task.bat') -Value @('@echo off', 'cd /d "%%~dp0"', 'echo [%%date%% %%time%%] Starting nightly process... >> nightly.log', 'call npx tsx src/cron/nightly.ts --run-now >> nightly.log 2^>^&1', 'echo [%%date%% %%time%%] Nightly process finished (exit code: %%ERRORLEVEL%%) >> nightly.log')"
 
     :: Create/replace scheduled task using schtasks (more robust across machines)
     set "TASK_NAME=HybridTurtle-Nightly"
@@ -237,12 +283,14 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         echo         Scheduled task 'HybridTurtle-Nightly' created!
         echo         Runs Mon-Fri at 21:10. View/edit in Task Scheduler.
         echo         Action: cmd.exe /c ""%NIGHTLY_BAT%""
+        >> "%LOG%" echo [%date% %time%] Scheduled task created
     ) else (
         echo         !! Could not create scheduled task.
         echo         !! Try running this installer as Administrator.
         echo         !! Manual action should be:
         echo         !! Program/script: cmd.exe
         echo         !! Add arguments: /c ""%NIGHTLY_BAT%""
+        >> "%LOG%" echo [%date% %time%] FAIL: schtasks create
     )
 ) else (
     echo         Skipped - you can set this up later by running:
@@ -267,8 +315,11 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
     echo.
     echo   Telegram: Nightly summary at 21:10 Mon-Fri
 )
+echo.
+echo   Full install log: install.log
 echo  ===========================================================
 echo.
+>> "%LOG%" echo [%date% %time%] ====== Install complete ======
 
 set /p LAUNCH="  Launch the dashboard now? (Y/N): "
 if /i not "%LAUNCH%"=="Y" if /i not "%LAUNCH%"=="N" (
