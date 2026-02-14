@@ -91,6 +91,15 @@ if %errorlevel% neq 0 (
 for /f "tokens=*" %%i in ('npm --version') do set NPM_VER=%%i
 echo         Found npm v%NPM_VER%
 
+:: ── Pre-flight: Verify PowerShell ──
+where powershell >nul 2>&1
+if %errorlevel% neq 0 (
+    echo  !! PowerShell not found. Required for installation.
+    >> "%LOG%" echo [%date% %time%] FAIL: PowerShell not found
+    pause
+    exit /b 1
+)
+
 :: ── Step 3: Create .env if missing ──
 echo  [3/7] Setting up environment...
 if not exist ".env" (
@@ -115,11 +124,11 @@ echo  [4/7] Installing dependencies (this may take 2-5 minutes)...
 echo.
 :: Use npm ci for reproducible installs when lockfile exists; fall back to npm install
 if exist "package-lock.json" (
-    call npm ci
+    call npm ci >> "%LOG%" 2>&1
 ) else (
-    call npm install
+    call npm install >> "%LOG%" 2>&1
 )
-if %errorlevel% neq 0 (
+if errorlevel 1 (
     echo.
     echo  !! npm install failed. Common fixes:
     echo  !!   1. Close VS Code and any other editors, then re-run
@@ -129,42 +138,39 @@ if %errorlevel% neq 0 (
     echo  !!   4. Run installer as Administrator
     echo  !! See install.log for details.
     >> "%LOG%" echo [%date% %time%] FAIL: npm install
-    pause
-    exit /b 1
+    goto :fail
 )
 >> "%LOG%" echo [%date% %time%] npm install OK
 
 :: ── Step 5: Setup database ──
 echo.
 echo  [5/7] Setting up database...
-call npx prisma generate
-if %errorlevel% neq 0 (
+call npx prisma generate >> "%LOG%" 2>&1
+if errorlevel 1 (
     echo  !! Prisma generate failed. See install.log for details.
     >> "%LOG%" echo [%date% %time%] FAIL: prisma generate
-    pause
-    exit /b 1
+    goto :fail
 )
 
-call npx prisma db push
-if %errorlevel% neq 0 (
+call npx prisma db push >> "%LOG%" 2>&1
+if errorlevel 1 (
     echo  !! Database push failed. See install.log for details.
     >> "%LOG%" echo [%date% %time%] FAIL: prisma db push
-    pause
-    exit /b 1
+    goto :fail
 )
 
 :: Seed the database with stock universe (idempotent — safe to re-run)
 echo         Seeding stock universe...
-call npx prisma db seed 2>nul
-if %errorlevel% neq 0 (
+call npx prisma db seed >> "%LOG%" 2>&1
+if errorlevel 1 (
     echo         Note: Seed may have already been applied — continuing.
 )
 >> "%LOG%" echo [%date% %time%] Database setup OK
 
 :: ── Step 6: Create desktop shortcut ──
 echo  [6/7] Creating desktop shortcut...
-set SCRIPT_DIR=%~dp0
-set SHORTCUT_NAME=HybridTurtle Dashboard
+set "SCRIPT_DIR=%~dp0"
+set "SHORTCUT_NAME=HybridTurtle Dashboard"
 
 :: Use PowerShell to create a proper shortcut (paths are escaped to handle special chars)
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$scriptDir = '%SCRIPT_DIR%' -replace \"'\", \"''\"; $ws = New-Object -ComObject WScript.Shell; $desktop = [Environment]::GetFolderPath('Desktop'); $lnk = Join-Path $desktop '%SHORTCUT_NAME%.lnk'; $sc = $ws.CreateShortcut($lnk); $sc.TargetPath = Join-Path $scriptDir 'start.bat'; $sc.WorkingDirectory = $scriptDir; $sc.Description = 'Launch HybridTurtle Trading Dashboard'; $sc.IconLocation = 'shell32.dll,21'; $sc.Save()"
@@ -225,14 +231,14 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         )
     )
 
-    set /p TG_TOKEN="  Paste your Bot Token: "
+    call :read_tg_token
     if "!TG_TOKEN!"=="" (
         echo         No token entered - skipping Telegram setup.
         set "SETUP_TELEGRAM=N"
         goto :skip_tg_setup
     )
 
-    set /p TG_CHATID="  Paste your Chat ID: "
+    call :read_tg_chatid
     if "!TG_CHATID!"=="" (
         echo         No chat ID entered - skipping Telegram setup.
         set "SETUP_TELEGRAM=N"
@@ -269,27 +275,27 @@ if /i "%SETUP_TELEGRAM%"=="Y" (
         goto :skip_tg_setup
     )
 
-    :: Write nightly-task.bat via PowerShell to avoid %-escaping pitfalls
-    powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-Content -Path (Join-Path '%~dp0' 'nightly-task.bat') -Value @('@echo off', 'cd /d "%%~dp0"', 'echo [%%date%% %%time%%] Starting nightly process... >> nightly.log', 'call npx tsx src/cron/nightly.ts --run-now >> nightly.log 2^>^&1', 'echo [%%date%% %%time%%] Nightly process finished (exit code: %%ERRORLEVEL%%) >> nightly.log')"
+    :: Write nightly-task.bat using subroutine to avoid quoting pitfalls
+    call :create_nightly_bat
+    if errorlevel 1 (
+        echo  !! Failed to create nightly-task.bat. See install.log.
+        >> "%LOG%" echo [%date% %time%] FAIL: create nightly-task.bat
+        goto :fail
+    )
 
     :: Create/replace scheduled task using schtasks (more robust across machines)
     set "TASK_NAME=HybridTurtle-Nightly"
     set "NIGHTLY_BAT=%SCRIPT_DIR%nightly-task.bat"
-    set "TASK_RUN=cmd.exe /c \"\"%NIGHTLY_BAT%\"\""
-    schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
-    schtasks /Create /TN "%TASK_NAME%" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 21:10 /TR "%TASK_RUN%" /F >nul 2>&1
+    schtasks /Delete /TN "%TASK_NAME%" /F >> "%LOG%" 2>&1
+    schtasks /Create /TN "%TASK_NAME%" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 21:10 /TR "\"%NIGHTLY_BAT%\"" /RL HIGHEST /F >> "%LOG%" 2>&1
 
     if !errorlevel! equ 0 (
         echo         Scheduled task 'HybridTurtle-Nightly' created!
         echo         Runs Mon-Fri at 21:10. View/edit in Task Scheduler.
-        echo         Action: cmd.exe /c ""%NIGHTLY_BAT%""
         >> "%LOG%" echo [%date% %time%] Scheduled task created
     ) else (
         echo         !! Could not create scheduled task.
         echo         !! Try running this installer as Administrator.
-        echo         !! Manual action should be:
-        echo         !! Program/script: cmd.exe
-        echo         !! Add arguments: /c ""%NIGHTLY_BAT%""
         >> "%LOG%" echo [%date% %time%] FAIL: schtasks create
     )
 ) else (
@@ -331,3 +337,39 @@ if /i "%LAUNCH%"=="Y" (
 )
 
 pause
+exit /b 0
+
+:: ── Error handler ──
+:fail
+echo.
+echo  ===========================================================
+echo   INSTALLATION FAILED
+echo  ===========================================================
+echo.
+echo   Check install.log for details.
+echo.
+>> "%LOG%" echo [%date% %time%] ====== Install FAILED ======
+pause
+exit /b 1
+
+:: ── Helper subroutines ──
+
+:read_tg_token
+setlocal DisableDelayedExpansion
+set /p TG_TOKEN="  Paste your Bot Token: "
+endlocal & set "TG_TOKEN=%TG_TOKEN%"
+goto :eof
+
+:read_tg_chatid
+setlocal DisableDelayedExpansion
+set /p TG_CHATID="  Paste your Chat ID: "
+endlocal & set "TG_CHATID=%TG_CHATID%"
+goto :eof
+
+:create_nightly_bat
+> "%~dp0nightly-task.bat" echo @echo off
+>> "%~dp0nightly-task.bat" echo cd /d "%%~dp0"
+>> "%~dp0nightly-task.bat" echo echo [%%date%% %%time%%] Starting nightly process... ^>^> nightly.log
+>> "%~dp0nightly-task.bat" echo call npx tsx src/cron/nightly.ts --run-now ^>^> nightly.log 2^>^&1
+>> "%~dp0nightly-task.bat" echo echo [%%date%% %%time%%] Nightly process finished ^(exit code: %%ERRORLEVEL%%^) ^>^> nightly.log
+goto :eof
