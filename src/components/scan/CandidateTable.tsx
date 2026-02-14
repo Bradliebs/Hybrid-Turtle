@@ -43,23 +43,23 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
           </span>
         )}
       </div>
-      <table className="data-table">
+      <table className={cn('data-table', showSizing ? 'min-w-[1200px]' : 'min-w-[900px]')}>
         <thead>
           <tr>
-            <th>#</th>
-            <th>Ticker</th>
-            <th>Sleeve</th>
-            <th>Status</th>
-            <th className="text-right">Price</th>
-            <th className="text-right">Entry Trigger</th>
-            <th className="text-right">Stop Price</th>
-            <th className="text-right">Distance%</th>
-            <th className="text-right">Rank</th>
+            <th className="whitespace-nowrap">#</th>
+            <th className="whitespace-nowrap">Ticker</th>
+            <th className="whitespace-nowrap">Sleeve</th>
+            <th className="whitespace-nowrap">Status</th>
+            <th className="text-right whitespace-nowrap">Price</th>
+            <th className="text-right whitespace-nowrap">Entry Trigger</th>
+            <th className="text-right whitespace-nowrap">Stop Price</th>
+            <th className="text-right whitespace-nowrap">Distance%</th>
+            <th className="text-right whitespace-nowrap">Rank</th>
             {showSizing && (
               <>
-                <th className="text-right">Shares</th>
-                <th className="text-right">Total Cost</th>
-                <th className="text-right">Risk $</th>
+                <th className="text-right whitespace-nowrap">Shares</th>
+                <th className="text-right whitespace-nowrap">Total Cost</th>
+                <th className="text-right whitespace-nowrap">Risk $</th>
               </>
             )}
           </tr>
@@ -107,11 +107,11 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
                     <StatusBadge status={c.status} />
                   )}
                 </td>
-                <td className="text-right font-mono text-sm">{formatPrice(c.price, c.priceCurrency)}</td>
-                <td className="text-right font-mono text-sm text-primary-400">
+                <td className="text-right font-mono text-sm whitespace-nowrap">{formatPrice(c.price, c.priceCurrency)}</td>
+                <td className="text-right font-mono text-sm text-primary-400 whitespace-nowrap">
                   {formatPrice(c.entryTrigger, c.priceCurrency)}
                 </td>
-                <td className="text-right font-mono text-sm text-loss">
+                <td className="text-right font-mono text-sm text-loss whitespace-nowrap">
                   {formatPrice(c.stopPrice, c.priceCurrency)}
                 </td>
                 <td className="text-right">
@@ -132,16 +132,16 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
                     </span>
                   )}
                 </td>
-                <td className="text-right font-mono text-sm text-foreground">
+                <td className="text-right font-mono text-sm text-foreground whitespace-nowrap">
                   {c.rankScore.toFixed(1)}
                 </td>
                 {showSizing && (
                   <>
-                    <td className="text-right font-mono text-sm">{c.shares ?? '—'}</td>
-                    <td className="text-right font-mono text-sm">
+                    <td className="text-right font-mono text-sm whitespace-nowrap">{c.shares ?? '—'}</td>
+                    <td className="text-right font-mono text-sm whitespace-nowrap">
                       {c.totalCost ? formatPrice(c.totalCost, c.priceCurrency) : '—'}
                     </td>
-                    <td className="text-right font-mono text-sm text-loss">
+                    <td className="text-right font-mono text-sm text-loss whitespace-nowrap">
                       {c.riskDollars ? formatPrice(c.riskDollars, c.priceCurrency) : '—'}
                     </td>
                   </>

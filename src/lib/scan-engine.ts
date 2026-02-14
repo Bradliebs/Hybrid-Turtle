@@ -353,8 +353,20 @@ export async function runFullScan(
     }
   }
 
-  // Sort by rank score descending
-  candidates.sort((a, b) => b.rankScore - a.rankScore);
+  // Sort: triggered first → READY → WATCH → FAR/failed, then by rank score
+  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, FAR: 2 };
+  candidates.sort((a, b) => {
+    // Trigger-met candidates float to the very top (price ≥ entry trigger + passes filters)
+    const aTriggered = a.passesAllFilters && a.price >= a.entryTrigger ? 1 : 0;
+    const bTriggered = b.passesAllFilters && b.price >= b.entryTrigger ? 1 : 0;
+    if (aTriggered !== bTriggered) return bTriggered - aTriggered;
+    // Then by status: READY → WATCH → FAR
+    const aStatus = statusOrder[a.status] ?? 3;
+    const bStatus = statusOrder[b.status] ?? 3;
+    if (aStatus !== bStatus) return aStatus - bStatus;
+    // Then by rank score within same group
+    return b.rankScore - a.rankScore;
+  });
 
   const passesAll = candidates.filter((c) => c.passesAllFilters);
 

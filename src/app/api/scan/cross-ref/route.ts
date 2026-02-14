@@ -377,7 +377,7 @@ export async function GET() {
       });
     }
 
-    // Sort: BOTH_RECOMMEND first (by agreement desc), then CONFLICT, SCAN_ONLY, DUAL_ONLY, BOTH_REJECT
+    // Sort: trigger-met first → BOTH_RECOMMEND → others, then by agreement score desc
     const typeOrder: Record<string, number> = {
       BOTH_RECOMMEND: 0,
       CONFLICT: 1,
@@ -386,6 +386,11 @@ export async function GET() {
       BOTH_REJECT: 4,
     };
     crossRef.sort((a, b) => {
+      // Trigger-met candidates float to the very top (actionable now)
+      const aTriggerMet = a.scanPrice != null && a.scanEntryTrigger != null && a.scanPrice >= a.scanEntryTrigger;
+      const bTriggerMet = b.scanPrice != null && b.scanEntryTrigger != null && b.scanPrice >= b.scanEntryTrigger;
+      if (aTriggerMet !== bTriggerMet) return aTriggerMet ? -1 : 1;
+      // Then by match type
       const oa = typeOrder[a.matchType] ?? 5;
       const ob = typeOrder[b.matchType] ?? 5;
       if (oa !== ob) return oa - ob;

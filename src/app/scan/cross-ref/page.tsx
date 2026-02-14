@@ -349,6 +349,21 @@ export default function CrossReferencePage() {
       );
     }
 
+    // Sort: best match types first, then by agreement score descending
+    const matchPriority: Record<string, number> = {
+      BOTH_RECOMMEND: 0,
+      CONFLICT: 1,
+      SCAN_ONLY: 2,
+      DUAL_ONLY: 3,
+      BOTH_REJECT: 4,
+    };
+    tickers = [...tickers].sort((a, b) => {
+      const pa = matchPriority[a.matchType] ?? 9;
+      const pb = matchPriority[b.matchType] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return b.agreementScore - a.agreementScore;
+    });
+
     return tickers;
   }, [data, matchFilter, sleeveFilter, search, showRejected]);
 

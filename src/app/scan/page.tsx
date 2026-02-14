@@ -248,9 +248,17 @@ export default function ScanPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Compact sidebar for wide/short stages (1, 4, 7) */}
+        {(activeStage === 1 || activeStage === 4 || activeStage === 7) && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <StageFunnel stages={funnelStages} />
+            <PositionSizer />
+          </div>
+        )}
+
+        <div className={cn('grid gap-6', (activeStage === 1 || activeStage === 4 || activeStage === 7) ? 'grid-cols-1' : 'grid-cols-1 lg:grid-cols-3')}>
           {/* Left: Funnel + Stage Content */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className={cn((activeStage === 1 || activeStage === 4 || activeStage === 7) ? '' : 'lg:col-span-2', 'space-y-6')}>
             {/* Stage 1: Universe */}
             {activeStage === 1 && (
               <div className="card-surface p-4">
@@ -280,31 +288,31 @@ export default function ScanPage() {
             {/* Stage 3: Classification */}
             {activeStage === 3 && (
               <div className="space-y-4">
-                {/* Triggered Banner */}
+                {/* Triggered Banner — compact */}
                 {(() => {
                   const triggeredCandidates = passesAll.filter((c: any) => c.distancePercent <= 0);
                   if (triggeredCandidates.length === 0) return null;
                   return (
-                    <div className="bg-emerald-500/10 border-2 border-emerald-500/40 rounded-xl p-5 animate-pulse">
+                    <div className="bg-emerald-500/10 border-2 border-emerald-500/40 rounded-xl px-5 py-3 animate-pulse">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                            <span className="text-xl">⚡</span>
+                          <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                            <span className="text-lg">⚡</span>
                           </div>
                           <div>
-                            <div className="text-lg font-bold text-emerald-400">
+                            <div className="text-base font-bold text-emerald-400">
                               {triggeredCandidates.length} TRIGGERED — READY TO BUY
                             </div>
-                            <div className="text-sm text-emerald-400/70">
+                            <div className="text-xs text-emerald-400/70">
                               Price is at or above entry trigger
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
                           {triggeredCandidates.map((c: any) => (
                             <span
                               key={c.ticker}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-bold border border-emerald-500/30"
+                              className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-bold border border-emerald-500/30"
                             >
                               {c.ticker}
                             </span>
@@ -315,7 +323,8 @@ export default function ScanPage() {
                   );
                 })()}
 
-                <div className="grid grid-cols-3 gap-4">
+                {/* Status summary cards + sleeve breakdown in a single row */}
+                <div className="grid grid-cols-4 gap-4">
                   <div className="card-surface p-4 text-center border-profit/30 border">
                     <div className="text-3xl font-bold text-profit font-mono">{readyCandidates.length}</div>
                     <StatusBadge status="READY" className="mt-2" />
@@ -331,21 +340,150 @@ export default function ScanPage() {
                     <StatusBadge status="FAR" className="mt-2" />
                     <div className="text-xs text-muted-foreground mt-1">&gt; 3% away — ignore</div>
                   </div>
-                </div>
-
-                <div className="card-surface p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-2">Entry Trigger Formula</h4>
-                  <div className="bg-navy-800 p-3 rounded-lg font-mono text-sm text-muted-foreground">
-                    Entry = 20-day High + (10% × ATR buffer)
+                  {/* Sleeve breakdown card */}
+                  <div className="card-surface p-4 border-primary/20 border">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">By Sleeve</div>
+                    {(() => {
+                      const sleeveMap: Record<string, { ready: number; watch: number; far: number }> = {};
+                      candidates.forEach((c: any) => {
+                        const s = c.sleeve || 'UNKNOWN';
+                        if (!sleeveMap[s]) sleeveMap[s] = { ready: 0, watch: 0, far: 0 };
+                        if (c.status === 'READY') sleeveMap[s].ready++;
+                        else if (c.status === 'WATCH') sleeveMap[s].watch++;
+                        else sleeveMap[s].far++;
+                      });
+                      return Object.entries(sleeveMap).map(([sleeve, counts]) => (
+                        <div key={sleeve} className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="text-foreground font-medium">{sleeve.replace('_', ' ')}</span>
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="text-profit">{counts.ready}</span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="text-warning">{counts.watch}</span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="text-loss">{counts.far}</span>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-2 pt-2 border-t border-border">
+                      <span className="text-profit">R</span> / <span className="text-warning">W</span> / <span className="text-loss">F</span>
+                    </div>
                   </div>
                 </div>
+
+                {/* Entry formula — inline compact */}
+                <div className="flex items-center gap-3 px-4 py-2 bg-navy-800/50 rounded-lg text-xs text-muted-foreground">
+                  <span className="font-semibold text-foreground">Entry Trigger:</span>
+                  <span className="font-mono">20-day High + (10% × ATR buffer)</span>
+                </div>
+
+                {/* READY + WATCH candidates table — actionable detail */}
+                {passesAll.length > 0 && (
+                  <div className="card-surface overflow-x-auto">
+                    <div className="p-3 border-b border-border flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-foreground">
+                        READY & WATCH Candidates ({readyCandidates.length + watchCandidates.length})
+                      </h3>
+                      <span className="text-xs text-muted-foreground">
+                        Sorted by distance to entry trigger
+                      </span>
+                    </div>
+                    <table className="data-table min-w-[700px]">
+                      <thead>
+                        <tr>
+                          <th className="whitespace-nowrap">#</th>
+                          <th className="whitespace-nowrap">Ticker</th>
+                          <th className="whitespace-nowrap">Sleeve</th>
+                          <th className="whitespace-nowrap">Status</th>
+                          <th className="text-right whitespace-nowrap">Price</th>
+                          <th className="text-right whitespace-nowrap">Entry</th>
+                          <th className="text-right whitespace-nowrap">Stop</th>
+                          <th className="text-right whitespace-nowrap">Distance</th>
+                          <th className="text-right whitespace-nowrap">Rank</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...readyCandidates, ...watchCandidates]
+                          .sort((a: any, b: any) => a.distancePercent - b.distancePercent)
+                          .map((c: any, i: number) => {
+                            const isTriggered = c.distancePercent <= 0;
+                            return (
+                              <tr
+                                key={c.ticker}
+                                className={cn(isTriggered && 'bg-emerald-500/10 border-l-2 border-l-emerald-400')}
+                              >
+                                <td className="text-muted-foreground font-mono text-sm">{i + 1}</td>
+                                <td>
+                                  <div className="flex items-center gap-2">
+                                    <span className={cn('font-semibold', isTriggered ? 'text-emerald-400' : 'text-primary-400')}>
+                                      {c.ticker}
+                                    </span>
+                                    {isTriggered && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
+                                        ⚡ BUY
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td><StatusBadge status={c.sleeve} /></td>
+                                <td>
+                                  {isTriggered ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                      TRIGGERED
+                                    </span>
+                                  ) : (
+                                    <StatusBadge status={c.status} />
+                                  )}
+                                </td>
+                                <td className="text-right font-mono text-sm">{c.price?.toFixed(2)}</td>
+                                <td className="text-right font-mono text-sm text-primary-400">{c.entryTrigger?.toFixed(2)}</td>
+                                <td className="text-right font-mono text-sm text-loss">{c.stopPrice?.toFixed(2)}</td>
+                                <td className="text-right">
+                                  {isTriggered ? (
+                                    <span className="font-mono text-sm font-bold text-emerald-400">ABOVE</span>
+                                  ) : (
+                                    <span className={cn('font-mono text-sm', c.distancePercent <= 2 ? 'text-profit' : 'text-warning')}>
+                                      {c.distancePercent?.toFixed(1)}%
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="text-right font-mono text-sm text-foreground">{c.rankScore?.toFixed(1)}</td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* FAR candidates — collapsed summary */}
+                {farCandidates.length > 0 && (
+                  <details className="card-surface">
+                    <summary className="p-3 cursor-pointer text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors flex items-center gap-2">
+                      <Filter className="w-4 h-4" />
+                      FAR Candidates ({farCandidates.length}) — too far from entry
+                    </summary>
+                    <div className="px-3 pb-3">
+                      <div className="flex flex-wrap gap-2">
+                        {farCandidates
+                          .sort((a: any, b: any) => a.distancePercent - b.distancePercent)
+                          .map((c: any) => (
+                            <span
+                              key={c.ticker}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-navy-800 text-xs"
+                            >
+                              <span className="text-muted-foreground font-semibold">{c.ticker}</span>
+                              <span className="text-loss font-mono">{c.distancePercent?.toFixed(1)}%</span>
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  </details>
+                )}
               </div>
             )}
 
-            {/* Stage 4: Ranking */}
-            {activeStage === 4 && (
-              <CandidateTable candidates={candidates} />
-            )}
+            {/* Stage 4: Ranking — rendered full-width below grid */}
 
             {/* Stage 5: Risk Cap Gates */}
             {activeStage === 5 && (
@@ -436,18 +574,25 @@ export default function ScanPage() {
               </div>
             )}
 
-            {/* Stage 7: Position Sizing */}
-            {activeStage === 7 && (
-              <CandidateTable candidates={passesAll} showSizing />
-            )}
+            {/* Stage 7: Position Sizing — rendered full-width below grid */}
           </div>
 
-          {/* Right Sidebar: Funnel + Position Sizer */}
-          <div className="space-y-6">
-            <StageFunnel stages={funnelStages} />
-            <PositionSizer />
-          </div>
+          {/* Right Sidebar: Funnel + Position Sizer (hidden on compact stages — shown above) */}
+          {activeStage !== 1 && activeStage !== 4 && activeStage !== 7 && (
+            <div className="space-y-6">
+              <StageFunnel stages={funnelStages} />
+              <PositionSizer />
+            </div>
+          )}
         </div>
+
+        {/* Stage 4 & 7: Full-width candidate tables */}
+        {activeStage === 4 && (
+          <CandidateTable candidates={candidates} />
+        )}
+        {activeStage === 7 && (
+          <CandidateTable candidates={passesAll} showSizing />
+        )}
 
         {/* Technical Chart — select a candidate ticker to see price + indicators */}
         {candidates.length > 0 && (
