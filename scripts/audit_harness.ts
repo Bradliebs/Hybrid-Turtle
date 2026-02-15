@@ -41,6 +41,7 @@ const FIXTURES: FixtureTicker[] = [
     cluster: 'Big Tech',
     price: 210.0,
     technicals: {
+      currentPrice: 210.0,
       ma200: 195.0,
       adx: 28,
       plusDI: 24,
@@ -62,6 +63,7 @@ const FIXTURES: FixtureTicker[] = [
     cluster: 'Big Tech',
     price: 420.0,
     technicals: {
+      currentPrice: 420.0,
       ma200: 400.0,
       adx: 32,
       plusDI: 30,
@@ -83,6 +85,7 @@ const FIXTURES: FixtureTicker[] = [
     cluster: 'Data Analytics',
     price: 38.0,
     technicals: {
+      currentPrice: 38.0,
       ma200: 28.0,
       adx: 35,
       plusDI: 28,
@@ -104,6 +107,7 @@ const FIXTURES: FixtureTicker[] = [
     cluster: 'Oil Majors',
     price: 105.0,
     technicals: {
+      currentPrice: 105.0,
       ma200: 110.0, // below MA200 — should fail filter
       adx: 18,      // below 20 — should fail filter
       plusDI: 14,
@@ -125,6 +129,7 @@ const FIXTURES: FixtureTicker[] = [
     cluster: 'Broad ETF',
     price: 9500.0,
     technicals: {
+      currentPrice: 9500.0,
       ma200: 9200.0,
       adx: 22,
       plusDI: 20,

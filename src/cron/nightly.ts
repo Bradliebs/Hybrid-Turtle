@@ -23,7 +23,7 @@ import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
 import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
-import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR } from '@/lib/market-data';
+import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { detectLaggards } from '@/lib/laggard-detector';
@@ -44,6 +44,14 @@ async function runNightlyProcess() {
   console.log('========================================');
 
   try {
+    // Step 0: Pre-cache historical data for all active tickers
+    console.log('  [0/9] Pre-caching historical data for all active tickers...');
+    const preCacheResult = await preCacheHistoricalData();
+    console.log(`        ${preCacheResult.success}/${preCacheResult.total} tickers cached in ${(preCacheResult.durationMs / 1000).toFixed(1)}s`);
+    if (preCacheResult.failed.length > 0) {
+      console.warn(`        Failed: ${preCacheResult.failed.join(', ')}`);
+    }
+
     // Step 1: Run health check
     console.log('  [1/9] Running health check...');
     const healthReport = await runHealthCheck(userId);

@@ -45,6 +45,7 @@ interface YahooChartBar {
 /** Shape of the yahoo-finance2 instance */
 interface YahooFinanceInstance {
   quote(ticker: string): Promise<YahooQuoteResult | null>;
+  quote(tickers: string[]): Promise<YahooQuoteResult[]>;
   chart(ticker: string, opts: { period1: string; period2: string; interval: string }): Promise<{ quotes: YahooChartBar[] }>;
 }
 
@@ -56,9 +57,24 @@ interface CacheEntry<T> {
 
 const quoteCache = new Map<string, CacheEntry<StockQuote>>();
 const historicalCache = new Map<string, CacheEntry<DailyBar[]>>();
-const QUOTE_TTL = 60_000;       // 1 minute
-const HISTORICAL_TTL = 3600_000; // 1 hour
-const FX_TTL = 300_000;         // 5 minutes
+const QUOTE_TTL = 60_000;          // 1 minute
+const HISTORICAL_TTL = 86_400_000; // 24 hours (daily bars don't change intraday)
+const FX_TTL = 300_000;            // 5 minutes
+
+// ── Rate-limited chart queue ──
+// Serialises yf.chart() calls with a configurable delay to avoid rate-limiting.
+const CHART_DELAY_MS = 150; // ms between consecutive live chart API calls
+let chartQueueTail: Promise<void> = Promise.resolve();
+
+function enqueueChartCall<T>(fn: () => Promise<T>): Promise<T> {
+  const result = chartQueueTail.then(() => fn());
+  // Chain a delay after this call so the next one waits
+  chartQueueTail = result.then(
+    () => new Promise(resolve => setTimeout(resolve, CHART_DELAY_MS)),
+    () => new Promise(resolve => setTimeout(resolve, CHART_DELAY_MS))
+  );
+  return result;
+}
 
 // ── FX rate cache ──
 const fxCache = new Map<string, CacheEntry<number>>();
@@ -183,11 +199,14 @@ export async function getDailyPrices(
     period1.setDate(period1.getDate() - (outputSize === 'full' ? 400 : 120));
 
     const yahooTicker = toYahooTicker(ticker);
-    const { quotes } = await yf.chart(yahooTicker, {
-      period1: period1.toISOString().split('T')[0],
-      period2: new Date().toISOString().split('T')[0],
-      interval: '1d',
-    });
+    // Route through the rate-limited queue to prevent bursts
+    const { quotes } = await enqueueChartCall(() =>
+      yf.chart(yahooTicker, {
+        period1: period1.toISOString().split('T')[0],
+        period2: new Date().toISOString().split('T')[0],
+        interval: '1d',
+      })
+    );
 
     if (!quotes || quotes.length === 0) return [];
 
@@ -405,27 +424,26 @@ const INDEX_MAP: { name: string; ticker: string }[] = [
 ];
 
 export async function getMarketIndices(): Promise<MarketIndex[]> {
-  const results: MarketIndex[] = [];
-
-  for (const idx of INDEX_MAP) {
-    try {
-      const q = await yf.quote(idx.ticker);
-      if (q && q.regularMarketPrice) {
-        results.push({
-          name: idx.name,
-          ticker: idx.ticker,
-          value: q.regularMarketPrice,
-          change: q.regularMarketChange || 0,
-          changePercent: q.regularMarketChangePercent || 0,
-        });
-      }
-    } catch (error) {
-      console.warn(`[YF] Index ${idx.ticker} failed:`, (error as Error).message);
-      results.push({ name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0 });
-    }
+  const indexTickers = INDEX_MAP.map(idx => idx.ticker);
+  try {
+    const rawResults = await yf.quote(indexTickers) as YahooQuoteResult[];
+    return INDEX_MAP.map(idx => {
+      const q = rawResults.find(r => r.symbol === idx.ticker);
+      return {
+        name: idx.name,
+        ticker: idx.ticker,
+        value: q?.regularMarketPrice || 0,
+        change: q?.regularMarketChange || 0,
+        changePercent: q?.regularMarketChangePercent || 0,
+      };
+    });
+  } catch (error) {
+    console.warn('[YF] Batch index fetch failed:', (error as Error).message);
+    // Fallback: return zeroed entries
+    return INDEX_MAP.map(idx => ({
+      name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0,
+    }));
   }
-
-  return results;
 }
 
 // ── Fear & Greed — approximation from VIX ──
@@ -562,17 +580,65 @@ export async function getBatchQuotes(tickers: string[]): Promise<Map<string, Sto
   const results = new Map<string, StockQuote>();
   if (tickers.length === 0) return results;
 
-  // Process in batches of 20 to avoid overwhelming Yahoo
-  const batchSize = 20;
-  for (let i = 0; i < tickers.length; i += batchSize) {
-    const batch = tickers.slice(i, i + batchSize);
-    const promises = batch.map(async (ticker) => {
-      const quote = await getStockQuote(ticker);
-      if (quote) results.set(ticker, quote);
-    });
-    await Promise.all(promises);
-    if (i + batchSize < tickers.length) {
-      await new Promise((resolve) => setTimeout(resolve, 200));
+  // Separate cached vs uncached tickers
+  const uncached: string[] = [];
+  for (const ticker of tickers) {
+    const cached = quoteCache.get(ticker);
+    if (cached && cached.expiry > Date.now()) {
+      results.set(ticker, cached.data);
+    } else {
+      uncached.push(ticker);
+    }
+  }
+
+  if (uncached.length === 0) return results;
+
+  // Build yahoo ticker → original ticker reverse map
+  const yahooToOriginal = new Map<string, string>();
+  const yahooTickers: string[] = [];
+  for (const ticker of uncached) {
+    const yt = toYahooTicker(ticker);
+    yahooToOriginal.set(yt, ticker);
+    yahooTickers.push(yt);
+  }
+
+  // True batch: yf.quote() accepts arrays — process in chunks of 50
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < yahooTickers.length; i += BATCH_SIZE) {
+    const batch = yahooTickers.slice(i, i + BATCH_SIZE);
+    try {
+      const rawResults = await yf.quote(batch) as YahooQuoteResult[];
+      for (const r of rawResults) {
+        if (!r || !r.regularMarketPrice || !r.symbol) continue;
+        const originalTicker = yahooToOriginal.get(r.symbol) || r.symbol;
+        const quote: StockQuote = {
+          ticker: r.symbol,
+          name: r.shortName || r.longName || originalTicker,
+          price: r.regularMarketPrice,
+          change: r.regularMarketChange || 0,
+          changePercent: r.regularMarketChangePercent || 0,
+          volume: r.regularMarketVolume || 0,
+          previousClose: r.regularMarketPreviousClose || 0,
+          high: r.regularMarketDayHigh || r.regularMarketPrice,
+          low: r.regularMarketDayLow || r.regularMarketPrice,
+          open: r.regularMarketOpen || r.regularMarketPrice,
+        };
+        quoteCache.set(originalTicker, { data: quote, expiry: Date.now() + QUOTE_TTL });
+        results.set(originalTicker, quote);
+      }
+    } catch (error) {
+      console.error(`[YF] Batch quote failed for chunk ${i}-${i + batch.length}:`, (error as Error).message);
+      // Fallback: fetch individually for this chunk
+      for (const yt of batch) {
+        const originalTicker = yahooToOriginal.get(yt) || yt;
+        try {
+          const quote = await getStockQuote(originalTicker);
+          if (quote) results.set(originalTicker, quote);
+        } catch { /* skip */ }
+      }
+    }
+    if (i + BATCH_SIZE < yahooTickers.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 
@@ -613,3 +679,78 @@ export async function getBatchPrices(tickers: string[]): Promise<Record<string, 
   });
   return prices;
 }
+
+// ── Pre-cache historical data for all active tickers ──
+// Called by nightly cron (Step 0) and on server startup if cache is empty.
+// Populates the in-memory historicalCache (24h TTL) so all downstream
+// consumers get cache hits throughout the day.
+export async function preCacheHistoricalData(): Promise<{
+  total: number;
+  success: number;
+  failed: string[];
+  durationMs: number;
+}> {
+  // Dynamic import to avoid circular dependency — prisma is only needed here
+  const { default: prisma } = await import('./prisma');
+
+  const stocks = await prisma.stock.findMany({
+    where: { active: true },
+    select: { ticker: true },
+  });
+  const allTickers = stocks.map(s => s.ticker);
+
+  console.log(`[Pre-cache] Starting historical data fetch for ${allTickers.length} tickers...`);
+  const start = Date.now();
+  const failed: string[] = [];
+  let success = 0;
+
+  // Process in batches of 10 to stay within rate limits
+  // (each call goes through the rate-limited queue anyway)
+  const BATCH = 10;
+  for (let i = 0; i < allTickers.length; i += BATCH) {
+    const batch = allTickers.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(async (ticker) => {
+        const bars = await getDailyPrices(ticker, 'full');
+        if (bars.length === 0) throw new Error('no data');
+      })
+    );
+    results.forEach((r, idx) => {
+      if (r.status === 'fulfilled') {
+        success++;
+      } else {
+        failed.push(batch[idx]);
+      }
+    });
+    // Progress log every 50 tickers
+    if ((i + BATCH) % 50 === 0 || i + BATCH >= allTickers.length) {
+      console.log(`[Pre-cache] Progress: ${Math.min(i + BATCH, allTickers.length)}/${allTickers.length}`);
+    }
+  }
+
+  const durationMs = Date.now() - start;
+  console.log(`[Pre-cache] Complete: ${success}/${allTickers.length} succeeded, ${failed.length} failed in ${(durationMs / 1000).toFixed(1)}s`);
+  if (failed.length > 0) {
+    console.warn(`[Pre-cache] Failed tickers: ${failed.join(', ')}`);
+  }
+
+  return { total: allTickers.length, success, failed, durationMs };
+}
+
+// ── Startup pre-cache ──
+// On first module load, if the historical cache is empty, run pre-cache in
+// the background so the first scan/dashboard load doesn't trigger ~268
+// sequential chart calls.  Fires once per server process.
+(function autoPreCache() {
+  // Small delay to let the server finish booting before hammering Yahoo
+  setTimeout(() => {
+    if (historicalCache.size === 0) {
+      console.log('[Startup] Historical cache empty — launching background pre-cache...');
+      preCacheHistoricalData().catch(err => {
+        console.error('[Startup] Pre-cache failed:', (err as Error).message);
+      });
+    } else {
+      console.log('[Startup] Historical cache already populated — skipping pre-cache');
+    }
+  }, 3000);
+})();
