@@ -46,6 +46,7 @@ model Stock {
   superCluster  String?
   region        String?      // US | UK | EUROPE | ASIA | CHINA | ETF | COMMODITY
   currency      String?      // USD | GBP | EUR | CHF | DKK | CNY
+  yahooTicker   String?      // Yahoo Finance symbol override (e.g. GSK.L, SIE.DE)
   t212Ticker    String?      // Trading 212 ticker mapping e.g. AAPL_US_EQ
   active        Boolean      @default(true)
   createdAt     DateTime     @default(now())

@@ -71,15 +71,22 @@ async function runNightlyProcess() {
     console.log('  [3/9] Generating stop recommendations...');
     const livePriceMap = new Map(Object.entries(livePrices));
 
-    // Fetch ATR values so LOCK_1R_TRAIL gets the trailing component
+    // Fetch daily bars in parallel batches — use 'full' so trailing stop (step 3b) gets cache hits
     const atrMap = new Map<string, number>();
-    for (const ticker of openTickers) {
-      try {
-        const bars = await getDailyPrices(ticker, 'compact');
-        if (bars.length >= 15) {
-          atrMap.set(ticker, calculateATR(bars, 14));
-        }
-      } catch { /* skip */ }
+    const PRICE_BATCH = 10;
+    for (let i = 0; i < openTickers.length; i += PRICE_BATCH) {
+      const batch = openTickers.slice(i, i + PRICE_BATCH);
+      const results = await Promise.allSettled(
+        batch.map(async (ticker) => {
+          const bars = await getDailyPrices(ticker, 'full');
+          if (bars.length >= 15) {
+            atrMap.set(ticker, calculateATR(bars, 14));
+          }
+        })
+      );
+      if (i + PRICE_BATCH < openTickers.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
 
     const stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);

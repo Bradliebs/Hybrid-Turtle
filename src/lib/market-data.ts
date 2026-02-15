@@ -14,7 +14,7 @@ import YahooFinance from 'yahoo-finance2';
 import type { StockQuote, TechnicalData, MarketIndex, FearGreedData } from '@/types';
 
 // yahoo-finance2 v3 requires instantiation
-const yf = new (YahooFinance as unknown as new (opts: { suppressNotices: string[] }) => YahooFinanceInstance)({ suppressNotices: ['yahooSurvey'] });
+const yf = new (YahooFinance as unknown as new (opts: { suppressNotices: string[] }) => YahooFinanceInstance)({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
 
 /** Minimal shape returned by yf.quote() */
 interface YahooQuoteResult {
@@ -31,21 +31,21 @@ interface YahooQuoteResult {
   regularMarketOpen?: number;
 }
 
-/** Minimal shape returned by yf.historical() */
-interface YahooHistoricalBar {
+/** Minimal shape returned by yf.chart() quotes */
+interface YahooChartBar {
   date: string | Date;
   open: number;
   high: number;
   low: number;
   close: number;
-  adjClose?: number;
+  adjclose?: number;
   volume: number;
 }
 
 /** Shape of the yahoo-finance2 instance */
 interface YahooFinanceInstance {
   quote(ticker: string): Promise<YahooQuoteResult | null>;
-  historical(ticker: string, opts: { period1: string; period2: string; interval: string }): Promise<YahooHistoricalBar[]>;
+  chart(ticker: string, opts: { period1: string; period2: string; interval: string }): Promise<{ quotes: YahooChartBar[] }>;
 }
 
 // ── In-memory cache to avoid hammering Yahoo ──
@@ -72,11 +72,59 @@ interface DailyBar {
   volume: number;
 }
 
-// ── Ticker translation: T212 format → Yahoo Finance format ──
+// ── Ticker translation: DB/T212 format → Yahoo Finance format ──
 // Trading 212 uses e.g. "GSKl" for London, Yahoo Finance uses "GSK.L"
-function toYahooTicker(ticker: string): string {
+// Non-US tickers without exchange suffixes need explicit mapping.
+const YAHOO_TICKER_MAP: Record<string, string> = {
+  // UK / LSE (GBP / GBX) — stored without .L suffix
+  AIAI: 'AIAI.L',
+  AZN: 'AZN.L',
+  BTEE: 'BTEE.L',
+  CNDX: 'CNDX.L',
+  DGE: 'DGE.L',
+  EIMI: 'EIMI.L',
+  GSK: 'GSK.L',
+  HSBA: 'HSBA.L',
+  INRG: 'INRG.L',
+  IWMO: 'IWMO.L',
+  NG: 'NG.L',
+  RBOT: 'RBOT.L',
+  REL: 'REL.L',
+  RIO: 'RIO.L',
+  SGLN: 'SGLN.L',
+  SHEL: 'SHEL.L',
+  SSE: 'SSE.L',
+  SSLN: 'SSLN.L',
+  ULVR: 'ULVR.L',
+  VUSA: 'VUSA.L',
+  WSML: 'WSML.L',
+  // Germany / XETRA (EUR)
+  ALV: 'ALV.DE',
+  SAP: 'SAP.DE',
+  SIE: 'SIE.DE',
+  // Netherlands / Euronext Amsterdam (EUR)
+  ASML: 'ASML.AS',
+  MT: 'MT.AS',
+  // France / Euronext Paris (EUR)
+  MC: 'MC.PA',
+  OR: 'OR.PA',
+  SU: 'SU.PA',
+  TTE: 'TTE.PA',
+  // Switzerland / SIX (CHF)
+  NOVN: 'NOVN.SW',
+  ROG: 'ROG.SW',
+  // Denmark / Copenhagen (DKK)
+  NVO: 'NOVO-B.CO',
+};
+
+/**
+ * Convert a database/T212 ticker to its Yahoo Finance symbol.
+ * Priority: explicit yahooTicker override → static map → T212 'l' suffix rule → passthrough.
+ */
+export function toYahooTicker(ticker: string, yahooTickerOverride?: string | null): string {
+  if (yahooTickerOverride) return yahooTickerOverride;
+  if (YAHOO_TICKER_MAP[ticker]) return YAHOO_TICKER_MAP[ticker];
   // UK stocks: T212 appends lowercase 'l' for London exchange
-  // Common UK tickers ending in 'l' that are NOT US stocks
   if (/^[A-Z]{2,5}l$/.test(ticker)) {
     return ticker.slice(0, -1) + '.L';
   }
@@ -135,23 +183,23 @@ export async function getDailyPrices(
     period1.setDate(period1.getDate() - (outputSize === 'full' ? 400 : 120));
 
     const yahooTicker = toYahooTicker(ticker);
-    const result = await yf.historical(yahooTicker, {
+    const { quotes } = await yf.chart(yahooTicker, {
       period1: period1.toISOString().split('T')[0],
       period2: new Date().toISOString().split('T')[0],
       interval: '1d',
     });
 
-    if (!result || result.length === 0) return [];
+    if (!quotes || quotes.length === 0) return [];
 
     // Sort newest first (scan-engine expects this order)
-    const bars: DailyBar[] = result
-      .sort((a: YahooHistoricalBar, b: YahooHistoricalBar) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .map((bar: YahooHistoricalBar) => ({
+    const bars: DailyBar[] = quotes
+      .sort((a: YahooChartBar, b: YahooChartBar) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map((bar: YahooChartBar) => ({
         date: new Date(bar.date).toISOString().split('T')[0],
         open: bar.open,
         high: bar.high,
         low: bar.low,
-        close: bar.adjClose ?? bar.close,
+        close: bar.adjclose ?? bar.close,
         volume: bar.volume,
       }));
 
@@ -328,6 +376,7 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
     : 1;
 
   return {
+    currentPrice: closes[0],
     ma200,
     ema20,
     adx,

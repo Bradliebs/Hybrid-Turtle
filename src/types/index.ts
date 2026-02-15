@@ -286,6 +286,7 @@ export interface StockQuote {
 }
 
 export interface TechnicalData {
+  currentPrice: number;
   ma200: number;
   ema20?: number;
   adx: number;

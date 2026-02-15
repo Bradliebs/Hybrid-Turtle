@@ -1,0 +1,1096 @@
+[15/02/2026 14:41:39.32] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-15T14:41:42.342Z
+========================================
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+[Deprecated] historical() relies on an API that Yahoo have removed.  We'll map this request to chart() for convenience, but, please consider using chart() directly instead; for more info see https://github.com/gadicc/yahoo-finance2/issues/795.  This will only be shown once, but you can suppress this message in future with `new YahooFinance({ suppressNotices: ['ripHistorical'] })`.
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for DGE: Failed Yahoo Schema validation
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 458.75, Risk: 2.5%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+[YF] Historical failed for AIAI: No data found, symbol may be delisted
+[Sync] Failed AIAI: Insufficient data: 0 bars
+[YF] Historical failed for BTEE: No data found, symbol may be delisted
+[Sync] Failed BTEE: Insufficient data: 0 bars
+[YF] Historical failed for CNDX: No data found, symbol may be delisted
+[Sync] Failed CNDX: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for DGE: Failed Yahoo Schema validation
+[Sync] Failed DGE: Insufficient data: 0 bars
+[YF] Historical failed for EIMI: No data found, symbol may be delisted
+[Sync] Failed EIMI: Insufficient data: 0 bars
+[YF] Historical failed for HSBA: No data found, symbol may be delisted
+[Sync] Failed HSBA: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for INRG: Failed Yahoo Schema validation
+[Sync] Failed INRG: Insufficient data: 0 bars
+[YF] Historical failed for IWMO: No data found, symbol may be delisted
+[Sync] Failed IWMO: Insufficient data: 0 bars
+[YF] Historical failed for NOVN: No data found, symbol may be delisted
+[Sync] Failed NOVN: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for REL: Failed Yahoo Schema validation
+[Sync] Failed REL: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SIE: Failed Yahoo Schema validation
+[Sync] Failed SIE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSE: Failed Yahoo Schema validation
+[Sync] Failed SSE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSLN: Failed Yahoo Schema validation
+[Sync] Failed SSLN: Insufficient data: 0 bars
+[YF] Historical failed for ULVR: No data found, symbol may be delisted
+[Sync] Failed ULVR: Insufficient data: 0 bars
+[Sync] Failed VUSA: Insufficient data: 0 bars
+        Snapshot: 251 synced, 15 failed
+  [8/9] Sending Telegram summary...
+Telegram credentials not configured
+        Telegram: NOT SENT (check credentials)
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 2
+  Telegram: Not sent
+========================================
+[15/02/2026 14:42:07.25] Nightly process finished (exit code: 0) 
+[15/02/2026 14:47:51.91] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-15T14:47:54.493Z
+========================================
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for INRG: Failed Yahoo Schema validation
+[YF] Historical failed for IWMO: No data found, symbol may be delisted
+[YF] Historical failed for CNDX: No data found, symbol may be delisted
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 458.75, Risk: 2.5%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+[YF] Historical failed for AIAI: No data found, symbol may be delisted
+[Sync] Failed AIAI: Insufficient data: 0 bars
+[YF] Historical failed for BTEE: No data found, symbol may be delisted
+[Sync] Failed BTEE: Insufficient data: 0 bars
+[YF] Historical failed for CNDX: No data found, symbol may be delisted
+[Sync] Failed CNDX: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for DGE: Failed Yahoo Schema validation
+[Sync] Failed DGE: Insufficient data: 0 bars
+[YF] Historical failed for EIMI: No data found, symbol may be delisted
+[Sync] Failed EIMI: Insufficient data: 0 bars
+[YF] Historical failed for HSBA: No data found, symbol may be delisted
+[Sync] Failed HSBA: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for INRG: Failed Yahoo Schema validation
+[Sync] Failed INRG: Insufficient data: 0 bars
+[YF] Historical failed for IWMO: No data found, symbol may be delisted
+[Sync] Failed IWMO: Insufficient data: 0 bars
+[YF] Historical failed for NOVN: No data found, symbol may be delisted
+[Sync] Failed NOVN: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for REL: Failed Yahoo Schema validation
+[Sync] Failed REL: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SIE: Failed Yahoo Schema validation
+[Sync] Failed SIE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSE: Failed Yahoo Schema validation
+[Sync] Failed SSE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSLN: Failed Yahoo Schema validation
+[Sync] Failed SSLN: Insufficient data: 0 bars
+[YF] Historical failed for ULVR: No data found, symbol may be delisted
+[Sync] Failed ULVR: Insufficient data: 0 bars
+[Sync] Failed VUSA: Insufficient data: 0 bars
+        Snapshot: 251 synced, 15 failed
+  [8/9] Sending Telegram summary...
+Telegram credentials not configured
+        Telegram: NOT SENT (check credentials)
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 2
+  Telegram: Not sent
+========================================
+[15/02/2026 14:48:18.22] Nightly process finished (exit code: 0) 
+[15/02/2026 14:50:06.73] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-15T14:50:09.046Z
+========================================
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 458.75, Risk: 2.5%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+[YF] Historical failed for AIAI: No data found, symbol may be delisted
+[Sync] Failed AIAI: Insufficient data: 0 bars
+[YF] Historical failed for BTEE: No data found, symbol may be delisted
+[Sync] Failed BTEE: Insufficient data: 0 bars
+[YF] Historical failed for CNDX: No data found, symbol may be delisted
+[Sync] Failed CNDX: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for DGE: Failed Yahoo Schema validation
+[Sync] Failed DGE: Insufficient data: 0 bars
+[YF] Historical failed for EIMI: No data found, symbol may be delisted
+[Sync] Failed EIMI: Insufficient data: 0 bars
+[YF] Historical failed for HSBA: No data found, symbol may be delisted
+[Sync] Failed HSBA: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for INRG: Failed Yahoo Schema validation
+[Sync] Failed INRG: Insufficient data: 0 bars
+[YF] Historical failed for IWMO: No data found, symbol may be delisted
+[Sync] Failed IWMO: Insufficient data: 0 bars
+[YF] Historical failed for NOVN: No data found, symbol may be delisted
+[Sync] Failed NOVN: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for REL: Failed Yahoo Schema validation
+[Sync] Failed REL: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SIE: Failed Yahoo Schema validation
+[Sync] Failed SIE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSE: Failed Yahoo Schema validation
+[Sync] Failed SSE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSLN: Failed Yahoo Schema validation
+[Sync] Failed SSLN: Insufficient data: 0 bars
+[YF] Historical failed for ULVR: No data found, symbol may be delisted
+[Sync] Failed ULVR: Insufficient data: 0 bars
+[Sync] Failed VUSA: Insufficient data: 0 bars
+        Snapshot: 251 synced, 15 failed
+  [8/9] Sending Telegram summary...
+Telegram credentials not configured
+        Telegram: NOT SENT (check credentials)
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 2
+  Telegram: Not sent
+========================================
+[15/02/2026 14:50:32.73] Nightly process finished (exit code: 0) 
+[15/02/2026 14:52:07.79] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-15T14:52:10.154Z
+========================================
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+[YF] Historical failed for HSBA: No data found, symbol may be delisted
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for DGE: Failed Yahoo Schema validation
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 458.75, Risk: 2.5%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+[YF] Historical failed for AIAI: No data found, symbol may be delisted
+[Sync] Failed AIAI: Insufficient data: 0 bars
+[YF] Historical failed for BTEE: No data found, symbol may be delisted
+[Sync] Failed BTEE: Insufficient data: 0 bars
+[YF] Historical failed for CNDX: No data found, symbol may be delisted
+[Sync] Failed CNDX: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for DGE: Failed Yahoo Schema validation
+[Sync] Failed DGE: Insufficient data: 0 bars
+[YF] Historical failed for EIMI: No data found, symbol may be delisted
+[Sync] Failed EIMI: Insufficient data: 0 bars
+[YF] Historical failed for HSBA: No data found, symbol may be delisted
+[Sync] Failed HSBA: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for INRG: Failed Yahoo Schema validation
+[Sync] Failed INRG: Insufficient data: 0 bars
+[YF] Historical failed for IWMO: No data found, symbol may be delisted
+[Sync] Failed IWMO: Insufficient data: 0 bars
+[YF] Historical failed for NOVN: No data found, symbol may be delisted
+[Sync] Failed NOVN: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for REL: Failed Yahoo Schema validation
+[Sync] Failed REL: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SIE: Failed Yahoo Schema validation
+[Sync] Failed SIE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSE: Failed Yahoo Schema validation
+[Sync] Failed SSE: Insufficient data: 0 bars
+The following result did not validate with schema: #/definitions/ChartResultObject
+[
+  {
+    "instancePath": "/meta/currency",
+    "schemaPath": "#/definitions/ChartResultObject",
+    "message": "Expected a string",
+    "data": null
+  },
+  {
+    "schemaPath": "#/definitions/ChartResultObject/required",
+    "instancePath": "/meta",
+    "message": "Missing required properties",
+    "params": {
+      "missing": [
+        "regularMarketPrice"
+      ]
+    }
+  }
+]
+
+This may happen intermittently and you should catch errors appropriately.  However:  1) if this recently started happening on every request for a symbol that used to work, Yahoo may have changed their API.  2) If this happens on every request for a symbol you've never used before, but not for other symbols, you've found an edge-case (OR, we may just be protecting you from "bad" data sometimes stored for e.g. misspelt symbols on Yahoo's side).
+
+Please see if anyone has reported this previously:
+
+  https://github.com/gadicc/yahoo-finance2/issues?q=is%3Aissue+Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+or open a new issue (and mention the symbol):  @gadicc/yahoo-finance2 v3.13.0
+
+  https://github.com/gadicc/yahoo-finance2/issues/new?labels=bug%2C+validation&template=validation.md&title=Failed%20validation%3A%20%23%2Fdefinitions%2FChartResultObject
+
+For information on how to turn off the above logging or skip these errors, see https://github.com/gadicc/yahoo-finance2/tree/devel/docs/validation.md.
+
+At the end of the doc, there's also a section on how to "Help Fix Validation Errors" in case you'd like to contribute to the project.  Most of the time, these fixes are very quick and easy; it's just hard for our small core team to keep up, so help is always appreciated!
+
+[YF] Historical failed for SSLN: Failed Yahoo Schema validation
+[Sync] Failed SSLN: Insufficient data: 0 bars
+[YF] Historical failed for ULVR: No data found, symbol may be delisted
+[Sync] Failed ULVR: Insufficient data: 0 bars
+[Sync] Failed VUSA: Insufficient data: 0 bars

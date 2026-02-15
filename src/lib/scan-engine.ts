@@ -200,15 +200,15 @@ export async function runFullScan(
 
     const batchPromises = stockBatch.map(async (stock) => {
       try {
-        // Fetch live technical data from Yahoo Finance
+        // Fetch live technical data from Yahoo Finance (includes current price)
         const technicals = await getTechnicalData(stock.ticker);
         if (!technicals) {
           console.warn(`[Scan] Skipping ${stock.ticker} — insufficient data`);
           return null;
         }
 
-        // Get current price from most recent close
-        const price = await getQuickPrice(stock.ticker);
+        // Use price from chart data — avoids a separate quote() call per ticker
+        const price = technicals.currentPrice;
         if (!price) return null;
 
         const filterResults = runTechnicalFilters(price, technicals, stock.sleeve);
