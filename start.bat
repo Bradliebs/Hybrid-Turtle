@@ -13,7 +13,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ===========================================================
-echo   HybridTurtle Trading Dashboard v5.11
+echo   HybridTurtle Trading Dashboard v6.0
 echo  ===========================================================
 echo.
 
