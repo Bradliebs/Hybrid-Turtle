@@ -534,7 +534,7 @@ export async function getBatchQuotes(tickers: string[]): Promise<Map<string, Sto
 export async function getMarketRegime(): Promise<'BULLISH' | 'SIDEWAYS' | 'BEARISH'> {
   try {
     const spyData = await getDailyPrices('SPY', 'full');
-    if (spyData.length < 200) return 'BULLISH';
+    if (spyData.length < 200) return 'SIDEWAYS';
 
     const spyPrice = spyData[0].close;
     const closes = spyData.map((d) => d.close);
@@ -545,7 +545,7 @@ export async function getMarketRegime(): Promise<'BULLISH' | 'SIDEWAYS' | 'BEARI
     if (spyPrice < spyMa200 && spyMa50 < spyMa200) return 'BEARISH';
     return 'SIDEWAYS';
   } catch {
-    return 'BULLISH';
+    return 'SIDEWAYS';
   }
 }
 

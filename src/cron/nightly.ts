@@ -90,7 +90,7 @@ async function runNightlyProcess() {
       const isUK = rec.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(rec.ticker);
       const cur = isUK ? 'GBX' : (pos?.stock.currency || 'USD').toUpperCase();
       try {
-        await updateStopLoss(rec.positionId, rec.newStop, rec.reason);
+        await updateStopLoss(rec.positionId, rec.newStop, rec.reason, rec.newLevel);
         stopChanges.push({
           ticker: rec.ticker,
           oldStop: rec.currentStop,

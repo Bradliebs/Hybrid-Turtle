@@ -108,7 +108,8 @@ export function calculateStopRecommendation(
 export async function updateStopLoss(
   positionId: string,
   newStop: number,
-  reason: string
+  reason: string,
+  level?: ProtectionLevel
 ): Promise<void> {
   const position = await prisma.position.findUnique({
     where: { id: positionId },
@@ -135,7 +136,7 @@ export async function updateStopLoss(
   const rMultiple = position.initialRisk > 0
     ? (newStop - position.entryPrice) / position.initialRisk
     : 0;
-  const newLevel = getProtectionLevel(rMultiple);
+  const newLevel = level ?? getProtectionLevel(rMultiple);
 
   // Record stop history
   await prisma.stopHistory.create({

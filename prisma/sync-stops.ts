@@ -100,10 +100,15 @@ async function syncStops() {
 
     if (newStop > oldStop) {
       // Determine protection level based on position relative to entry
-      const initialRisk = matched.initialRisk || (matched.entryPrice - newStop);
+      const initialRisk = matched.initialRisk ?? (matched.entryPrice - newStop);
+      if (!initialRisk || initialRisk <= 0) {
+        console.log(`  ✗ ${matched.stock.ticker}: initialRisk=${initialRisk} invalid — skipped`);
+        skipped++;
+        continue;
+      }
       let protectionLevel = 'INITIAL';
       if (initialRisk > 0) {
-        const rMultiple = (newStop - matched.entryPrice + initialRisk) / initialRisk;
+        const rMultiple = (newStop - matched.entryPrice) / initialRisk;
         if (rMultiple >= 3.0) protectionLevel = 'LOCK_1R_TRAIL';
         else if (rMultiple >= 2.5) protectionLevel = 'LOCK_08R';
         else if (rMultiple >= 1.5) protectionLevel = 'BREAKEVEN';

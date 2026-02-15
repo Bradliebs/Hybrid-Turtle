@@ -37,7 +37,7 @@ const statusStyles: Record<string, string> = {
 };
 
 const statusLabels: Record<string, string> = {
-  LOCK_08R: 'Lock +0.8R',
+  LOCK_08R: 'Lock +0.5R',
   LOCK_1R_TRAIL: 'Lock +1R Trail',
   SMALL_ACCOUNT: 'Small Account',
   HIGH_RISK: 'High Risk',

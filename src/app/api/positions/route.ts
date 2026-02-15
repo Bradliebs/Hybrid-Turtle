@@ -128,7 +128,7 @@ export async function GET(request: NextRequest) {
         : priceCurrency !== 'GBP'
           ? (p.currentStop || 0) * (rawPrice > 0 ? currentPriceGBP / rawPrice : 1)
           : (p.currentStop || 0);
-      const riskGBP = (entryPriceGBP - stopGBP) * p.shares;
+      const riskGBP = Math.max(0, (entryPriceGBP - stopGBP) * p.shares);
 
       return {
         ...p,

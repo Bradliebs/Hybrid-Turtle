@@ -5,6 +5,7 @@
 
 import type { MarketRegime, DualRegimeResult, RegimeStabilityResult } from '@/types';
 
+/** @deprecated Not used in any trading decisions. Trade gates use getMarketRegime() from market-data.ts. Dashboard uses detectDualRegime(). Kept for historical reference only. */
 interface RegimeInput {
   spyPrice: number;
   spy200MA: number;
@@ -20,6 +21,9 @@ const CHOP_BAND_PCT = 0.02; // ±2% band around 200MA for CHOP zone
 /**
  * Detect market regime based on S&P 500 technical conditions
  * Now includes ±2% CHOP band (Module 10)
+ *
+ * @deprecated Not called by any production consumer. Trade gates use getMarketRegime() from market-data.ts.
+ * Dashboard uses detectDualRegime(). Kept for historical reference only.
  */
 export function detectRegime(input: RegimeInput): {
   regime: MarketRegime;

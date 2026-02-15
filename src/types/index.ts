@@ -143,6 +143,7 @@ export function getProfileCaps(profile: RiskProfileType): {
 // ---- Enums ----
 export type Sleeve = 'CORE' | 'HIGH_RISK' | 'ETF' | 'HEDGE';
 export type PositionStatus = 'OPEN' | 'CLOSED';
+/** Historical naming: LOCK_08R originally used a +0.8R formula. Actual formula is entry + 0.5 × initialRisk. Name kept for DB compatibility. */
 export type ProtectionLevel = 'INITIAL' | 'BREAKEVEN' | 'LOCK_08R' | 'LOCK_1R_TRAIL';
 export type MarketRegime = 'BULLISH' | 'SIDEWAYS' | 'BEARISH';
 export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'FAR';
@@ -225,6 +226,8 @@ export const PROTECTION_LEVELS: Record<ProtectionLevel, {
     stopFormula: 'Entry price (break even)',
     color: '#f59e0b',
   },
+  // Historical naming: "08R" refers to an earlier +0.8R formula.
+  // Actual stop = entry + 0.5 × initialRisk. Persisted in Position.protectionLevel and StopHistory.level — do not rename without a DB migration.
   LOCK_08R: {
     label: 'Lock +0.5R',
     threshold: 2.5,
