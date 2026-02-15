@@ -131,7 +131,7 @@ All routes are under `/api`. Key endpoint groups:
 | `/api/health-check` | System health diagnostics |
 | `/api/heartbeat` | Liveness ping |
 | `/api/market-data` | Yahoo Finance price/quote proxy |
-| `/api/modules` | Dashboard module data |
+| `/api/modules` | Dashboard module data (60 s server cache, parallelised) |
 | `/api/nightly` | Nightly automation trigger |
 | `/api/plan` | Weekly execution plans |
 | `/api/portfolio` | Portfolio overview & metrics |
@@ -152,6 +152,19 @@ All routes are under `/api`. Key endpoint groups:
 - [DASHBOARD-GUIDE.md](DASHBOARD-GUIDE.md) — full feature and operations reference
 - [TRADING-LOGIC.md](TRADING-LOGIC.md) — trading rules, risk logic, and system constraints
 - [Agent.md](Agent.md) — AI agent ruleset for codebase contributions
+
+## Performance notes
+
+The dashboard relies on `/api/modules` which runs 21 module checks including several Yahoo Finance calls. To keep load times low:
+
+- **Parallelised external calls** — breadth calculation, climax scan, dual-regime detection, fast-follower scan, re-entry scan, SPY ADX, and pyramid ATR fetches all run concurrently via `Promise.allSettled`.
+- **Shared data** — SPY historical bars are fetched once and reused for both ADX and dual-regime calculations.
+- **Server-side response cache** — the `/api/modules` result is cached for 60 seconds so rapid refreshes or multiple components hitting the endpoint don't re-run everything.
+- **Client-side TTL** — the Zustand store marks module data stale after 2 minutes; the `useModulesData` hook prevents concurrent duplicate fetches.
+- **Yahoo Finance caching** — quote data is cached for 1 minute, historical bars for 24 hours, and FX rates for 5 minutes (all in-process memory).
+- **Dashboard refresh** — market indices/fear-greed/regime poll every 5 minutes; hedge card refreshes every 10 minutes.
+
+On first server start with an empty cache, background pre-caching fetches historical bars for all active tickers so the first dashboard load doesn't trigger hundreds of sequential chart calls.
 
 ## Tech stack
 
