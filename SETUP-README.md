@@ -1,4 +1,4 @@
-# HybridTurtle Trading Dashboard v5.11
+# HybridTurtle Trading Dashboard v6.0
 
 A systematic trading dashboard built on the Turtle Trading methodology with modern risk management.
 

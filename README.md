@@ -2,7 +2,7 @@
 
 > **⚠️ Disclaimer:** This software is **experimental** and provided **as-is** with no warranty of any kind. It is intended for educational and personal research purposes only. It does **not** constitute financial advice, and no guarantee is made regarding the accuracy, reliability, or completeness of any data or output. **Use entirely at your own risk.** The author(s) accept no liability for any financial losses, damages, or other consequences arising from the use of this software. Always do your own research and consult a qualified financial adviser before making investment decisions.
 
-![Version](https://img.shields.io/badge/version-6.1.0-blue)
+![Version](https://img.shields.io/badge/version-6.0.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6)
 ![Node](https://img.shields.io/badge/node-20%20or%2022%20LTS-339933)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
@@ -14,7 +14,6 @@ Systematic trading workspace built around a Hybrid Turtle process: scan opportun
 ## Preview
 
 ![HybridTurtle Dashboard Preview](docs/turtlehybrid.png)
-
 
 ## Why this project exists
 
@@ -42,8 +41,9 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 ### 1) Install (one-time)
 
 1. Install **Node.js 20 or 22 LTS** (choose the LTS tab on nodejs.org).
-2. Run `install.bat`.
-3. Wait for dependencies + database setup to complete.
+2. Copy `.env.example` to `.env` and review the values (see [Environment variables](#environment-variables) below).
+3. Run `install.bat`.
+4. Wait for dependencies + database setup to complete.
 
 ### 2) Launch (daily)
 
@@ -53,13 +53,97 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 
 ### Launcher files
 
-- `install.bat` — first-time setup
-- `start.bat` — primary launcher
-- `run-dashboard.bat` — compatibility alias (redirects to `start.bat`)
-- `seed-tickers.bat` — re-seed ticker universe from Planning files
-- `update.bat` — update dependencies/database after pulling new code
-- `nightly-task.bat` — run nightly automation checks (can be scheduled via Task Scheduler)
-- `package-for-distribution.bat` — package the app for offline distribution
+| File | Purpose |
+|------|---------|
+| `install.bat` | First-time setup (deps, database, desktop shortcut) |
+| `start.bat` | Primary daily launcher |
+| `run-dashboard.bat` | Compatibility alias (redirects to `start.bat`) |
+| `seed-tickers.bat` | Re-seed ticker universe from Planning files |
+| `update.bat` | Update dependencies/database after pulling new code |
+| `nightly-task.bat` | Run nightly automation checks (schedulable via Task Scheduler) |
+| `package-for-distribution.bat` | Package the app for offline distribution |
+
+## Environment variables
+
+Copy `.env.example` to `.env` before first run. Required variables are marked with **★**.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | ★ | `file:./dev.db` | SQLite database path — no external DB needed |
+| `NEXTAUTH_SECRET` | ★ | — | Random secret for session signing (change in production) |
+| `CRON_SECRET` | ★ | — | Secret protecting the `/api/nightly` endpoint |
+| `NEXTAUTH_URL` | | `http://localhost:3000` | Base URL for NextAuth callbacks |
+| `TELEGRAM_BOT_TOKEN` | | — | Telegram bot token for nightly alerts (see below) |
+| `TELEGRAM_CHAT_ID` | | — | Telegram chat ID for alert delivery |
+| `NIGHTLY_CRON` | | `30 21 * * *` | Cron expression for nightly run (default 9:30 PM UK) |
+
+## Telegram notifications (optional)
+
+The nightly automation can send alerts covering stop changes, laggard warnings, climax-top signals, swap suggestions, whipsaw blocks, breadth safety, momentum expansion, and ready-to-buy candidates.
+
+### Setup
+
+1. Create a bot with **@BotFather** on Telegram (`/newbot`) and copy the token.
+2. Send at least one message to your new bot.
+3. Get your chat ID by visiting `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+4. Add both values to `.env`:
+   ```
+   TELEGRAM_BOT_TOKEN="your-token"
+   TELEGRAM_CHAT_ID="your-chat-id"
+   ```
+5. Restart with `start.bat`.
+6. Test from **Settings → Telegram Notifications → Send Test Message** in the dashboard.
+7. To automate nightly delivery, run `install.bat` and choose **Y** for the nightly Task Scheduler entry.
+
+## Project structure
+
+```
+├── prisma/              # Database schema, migrations, seed scripts
+├── Planning/            # Ticker lists, cluster maps, region maps
+├── scripts/             # Audit harness and maintenance scripts
+├── public/              # Static assets
+├── docs/                # Images and supplementary docs
+├── src/
+│   ├── app/             # Next.js App Router (pages + API routes)
+│   │   ├── api/         # REST endpoints (see API routes below)
+│   │   ├── dashboard/   # Main command center
+│   │   ├── portfolio/   # Position management
+│   │   ├── scan/        # Scan engine UI
+│   │   ├── plan/        # Weekly execution workspace
+│   │   ├── risk/        # Risk overview
+│   │   ├── trade-log/   # Trade journal
+│   │   └── settings/    # App configuration
+│   ├── components/      # React components (by feature)
+│   ├── hooks/           # Custom React hooks
+│   ├── lib/             # Core business logic
+│   │   └── modules/     # Modular engine plugins
+│   ├── store/           # Zustand state management
+│   └── types/           # Shared TypeScript types
+```
+
+## API routes
+
+All routes are under `/api`. Key endpoint groups:
+
+| Route | Purpose |
+|-------|---------|
+| `/api/auth` | NextAuth authentication |
+| `/api/health-check` | System health diagnostics |
+| `/api/heartbeat` | Liveness ping |
+| `/api/market-data` | Yahoo Finance price/quote proxy |
+| `/api/modules` | Dashboard module data |
+| `/api/nightly` | Nightly automation trigger |
+| `/api/plan` | Weekly execution plans |
+| `/api/portfolio` | Portfolio overview & metrics |
+| `/api/positions` | Position CRUD & stop management |
+| `/api/publications` | Dual-score publication records |
+| `/api/risk` | Risk calculations & gates |
+| `/api/scan` | Scan engine execution & results |
+| `/api/settings` | User settings & preferences |
+| `/api/stocks` | Ticker universe queries |
+| `/api/stops` | Stop price history |
+| `/api/trade-log` | Trade journal entries |
+| `/api/trading212` | Trading 212 connect & sync |
 
 ## Documentation
 
@@ -74,7 +158,10 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 - Next.js 14 + React 18
 - Prisma + SQLite (local)
 - TailwindCSS
-- Vitest
+- Zustand (state management)
+- Recharts + lightweight-charts
+- Zod (runtime validation)
+- Vitest (unit tests)
 
 ## Developer commands
 
@@ -82,19 +169,54 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 # Start dev server
 npm run dev
 
+# Production build & start
+npm run build
+npm run start
+
 # Run lint and unit tests
 npm run lint
 npm run test:unit
+npm run test:unit:watch   # watch mode
+
+# Audit harness
+npm run audit:harness
 
 # Prisma workflow
 npx prisma generate
 npx prisma db push
 npx prisma db seed
-npm run db:studio   # launch Prisma Studio GUI
+npm run db:studio         # launch Prisma Studio GUI
 ```
+
+## Troubleshooting
+
+### "Node.js not found"
+Download and install from https://nodejs.org (choose the **LTS** version). Close and re-open the terminal, then try again.
+
+### "npm install failed"
+- Run `install.bat` as Administrator (right-click → Run as administrator).
+- Temporarily disable antivirus software.
+- Ensure you have internet access.
+
+### "Port 3000 already in use"
+`start.bat` handles this automatically. If it persists, open Task Manager (Ctrl+Shift+Esc), end any **Node.js** processes, and try again.
+
+### Dashboard shows no data
+Go to the **Scan** page, click **Run Full Scan** to fetch live data from Yahoo Finance. The first scan may take 2–3 minutes for all tickers.
+
+### Need to reset the database
+Delete `prisma/dev.db` and run `install.bat` again.
+
+## Contributing
+
+This is a private project. For AI agents contributing to the codebase, see [Agent.md](Agent.md) for rules and conventions.
+
+## License
+
+This software is **private and proprietary**. It is not open-source and may not be redistributed, modified, or used without permission from the author(s).
 
 ## Notes
 
 - This project is optimized for **Windows desktop workflow**.
-- Live data uses Yahoo Finance endpoints in the app.
-- Trading 212 integration is optional.
+- Live data uses Yahoo Finance endpoints (no API key needed).
+- Trading 212 integration is optional — configure via **Settings** in the dashboard.
