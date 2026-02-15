@@ -248,14 +248,20 @@ interface CrossRefTicker {
   scanPassesAntiChase: boolean | null;
   scanDistancePercent: number | null;
   scanEntryTrigger: number | null;
+  scanStopPrice: number | null;
   scanPrice: number | null;
   scanShares: number | null;
+  scanRiskDollars: number | null;
   // Dual Score data
   dualBQS: number | null;
   dualFWS: number | null;
   dualNCS: number | null;
   dualAction: string | null;
   dualStatus: string | null;
+  dualClose: number | null;
+  dualEntryTrigger: number | null;
+  dualStopLevel: number | null;
+  dualDistancePct: number | null;
   // Cross-reference classification
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;          // 0-100 how aligned the two systems are
@@ -357,14 +363,24 @@ export async function GET() {
         scanPassesAntiChase: scan?.passesAntiChase ?? null,
         scanDistancePercent: scan?.distancePercent ?? null,
         scanEntryTrigger: scan?.entryTrigger ?? null,
+        scanStopPrice: scan?.stopPrice ?? null,
         scanPrice: scan?.price ?? null,
         scanShares: scan?.shares ?? null,
+        scanRiskDollars: scan?.riskDollars ?? null,
         // Dual score data
         dualBQS: dual?.BQS ?? null,
         dualFWS: dual?.FWS ?? null,
         dualNCS: dual?.NCS ?? null,
         dualAction: dual?.ActionNote ?? null,
         dualStatus: dual?.status ?? null,
+        dualClose: dual?.close ?? null,
+        dualEntryTrigger: dual?.entry_trigger ?? null,
+        dualStopLevel: dual?.stop_level ?? null,
+        dualDistancePct: dual
+          ? dual.close > 0 && dual.entry_trigger > 0
+            ? Math.round(((dual.entry_trigger - dual.close) / dual.close) * 10000) / 100
+            : 0
+          : null,
         // Classification
         matchType,
         agreementScore,

@@ -15,7 +15,7 @@ import { getTechnicalData, getMarketRegime, getQuickPrice, getFXRate } from './m
 import { calculateAdaptiveBuffer } from './modules/adaptive-atr-buffer';
 import { calculatePositionSize } from './position-sizer';
 import { validateRiskGates } from './risk-gates';
-import { checkAntiChasingGuard } from './scan-guards';
+import { checkAntiChasingGuard, checkPullbackContinuationEntry } from './scan-guards';
 import prisma from './prisma';
 
 // ---- Stage 1: Universe ----
@@ -218,9 +218,9 @@ export async function runFullScan(
           technicals.atr,
           technicals.atrPercent
         );
-        const entryTrigger = adaptiveBuffer.adjustedEntryTrigger;
-        const stopPrice = entryTrigger - technicals.atr * ATR_STOP_MULTIPLIER;
-        const distancePercent = ((entryTrigger - price) / price) * 100;
+        let entryTrigger = adaptiveBuffer.adjustedEntryTrigger;
+        let stopPrice = entryTrigger - technicals.atr * ATR_STOP_MULTIPLIER;
+        let distancePercent = ((entryTrigger - price) / price) * 100;
         let status = classifyCandidate(price, entryTrigger);
         let passesAllFilters = filterResults.passesAll;
 
@@ -252,6 +252,7 @@ export async function runFullScan(
         let riskGateResults: ScanCandidate['riskGateResults'];
         let passesRiskGates = true;
         let antiChaseResult: ScanCandidate['antiChaseResult'];
+        let pullbackSignal: ScanCandidate['pullbackSignal'];
         let passesAntiChase = true;
 
         if (passesAllFilters && status !== 'FAR') {
@@ -293,12 +294,77 @@ export async function runFullScan(
           passesRiskGates = riskGateResults.every((g) => g.passed);
 
           // ── Stage 6: Anti-Chase / Execution Guard ──
-          antiChaseResult = checkAntiChasingGuard(
-            price,
-            entryTrigger,
-            technicals.atr,
-            new Date().getDay()
-          );
+          const extATR = technicals.atr > 0 ? (price - entryTrigger) / technicals.atr : 0;
+          if (extATR > 0.8) {
+            antiChaseResult = {
+              passed: false,
+              reason: `WAIT_PULLBACK — ext_atr ${extATR.toFixed(2)} > 0.80`,
+            };
+            status = 'WAIT_PULLBACK';
+          } else {
+            antiChaseResult = checkAntiChasingGuard(
+              price,
+              entryTrigger,
+              technicals.atr,
+              new Date().getDay()
+            );
+          }
+
+          if (status === 'WAIT_PULLBACK') {
+            pullbackSignal = checkPullbackContinuationEntry({
+              status,
+              hh20: technicals.twentyDayHigh,
+              ema20: technicals.ema20 ?? technicals.twentyDayHigh,
+              atr: technicals.atr,
+              close: price,
+              low: technicals.dayLow ?? price,
+            });
+
+            if (pullbackSignal.triggered) {
+              entryTrigger = pullbackSignal.entryPrice ?? price;
+              stopPrice = pullbackSignal.stopPrice ?? stopPrice;
+              distancePercent = ((entryTrigger - price) / price) * 100;
+              status = 'READY';
+              antiChaseResult = {
+                passed: true,
+                reason: `PULLBACK_CONTINUATION — ${pullbackSignal.reason}`,
+              };
+
+              try {
+                const sizing = calculatePositionSize({
+                  equity,
+                  riskProfile,
+                  entryPrice: entryTrigger,
+                  stopPrice,
+                  sleeve: stock.sleeve,
+                  fxToGbp,
+                });
+                shares = sizing.shares;
+                riskDollars = sizing.riskDollars;
+                riskPercent = sizing.riskPercent;
+                totalCost = sizing.totalCost;
+              } catch {
+                // Skip if sizing fails
+              }
+
+              const gateValueAfterPullback = totalCost ?? 0;
+              const gateRiskAfterPullback = riskDollars ?? 0;
+              riskGateResults = validateRiskGates(
+                {
+                  sleeve: stock.sleeve,
+                  sector: stock.sector,
+                  cluster: stock.cluster,
+                  value: gateValueAfterPullback,
+                  riskDollars: gateRiskAfterPullback,
+                },
+                positionsForGates,
+                equity,
+                riskProfile
+              );
+              passesRiskGates = riskGateResults.every((g) => g.passed);
+            }
+          }
+
           passesAntiChase = antiChaseResult.passed;
         }
 
@@ -325,6 +391,7 @@ export async function runFullScan(
           riskGateResults,
           passesRiskGates,
           antiChaseResult,
+          pullbackSignal,
           passesAntiChase,
           shares,
           riskDollars,
@@ -354,7 +421,7 @@ export async function runFullScan(
   }
 
   // Sort: triggered first → READY → WATCH → FAR/failed, then by rank score
-  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, FAR: 2 };
+  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, FAR: 2 };
   candidates.sort((a, b) => {
     // Trigger-met candidates float to the very top (price ≥ entry trigger + passes filters)
     const aTriggered = a.passesAllFilters && a.price >= a.entryTrigger ? 1 : 0;
@@ -374,7 +441,7 @@ export async function runFullScan(
     regime,
     candidates,
     readyCount: passesAll.filter((c) => c.status === 'READY').length,
-    watchCount: passesAll.filter((c) => c.status === 'WATCH').length,
+    watchCount: passesAll.filter((c) => c.status === 'WATCH' || c.status === 'WAIT_PULLBACK').length,
     farCount: candidates.filter((c) => c.status === 'FAR').length,
     totalScanned: universe.length,
     passedFilters: passesAll.length,

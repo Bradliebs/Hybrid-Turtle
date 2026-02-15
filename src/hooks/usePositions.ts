@@ -36,9 +36,10 @@ export function usePositions(statusFilter?: string) {
     setError(null);
 
     try {
-      const url = statusFilter
-        ? `/api/positions?status=${statusFilter}`
-        : '/api/positions';
+      const params = new URLSearchParams();
+      params.set('userId', 'default-user');
+      if (statusFilter) params.set('status', statusFilter);
+      const url = `/api/positions?${params.toString()}`;
 
       const data = await apiRequest<Position[] | { positions?: Position[] }>(url);
       const list = Array.isArray(data) ? data : (data.positions || []);

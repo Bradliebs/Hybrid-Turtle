@@ -26,8 +26,17 @@ export interface SuperClusterBreachResult {
 }
 
 /**
+ * Minimum number of distinct super-clusters required before enforcement.
+ * With only 1-2 positions the single super-cluster will naturally be 100%
+ * which is expected, not a real concentration breach.
+ */
+const MIN_SUPER_CLUSTERS_FOR_CAP = 2;
+
+/**
  * Check super-cluster concentration limits.
  * Returns breaches where any super-cluster exceeds 50% of portfolio.
+ * Skips breach flagging when fewer than MIN_SUPER_CLUSTERS_FOR_CAP
+ * distinct super-clusters are present (too few positions to diversify).
  */
 export function checkSuperClusterCaps(
   positions: PositionForSuperCluster[],
@@ -48,15 +57,21 @@ export function checkSuperClusterCaps(
     scGroups.set(sc, group);
   }
 
+  // With fewer than MIN_SUPER_CLUSTERS_FOR_CAP distinct super-clusters,
+  // concentration is expected — report percentages but never flag a breach.
+  const tooFewGroups = scGroups.size < MIN_SUPER_CLUSTERS_FOR_CAP;
+
   for (const [sc, group] of Array.from(scGroups)) {
     const pct = group.value / totalPortfolioValue;
+    const wouldBreach = pct > SUPER_CLUSTER_CAP;
+    const breached = wouldBreach && !tooFewGroups;
     results.push({
       superCluster: sc,
       currentPct: pct * 100,
       capPct: SUPER_CLUSTER_CAP * 100,
-      breached: pct > SUPER_CLUSTER_CAP,
+      breached,
       positions: group.tickers,
-      reason: pct > SUPER_CLUSTER_CAP
+      reason: breached
         ? `BREACH: ${sc} at ${(pct * 100).toFixed(1)}% (cap ${(SUPER_CLUSTER_CAP * 100).toFixed(0)}%)`
         : `${sc}: ${(pct * 100).toFixed(1)}% / ${(SUPER_CLUSTER_CAP * 100).toFixed(0)}%`,
     });

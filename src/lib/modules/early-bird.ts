@@ -57,37 +57,46 @@ export function checkEarlyBird(
 }
 
 /**
- * Scan universe for Early Bird candidates using live data
+ * Scan universe for Early Bird candidates using live data.
+ * Parallelized in batches of 10 for performance.
  */
 export async function scanEarlyBirds(
   tickers: { ticker: string; name: string }[],
   regime: MarketRegime
 ): Promise<EarlyBirdSignal[]> {
   const signals: EarlyBirdSignal[] = [];
+  const BATCH_SIZE = 10;
 
-  for (const { ticker, name } of tickers) {
-    try {
-      const bars = await getDailyPrices(ticker, 'compact');
-      if (bars.length < 55) continue;
+  for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
+    const batch = tickers.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(async ({ ticker, name }) => {
+        const bars = await getDailyPrices(ticker, 'compact');
+        if (bars.length < 55) return null;
 
-      const price = bars[0].close;
-      const last55 = bars.slice(0, 55);
-      const fiftyFiveDayHigh = Math.max(...last55.map(b => b.high));
-      const fiftyFiveDayLow = Math.min(...last55.map(b => b.low));
-      const volume = bars[0].volume;
-      const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
+        const price = bars[0].close;
+        const last55 = bars.slice(0, 55);
+        const fiftyFiveDayHigh = Math.max(...last55.map(b => b.high));
+        const fiftyFiveDayLow = Math.min(...last55.map(b => b.low));
+        const volume = bars[0].volume;
+        const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
 
-      const signal = checkEarlyBird(
-        ticker, name, price,
-        fiftyFiveDayHigh, fiftyFiveDayLow,
-        volume, avgVolume20, regime
-      );
+        const signal = checkEarlyBird(
+          ticker, name, price,
+          fiftyFiveDayHigh, fiftyFiveDayLow,
+          volume, avgVolume20, regime
+        );
 
-      if (signal.eligible) {
-        signals.push(signal);
-      }
-    } catch {
-      // Skip failed tickers
+        return signal.eligible ? signal : null;
+      })
+    );
+
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) signals.push(r.value);
+    }
+
+    if (i + BATCH_SIZE < tickers.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 

@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
         t212ApiKey: true,
         t212ApiSecret: true,
         t212Environment: true,
+        riskProfile: true,
       },
     });
 
@@ -125,6 +126,12 @@ export async function POST(request: NextRequest) {
               stopLoss,
               initialRisk,
               currentStop: stopLoss,
+              entry_price: pos.entryPrice,
+              initial_stop: stopLoss,
+              initial_R: initialRisk,
+              atr_at_entry: null,
+              profile_used: user.riskProfile,
+              entry_type: 'BREAKOUT',
               protectionLevel: 'INITIAL',
               notes: `Synced from Trading 212. ISIN: ${pos.isin}`,
             },

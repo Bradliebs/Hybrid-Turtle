@@ -34,4 +34,24 @@ describe('stop-manager formulas', () => {
     const rec = calculateStopRecommendation(125, 100, 10, 105, 'INITIAL');
     expect(rec).toBeNull();
   });
+
+  it('uses max(lock floor, trailing ATR) for LOCK_1R_TRAIL recommendation', () => {
+    // Entry: 100, risk: 10, current stop: 90 (INITIAL)
+    // Price at 130 = 3R → LOCK_1R_TRAIL
+    // Lock floor = 100 + 1*10 = 110
+    // Trailing ATR = 130 - 2*5 = 120
+    // Should pick max(110, 120) = 120
+    const rec = calculateStopRecommendation(130, 100, 10, 90, 'INITIAL', 5);
+    expect(rec).not.toBeNull();
+    expect(rec?.newLevel).toBe('LOCK_1R_TRAIL');
+    expect(rec?.newStop).toBe(120);
+  });
+
+  it('falls back to lock floor when ATR is not provided for LOCK_1R_TRAIL', () => {
+    // Same scenario but no ATR → should still upgrade to 110 (lock floor)
+    const rec = calculateStopRecommendation(130, 100, 10, 90, 'INITIAL');
+    expect(rec).not.toBeNull();
+    expect(rec?.newLevel).toBe('LOCK_1R_TRAIL');
+    expect(rec?.newStop).toBe(110);
+  });
 });

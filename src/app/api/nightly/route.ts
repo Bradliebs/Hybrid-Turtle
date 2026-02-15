@@ -339,6 +339,17 @@ export async function POST(request: NextRequest) {
     // Step 5b: Check pyramid add opportunities for open positions
     let pyramidAlerts: NightlyPyramidAlert[] = [];
     try {
+      // Count existing pyramid adds per position from TradeLog
+      const addCounts = await prisma.tradeLog.groupBy({
+        by: ['positionId'],
+        where: { userId, tradeType: 'ADD', positionId: { not: null } },
+        _count: { id: true },
+      });
+      const addsMap = new Map<string, number>();
+      for (const row of addCounts) {
+        if (row.positionId) addsMap.set(row.positionId, row._count.id);
+      }
+
       for (const p of positions) {
         if (p.stock.sleeve === 'HEDGE') continue; // Skip hedge positions
         const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
@@ -358,7 +369,7 @@ export async function POST(request: NextRequest) {
           p.entryPrice,
           p.initialRisk,
           atr ?? undefined,
-          0 // addsUsed — no adds tracking in DB yet, assume 0
+          addsMap.get(p.id) ?? 0
         );
 
         if (pyramidCheck.allowed) {

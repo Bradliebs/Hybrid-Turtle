@@ -84,22 +84,37 @@ export function validateTickerData(
 
 /**
  * Validate data quality for multiple tickers.
+ * Parallelized in batches of 10 for performance.
  */
 export async function validateUniverse(
   tickers: string[]
 ): Promise<DataValidationResult[]> {
   const results: DataValidationResult[] = [];
+  const BATCH_SIZE = 10;
 
-  for (const ticker of tickers) {
-    try {
-      const bars = await getDailyPrices(ticker, 'compact');
-      results.push(validateTickerData(ticker, bars));
-    } catch {
-      results.push({
-        ticker,
-        isValid: false,
-        issues: ['Failed to fetch data — possible delisting or network error'],
-      });
+  for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
+    const batch = tickers.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.allSettled(
+      batch.map(async (ticker) => {
+        try {
+          const bars = await getDailyPrices(ticker, 'compact');
+          return validateTickerData(ticker, bars);
+        } catch {
+          return {
+            ticker,
+            isValid: false,
+            issues: ['Failed to fetch data — possible delisting or network error'],
+          } as DataValidationResult;
+        }
+      })
+    );
+
+    for (const r of batchResults) {
+      if (r.status === 'fulfilled') results.push(r.value);
+    }
+
+    if (i + BATCH_SIZE < tickers.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 

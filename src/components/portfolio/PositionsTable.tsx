@@ -31,6 +31,7 @@ interface Position {
   candidateStatus?: string;
   entryTrigger?: number;
   alerts?: number;
+  pyramidAdds?: number;
 }
 
 interface PositionsTableProps {
@@ -233,7 +234,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   </span>
                   {/* Pyramid add indicator */}
                   {pos.status === 'OPEN' && (() => {
-                    const pc = canPyramid(pos.currentPrice, pos.entryPrice, pos.initialRisk, undefined, 0);
+                    const pc = canPyramid(pos.currentPrice, pos.entryPrice, pos.initialRisk, undefined, pos.pyramidAdds ?? 0);
                     if (pc.allowed) {
                       return (
                         <div className="flex items-center justify-end gap-1 mt-0.5">
@@ -530,7 +531,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                 const R = stopModal.initialRisk;
                 const entry = stopModal.entryPrice;
                 const rMul = stopModal.rMultiple;
-                const pc = canPyramid(stopModal.currentPrice, entry, R, undefined, 0);
+                const pc = canPyramid(stopModal.currentPrice, entry, R, undefined, stopModal.pyramidAdds ?? 0);
                 const triggers = PYRAMID_CONFIG.addTriggers.map((mult, idx) => {
                   // Without ATR, use R-based approximation: entry + mult * R (roughly)
                   const approxTrigger = entry + (idx + 1) * R;

@@ -50,6 +50,78 @@ Health Check → Live Prices → Stop Management (R-based + trailing ATR)
   → Equity Snapshot + Pyramid Check → Snapshot Sync → Telegram Alert → Heartbeat
 ```
 
+### End-to-End Decision Tree (Current Code)
+
+```text
+INPUTS:
+  userId, riskProfile, equity, universe stock metadata, live price/technicals
+
+SCAN PATH:
+  1) Stage 1 Universe
+    - Load active stocks from DB
+
+  2) Stage 2 Technical Filters
+    - Hard filters: price>MA200, ADX>=20, +DI>-DI, ATR% cap, data quality
+    - Soft rule: efficiency<30 demotes READY->WATCH
+    - ATR spike:
+      bullish DI -> SOFT_CAP (READY->WATCH)
+      bearish DI -> HARD_BLOCK (candidate FAR + fails filters)
+
+  3) Entry Trigger / Stop Seed
+    - entryTrigger = adaptive ATR buffer output
+    - stop = entryTrigger - ATR * stopMultiplier
+
+  4) Stage 3 Classify
+    - distance<=2% READY; <=3% WATCH; else FAR
+
+  5) Stage 4 Rank
+    - sleeve priority + status bonus + ADX + volume + efficiency + RS
+
+  6) Stage 7 Sizing (first pass)
+    - riskCashRaw = equity * riskPerTrade
+    - apply risk_cash_cap / risk_cash_floor
+    - shares = floor(riskCash / riskPerShare)
+    - enforce sleeve position-size cap
+    - enforce per-position max-loss guard
+
+  7) Stage 5 Risk Gates
+    - open risk, max positions, sleeve cap, cluster cap, sector cap, position-size cap
+    - profile-aware caps via getProfileCaps()
+
+  8) Stage 6 Anti-Chase
+    - ext_atr = (close - entryTrigger) / ATR
+    - if ext_atr > 0.8:
+      status = WAIT_PULLBACK (candidate kept, breakout blocked)
+     else:
+      run anti-chase guard (Monday-only gap checks)
+
+  9) Mode B Pullback Continuation (only WAIT_PULLBACK)
+    - anchor = max(HH20, EMA20)
+    - zone = anchor ± 0.25*ATR
+    - trigger if low entered zone AND close > zoneHigh
+    - stop = pullbackLow - 0.5*ATR
+    - if triggered:
+      set mode = PULLBACK_CONTINUATION
+      promote status to READY
+      replace entry/stop with pullback values
+      re-run sizing + risk gates with same caps
+
+ 10) Output + Sorting
+    - Trigger-met first, then READY, WATCH/WAIT_PULLBACK, FAR
+    - Persist scan rows with entryMode + stage6Reason
+
+ENTRY EXECUTION PATH (POST /api/positions):
+  A) Hard server-side pre-trade gates
+    - block on Monday OBSERVATION phase
+    - block if regime != BULLISH
+    - block if latest health check is RED
+    - block if stop >= entry
+
+  B) If allowed, create position
+    - persist entry snapshot:
+     entry_price, initial_stop, initial_R, atr_at_entry, profile_used, entry_type
+```
+
 ---
 
 ## 2. Scan Engine — 7-Stage Pipeline

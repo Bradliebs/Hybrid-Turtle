@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest) {
     const { userId, riskProfile, equity } = await request.json();
     const id = userId || 'default-user';
 
-    const validProfiles = ['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT'];
+    const validProfiles = ['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT', 'AGGRESSIVE'];
     if (riskProfile && !validProfiles.includes(riskProfile)) {
       return apiError(400, 'INVALID_RISK_PROFILE', 'Invalid risk profile');
     }

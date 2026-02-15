@@ -43,7 +43,19 @@ export async function GET(request: NextRequest) {
       tickers.map((ticker) => [ticker, livePrices[ticker] || 0])
     );
 
-    const recommendations = await generateStopRecommendations(userId, priceMap);
+    // Fetch ATR values so LOCK_1R_TRAIL gets the trailing component
+    const { getDailyPrices: getDailyPricesFn, calculateATR: calculateATRFn } = await import('@/lib/market-data');
+    const atrMap = new Map<string, number>();
+    for (const ticker of tickers) {
+      try {
+        const bars = await getDailyPricesFn(ticker, 'compact');
+        if (bars.length >= 15) {
+          atrMap.set(ticker, calculateATRFn(bars, 14));
+        }
+      } catch { /* skip */ }
+    }
+
+    const recommendations = await generateStopRecommendations(userId, priceMap, atrMap);
 
     return NextResponse.json(recommendations);
   } catch (error) {

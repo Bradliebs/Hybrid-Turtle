@@ -33,6 +33,7 @@ model User {
   plans                 ExecutionPlan[]
   healthChecks          HealthCheck[]
   equitySnapshots        EquitySnapshot[]
+  tradeLogs             TradeLog[]
 }
 
 model Stock {
@@ -68,6 +69,12 @@ model Position {
   stopLoss        Float
   initialRisk     Float
   currentStop     Float
+  entry_price     Float?
+  initial_stop    Float?
+  initial_R       Float?
+  atr_at_entry    Float?
+  profile_used    String?
+  entry_type      String?     @default("BREAKOUT")
   protectionLevel String      @default("INITIAL")    // INITIAL | BREAKEVEN | LOCK_08R | LOCK_1R_TRAIL
   exitPrice       Float?
   exitDate        DateTime?
@@ -127,6 +134,8 @@ model ScanResult {
   stopPrice        Float
   distancePercent  Float
   status           String  // READY | WATCH | FAR
+  entryMode        String? // BREAKOUT | PULLBACK_CONTINUATION
+  stage6Reason     String?
   rankScore        Float
   passesAllFilters Boolean
   shares           Int?
@@ -170,23 +179,71 @@ model Heartbeat {
 }
 
 model TradeLog {
-  id              String   @id @default(cuid())
-  positionId      String
-  position        Position @relation(fields: [positionId], references: [id])
-  userId          String
-  ticker          String
-  action          String   // BUY | SELL | TRIM
-  expectedPrice   Float
-  actualPrice     Float?
-  slippagePercent Float?
-  shares          Float
-  reason          String?  // ENTRY | STOP_HIT | CLIMAX_TRIM | LAGGARD_PURGE | RE_ENTRY | MANUAL
-  rMultipleAtExit Float?
-  createdAt       DateTime @default(now())
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id])
+  positionId          String?
+  position            Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
 
+  ticker              String
+  tradeDate           DateTime
+  tradeType           String    // ENTRY | EXIT | ADD | TRIM | STOP_HIT
+
+  scanStatus          String?   // READY | WATCH | TRIGGER_MET
+  bqsScore            Float?
+  fwsScore            Float?
+  ncsScore            Float?
+  dualScoreAction     String?   // AUTO_YES | AUTO_NO | CONDITIONAL
+  rankScore           Float?
+
+  entryPrice          Float?
+  initialStop         Float?
+  initialR            Float?
+  shares              Float?
+  positionSizeGbp     Float?
+  atrAtEntry          Float?
+  adxAtEntry          Float?
+  regime              String?   // BULLISH | BEARISH | SIDEWAYS
+
+  decision            String    // TAKEN | SKIPPED | PARTIAL
+  decisionReason      String?
+  hesitationLevel     Int?
+
+  plannedEntry        Float?
+  actualFill          Float?
+  slippagePct         Float?
+  fillTime            DateTime?
+
+  exitPrice           Float?
+  exitReason          String?   // STOP_HIT | PROFIT_TARGET | MANUAL | LAGGARD
+  finalRMultiple      Float?
+  gainLossGbp         Float?
+  daysHeld            Int?
+
+  whatWentWell        String?
+  whatWentWrong       String?
+  lessonsLearned      String?
+  wouldTakeAgain      Boolean?
+
+  climaxDetected      Boolean   @default(false)
+  whipsawBlocked      Boolean   @default(false)
+  breadthRestricted   Boolean   @default(false)
+  antiChaseTriggered  Boolean   @default(false)
+
+  tags                String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([userId, tradeDate(sort: Desc)])
   @@index([positionId])
-  @@index([userId])
   @@index([ticker])
+  @@index([decision])
+}
+
+model TradeTag {
+  tag         String @id
+  category    String // SETUP | ERROR | MARKET_CONDITION | EXECUTION
+  description String
 }
 
 model EquitySnapshot {

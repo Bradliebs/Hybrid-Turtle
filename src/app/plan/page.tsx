@@ -64,8 +64,10 @@ interface CrossRefTicker {
   scanStatus?: string;
   scanPrice?: number;
   scanEntryTrigger?: number;
+  scanStopPrice?: number;
   scanDistancePercent?: number;
   scanShares?: number;
+  scanRiskDollars?: number;
   scanRankScore?: number;
   scanPassesFilters?: boolean;
   agreementScore?: number;
@@ -73,6 +75,10 @@ interface CrossRefTicker {
   dualBQS?: number;
   dualFWS?: number;
   dualAction?: string;
+  dualClose?: number;
+  dualEntryTrigger?: number;
+  dualStopLevel?: number;
+  dualDistancePct?: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
@@ -234,12 +240,12 @@ export default function PlanPage() {
               name: t.name,
               sleeve: t.sleeve,
               status: t.scanStatus || (t.dualNCS >= 70 ? 'READY' : 'WATCH'),
-              price: t.scanPrice || 0,
-              entryTrigger: t.scanEntryTrigger || 0,
-              stopPrice: 0,
-              distancePercent: t.scanDistancePercent || 0,
+              price: t.scanPrice || t.dualClose || 0,
+              entryTrigger: t.scanEntryTrigger || t.dualEntryTrigger || 0,
+              stopPrice: t.scanStopPrice || t.dualStopLevel || 0,
+              distancePercent: t.scanDistancePercent ?? t.dualDistancePct ?? 0,
               shares: t.scanShares,
-              riskDollars: undefined,
+              riskDollars: t.scanRiskDollars ?? undefined,
               // Cross-ref enrichment
               matchType: t.matchType,
               agreementScore: t.agreementScore,

@@ -9,29 +9,9 @@ import 'server-only';
 import prisma from '../prisma';
 import type { TradeLogEntry } from '@/types';
 
-/** Prisma TradeLog record shape used within this module */
-interface TradeLogRecord {
-  id: string;
-  ticker: string;
-  action: string;
-  expectedPrice: number;
-  actualPrice: number | null;
-  slippagePercent: number | null;
-  shares: number;
-  reason: string | null;
-  createdAt: Date;
-}
-
-// Use prisma's tradeLog model — cast once to access dynamic model
-const db = prisma as unknown as typeof prisma & {
-  tradeLog: {
-    create: (args: { data: Record<string, unknown> }) => Promise<TradeLogRecord>;
-    findMany: (args: Record<string, unknown>) => Promise<TradeLogRecord[]>;
-  };
-};
-
 /**
  * Log a trade execution.
+ * Uses the proper TradeLog schema fields from Prisma.
  */
 export async function logTrade(data: {
   positionId: string;
@@ -48,18 +28,21 @@ export async function logTrade(data: {
     ? ((data.actualPrice - data.expectedPrice) / data.expectedPrice) * 100
     : null;
 
-  await db.tradeLog.create({
+  await prisma.tradeLog.create({
     data: {
       positionId: data.positionId,
       userId: data.userId,
       ticker: data.ticker,
-      action: data.action,
-      expectedPrice: data.expectedPrice,
-      actualPrice: data.actualPrice || null,
-      slippagePercent,
+      tradeDate: new Date(),
+      tradeType: data.action === 'BUY' ? 'ENTRY' : data.action === 'SELL' ? 'EXIT' : 'TRIM',
+      entryPrice: data.expectedPrice,
+      plannedEntry: data.expectedPrice,
+      actualFill: data.actualPrice ?? null,
+      slippagePct: slippagePercent,
       shares: data.shares,
-      reason: data.reason || null,
-      rMultipleAtExit: data.rMultipleAtExit || null,
+      decision: 'TAKEN',
+      decisionReason: data.reason ?? null,
+      finalRMultiple: data.rMultipleAtExit ?? null,
     },
   });
 }
@@ -71,7 +54,7 @@ export async function getTradeLog(
   userId: string,
   limit: number = 50
 ): Promise<TradeLogEntry[]> {
-  const logs = await db.tradeLog.findMany({
+  const logs = await prisma.tradeLog.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -80,12 +63,12 @@ export async function getTradeLog(
   return logs.map((l) => ({
     id: l.id,
     ticker: l.ticker,
-    action: l.action as 'BUY' | 'SELL' | 'TRIM',
-    expectedPrice: l.expectedPrice,
-    actualPrice: l.actualPrice,
-    slippagePercent: l.slippagePercent,
-    shares: l.shares,
-    reason: l.reason || '',
+    action: (l.tradeType === 'ENTRY' ? 'BUY' : l.tradeType === 'EXIT' ? 'SELL' : 'TRIM') as 'BUY' | 'SELL' | 'TRIM',
+    expectedPrice: l.entryPrice ?? l.plannedEntry ?? 0,
+    actualPrice: l.actualFill,
+    slippagePercent: l.slippagePct,
+    shares: l.shares ?? 0,
+    reason: l.decisionReason || '',
     createdAt: l.createdAt.toISOString(),
   }));
 }
@@ -99,10 +82,10 @@ export async function getSlippageSummary(userId: string): Promise<{
   worstSlippagePct: number;
   totalSlippageDollars: number;
 }> {
-  const logs = await db.tradeLog.findMany({
+  const logs = await prisma.tradeLog.findMany({
     where: {
       userId,
-      slippagePercent: { not: null },
+      slippagePct: { not: null },
     },
   });
 
@@ -110,10 +93,10 @@ export async function getSlippageSummary(userId: string): Promise<{
     return { totalTrades: 0, avgSlippagePct: 0, worstSlippagePct: 0, totalSlippageDollars: 0 };
   }
 
-  const slippages = logs.map((l) => l.slippagePercent as number);
+  const slippages = logs.map((l) => l.slippagePct as number);
   const totalSlippageDollars = logs.reduce((sum: number, l) => {
-    if (l.actualPrice && l.expectedPrice) {
-      return sum + Math.abs(l.actualPrice - l.expectedPrice) * l.shares;
+    if (l.actualFill && l.plannedEntry) {
+      return sum + Math.abs(l.actualFill - l.plannedEntry) * (l.shares ?? 0);
     }
     return sum;
   }, 0);

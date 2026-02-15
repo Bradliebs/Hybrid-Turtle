@@ -37,10 +37,19 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
   const profile = RISK_PROFILES[riskProfile];
   const riskPercent = customRiskPercent ?? profile.riskPerTrade;
   const riskPerShare = (entryPrice - stopPrice) * fxToGbp; // Convert to GBP
-  const riskAmount = equity * (riskPercent / 100);
+  const riskCashRaw = equity * (riskPercent / 100);
+  let riskCash = riskCashRaw;
 
-  // Calculate shares — fractional to 0.001
-  let shares = Math.floor((riskAmount / riskPerShare) * 1000) / 1000;
+  if (profile.risk_cash_cap !== undefined) {
+    riskCash = Math.min(riskCash, profile.risk_cash_cap);
+  }
+
+  if (profile.risk_cash_floor !== undefined) {
+    riskCash = Math.max(riskCash, profile.risk_cash_floor);
+  }
+
+  // Calculate shares — always round DOWN to whole shares
+  let shares = Math.floor(riskCash / riskPerShare);
 
   // Enforce position size cap: totalCost ≤ cap% × equity (profile-aware)
   if (shares > 0 && sleeve) {
@@ -49,8 +58,15 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
     const maxCost = equity * cap;
     const totalCostInGbp = shares * entryPrice * fxToGbp;
     if (totalCostInGbp > maxCost) {
-      shares = Math.floor((maxCost / (entryPrice * fxToGbp)) * 1000) / 1000;
+      shares = Math.floor(maxCost / (entryPrice * fxToGbp));
     }
+  }
+
+  // Safety guard: cap per-position max loss
+  const perPositionMaxLossPct = profile.per_position_max_loss_pct ?? riskPercent;
+  const perPositionMaxLossAmount = equity * (perPositionMaxLossPct / 100);
+  if (shares > 0 && (riskPerShare * shares) > perPositionMaxLossAmount) {
+    shares = Math.floor(perPositionMaxLossAmount / riskPerShare);
   }
 
   if (shares <= 0) {

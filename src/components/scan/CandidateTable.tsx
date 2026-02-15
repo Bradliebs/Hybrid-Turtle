@@ -20,6 +20,11 @@ interface Candidate {
   riskDollars?: number;
   totalCost?: number;
   passesAllFilters: boolean;
+  pullbackSignal?: {
+    triggered: boolean;
+    mode: 'BREAKOUT' | 'PULLBACK_CONTINUATION';
+    reason: string;
+  };
 }
 
 interface CandidateTableProps {
@@ -99,13 +104,23 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
                   <StatusBadge status={c.sleeve} />
                 </td>
                 <td>
-                  {isTriggered ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      TRIGGERED
-                    </span>
-                  ) : (
-                    <StatusBadge status={c.status} />
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isTriggered ? (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                        TRIGGERED
+                      </span>
+                    ) : (
+                      <StatusBadge status={c.status} />
+                    )}
+                    {c.pullbackSignal?.triggered && c.pullbackSignal.mode === 'PULLBACK_CONTINUATION' && (
+                      <span
+                        title={c.pullbackSignal.reason}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      >
+                        MODE B
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="text-right font-mono text-sm whitespace-nowrap">{formatPrice(c.price, c.priceCurrency)}</td>
                 <td className="text-right font-mono text-sm text-primary-400 whitespace-nowrap">
@@ -139,10 +154,10 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
                   <>
                     <td className="text-right font-mono text-sm whitespace-nowrap">{c.shares ?? '—'}</td>
                     <td className="text-right font-mono text-sm whitespace-nowrap">
-                      {c.totalCost ? formatPrice(c.totalCost, c.priceCurrency) : '—'}
+                      {c.totalCost != null ? formatPrice(c.totalCost, c.priceCurrency) : '—'}
                     </td>
                     <td className="text-right font-mono text-sm text-loss whitespace-nowrap">
-                      {c.riskDollars ? formatPrice(c.riskDollars, c.priceCurrency) : '—'}
+                      {c.riskDollars != null ? formatPrice(c.riskDollars, c.priceCurrency) : '—'}
                     </td>
                   </>
                 )}

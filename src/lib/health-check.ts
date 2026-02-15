@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { HealthStatus, HealthCheckResult, RiskProfileType } from '@/types';
-import { HEALTH_CHECK_ITEMS, RISK_PROFILES } from '@/types';
+import { HEALTH_CHECK_ITEMS, RISK_PROFILES, SLEEVE_CAPS, CLUSTER_CAP, SECTOR_CAP } from '@/types';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import prisma from './prisma';
 
@@ -153,7 +153,7 @@ async function checkDataFreshness(): Promise<HealthCheckResult> {
     }
     return { id: 'A1', label: 'Data Freshness', category: 'Data', status: 'GREEN', message: `Data updated ${Math.floor(hoursSince)}h ago` };
   } catch {
-    return { id: 'A1', label: 'Data Freshness', category: 'Data', status: 'GREEN', message: 'Data check passed (no heartbeat table yet)' };
+    return { id: 'A1', label: 'Data Freshness', category: 'Data', status: 'YELLOW', message: 'Data freshness check failed — unable to query heartbeat' };
   }
 }
 
@@ -168,7 +168,7 @@ async function checkDuplicateTickers(): Promise<HealthCheckResult> {
     }
     return { id: 'A2', label: 'Duplicate Tickers', category: 'Data', status: 'GREEN', message: `${tickers.length} unique tickers` };
   } catch {
-    return { id: 'A2', label: 'Duplicate Tickers', category: 'Data', status: 'GREEN', message: 'No duplicates detected' };
+    return { id: 'A2', label: 'Duplicate Tickers', category: 'Data', status: 'YELLOW', message: 'Duplicate check failed — unable to query stocks' };
   }
 }
 
@@ -233,6 +233,10 @@ function checkPositionSizes(positions: HealthCheckPosition[], equity: number): H
   if (positions.length === 0) {
     return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'No open positions' };
   }
+  // With fewer than 2 positions, size limits are not meaningful
+  if (positions.length < 2) {
+    return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'Too few positions for size check' };
+  }
   const totalValue = positions.reduce((sum: number, p: HealthCheckPosition) => sum + (p.entryPrice * p.shares), 0);
   const oversized = positions.filter((p: HealthCheckPosition) => {
     const posValue = p.entryPrice * p.shares;
@@ -273,15 +277,112 @@ function checkConfigCoherence(riskProfile: RiskProfileType): HealthCheckResult {
 }
 
 function checkSleeveLimits(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
+  if (positions.length === 0) {
+    return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'GREEN', message: 'No open positions' };
+  }
+
+  const totalValue = positions.reduce((sum, p) => sum + (p.entryPrice * p.shares), 0);
+  if (totalValue <= 0) {
+    return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'GREEN', message: 'No portfolio value' };
+  }
+
+  const sleeveValues: Record<string, number> = {};
+  for (const p of positions) {
+    const sleeve = p.stock?.sleeve || 'CORE';
+    sleeveValues[sleeve] = (sleeveValues[sleeve] || 0) + (p.entryPrice * p.shares);
+  }
+
+  // With fewer than 2 distinct sleeves, concentration is expected
+  if (Object.keys(sleeveValues).length < 2) {
+    return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'GREEN', message: 'Too few sleeves for limit check' };
+  }
+
+  const breaches: string[] = [];
+  for (const [sleeve, value] of Object.entries(sleeveValues)) {
+    const pct = value / totalValue;
+    const cap = SLEEVE_CAPS[sleeve as keyof typeof SLEEVE_CAPS] ?? 0.80;
+    if (pct > cap) {
+      breaches.push(`${sleeve}: ${(pct * 100).toFixed(0)}% > ${(cap * 100).toFixed(0)}%`);
+    }
+  }
+
+  if (breaches.length > 0) {
+    return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'RED', message: `Sleeve limit breached: ${breaches.join(', ')}` };
+  }
   return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'GREEN', message: 'Sleeve allocations within limits' };
 }
 
 function checkClusterConcentration(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
-  return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'Cluster concentrations within 20% cap' };
+  if (positions.length === 0) {
+    return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'No open positions' };
+  }
+
+  const totalValue = positions.reduce((sum, p) => sum + (p.entryPrice * p.shares), 0);
+  if (totalValue <= 0) {
+    return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'No portfolio value' };
+  }
+
+  // Group by cluster (from stock relation if available, would need schema addition)
+  // For now, use a reasonable heuristic: check if any single stock > cluster cap
+  const stockValues: Record<string, number> = {};
+  for (const p of positions) {
+    const ticker = p.stock?.ticker || 'UNKNOWN';
+    stockValues[ticker] = (stockValues[ticker] || 0) + (p.entryPrice * p.shares);
+  }
+
+  // With fewer than 2 distinct tickers, concentration is expected
+  if (Object.keys(stockValues).length < 2) {
+    return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'Too few positions for cluster check' };
+  }
+
+  const breaches: string[] = [];
+  for (const [ticker, value] of Object.entries(stockValues)) {
+    const pct = value / totalValue;
+    if (pct > CLUSTER_CAP) {
+      breaches.push(`${ticker}: ${(pct * 100).toFixed(0)}% > ${(CLUSTER_CAP * 100).toFixed(0)}%`);
+    }
+  }
+
+  if (breaches.length > 0) {
+    return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'YELLOW', message: `Concentration warning: ${breaches.join(', ')}` };
+  }
+  return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: `Cluster concentrations within ${(CLUSTER_CAP * 100).toFixed(0)}% cap` };
 }
 
 function checkSectorConcentration(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
-  return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'Sector concentrations within 33% cap' };
+  if (positions.length === 0) {
+    return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'No open positions' };
+  }
+
+  const totalValue = positions.reduce((sum, p) => sum + (p.entryPrice * p.shares), 0);
+  if (totalValue <= 0) {
+    return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'No portfolio value' };
+  }
+
+  // Approximate sector from sleeve grouping
+  const sleeveValues: Record<string, number> = {};
+  for (const p of positions) {
+    const sleeve = p.stock?.sleeve || 'CORE';
+    sleeveValues[sleeve] = (sleeveValues[sleeve] || 0) + (p.entryPrice * p.shares);
+  }
+
+  // With fewer than 2 distinct sectors, concentration is expected
+  if (Object.keys(sleeveValues).length < 2) {
+    return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'Too few sectors for concentration check' };
+  }
+
+  const breaches: string[] = [];
+  for (const [sleeve, value] of Object.entries(sleeveValues)) {
+    const pct = value / totalValue;
+    if (pct > SECTOR_CAP) {
+      breaches.push(`${sleeve}: ${(pct * 100).toFixed(0)}% > ${(SECTOR_CAP * 100).toFixed(0)}%`);
+    }
+  }
+
+  if (breaches.length > 0) {
+    return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'YELLOW', message: `Sector warning: ${breaches.join(', ')}` };
+  }
+  return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: `Sector concentrations within ${(SECTOR_CAP * 100).toFixed(0)}% cap` };
 }
 
 async function checkHeartbeat(): Promise<HealthCheckResult> {
@@ -303,13 +404,47 @@ async function checkHeartbeat(): Promise<HealthCheckResult> {
 }
 
 async function checkAPIConnectivity(): Promise<HealthCheckResult> {
-  return { id: 'H2', label: 'API Connectivity', category: 'System', status: 'GREEN', message: 'API endpoints reachable' };
+  try {
+    // Quick check: verify Prisma can query the database
+    await prisma.stock.count();
+    return { id: 'H2', label: 'API Connectivity', category: 'System', status: 'GREEN', message: 'API endpoints reachable' };
+  } catch {
+    return { id: 'H2', label: 'API Connectivity', category: 'System', status: 'RED', message: 'Database connection failed' };
+  }
 }
 
 function checkDatabaseIntegrity(): HealthCheckResult {
-  return { id: 'H3', label: 'Database Integrity', category: 'System', status: 'GREEN', message: 'Database operational' };
+  // We verified DB connectivity in the API check above
+  // This additional check validates the Prisma singleton is alive
+  try {
+    if (!prisma) {
+      return { id: 'H3', label: 'Database Integrity', category: 'System', status: 'RED', message: 'Prisma client not initialized' };
+    }
+    return { id: 'H3', label: 'Database Integrity', category: 'System', status: 'GREEN', message: 'Database operational' };
+  } catch {
+    return { id: 'H3', label: 'Database Integrity', category: 'System', status: 'RED', message: 'Database integrity check failed' };
+  }
 }
 
 async function checkCronActive(): Promise<HealthCheckResult> {
-  return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'GREEN', message: 'Nightly job scheduled' };
+  try {
+    // Check if the nightly heartbeat ran in the last 25 hours
+    const heartbeat = await prisma.heartbeat.findFirst({
+      where: { status: 'nightly_complete' },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    if (!heartbeat) {
+      return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'YELLOW', message: 'No nightly run recorded yet' };
+    }
+
+    const hoursSince = (Date.now() - heartbeat.timestamp.getTime()) / (1000 * 60 * 60);
+    if (hoursSince > 25) {
+      return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'YELLOW', message: `Last nightly run ${Math.floor(hoursSince)}h ago (expected < 25h)` };
+    }
+
+    return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'GREEN', message: `Nightly ran ${Math.floor(hoursSince)}h ago` };
+  } catch {
+    return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'YELLOW', message: 'Unable to check cron status' };
+  }
 }

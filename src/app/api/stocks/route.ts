@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import prisma from '@/lib/prisma';
 import { apiError } from '@/lib/api-response';
 import { z } from 'zod';
-
-const prisma = new PrismaClient();
 
 const stockPayloadSchema = z.object({
   ticker: z.string().trim().min(1),
@@ -87,36 +85,36 @@ export async function POST(request: NextRequest) {
       }
 
       const body = bulkParsed.data;
-      const results = [];
-      for (const stock of body.stocks) {
-        const result = await prisma.stock.upsert({
-          where: { ticker: stock.ticker },
-          update: {
-            name: stock.name || stock.ticker,
-            sleeve: stock.sleeve || 'CORE',
-            sector: stock.sector || null,
-            cluster: stock.cluster || null,
-            superCluster: stock.superCluster || null,
-            region: stock.region || null,
-            currency: stock.currency || null,
-            t212Ticker: stock.t212Ticker || null,
-            active: stock.active !== undefined ? stock.active : true,
-          },
-          create: {
-            ticker: stock.ticker,
-            name: stock.name || stock.ticker,
-            sleeve: stock.sleeve || 'CORE',
-            sector: stock.sector || null,
-            cluster: stock.cluster || null,
-            superCluster: stock.superCluster || null,
-            region: stock.region || null,
-            currency: stock.currency || null,
-            t212Ticker: stock.t212Ticker || null,
-            active: stock.active !== undefined ? stock.active : true,
-          },
-        });
-        results.push(result);
-      }
+      const results = await prisma.$transaction(
+        body.stocks.map((stock) =>
+          prisma.stock.upsert({
+            where: { ticker: stock.ticker },
+            update: {
+              name: stock.name || stock.ticker,
+              sleeve: stock.sleeve || 'CORE',
+              sector: stock.sector || null,
+              cluster: stock.cluster || null,
+              superCluster: stock.superCluster || null,
+              region: stock.region || null,
+              currency: stock.currency || null,
+              t212Ticker: stock.t212Ticker || null,
+              active: stock.active !== undefined ? stock.active : true,
+            },
+            create: {
+              ticker: stock.ticker,
+              name: stock.name || stock.ticker,
+              sleeve: stock.sleeve || 'CORE',
+              sector: stock.sector || null,
+              cluster: stock.cluster || null,
+              superCluster: stock.superCluster || null,
+              region: stock.region || null,
+              currency: stock.currency || null,
+              t212Ticker: stock.t212Ticker || null,
+              active: stock.active !== undefined ? stock.active : true,
+            },
+          })
+        )
+      );
       return NextResponse.json({
         message: `Upserted ${results.length} stocks`,
         count: results.length,

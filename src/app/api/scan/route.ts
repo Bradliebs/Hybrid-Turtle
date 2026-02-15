@@ -64,6 +64,8 @@ export async function POST(request: NextRequest) {
                 stopPrice: c.stopPrice,
                 distancePercent: c.distancePercent,
                 status: c.status,
+                entryMode: c.pullbackSignal?.triggered ? 'PULLBACK_CONTINUATION' : 'BREAKOUT',
+                stage6Reason: c.pullbackSignal?.reason ?? c.antiChaseResult?.reason ?? null,
                 rankScore: c.rankScore,
                 passesAllFilters: c.passesAllFilters,
                 shares: c.shares ?? null,
@@ -177,6 +179,24 @@ export async function GET() {
       stopPrice: r.stopPrice,
       distancePercent: r.distancePercent,
       status: r.status,
+      antiChaseResult: r.stage6Reason
+        ? {
+            passed: !r.stage6Reason.includes('WAIT_PULLBACK') && !r.stage6Reason.includes('CHASE RISK'),
+            reason: r.stage6Reason,
+          }
+        : undefined,
+      pullbackSignal: r.entryMode === 'PULLBACK_CONTINUATION'
+        ? {
+            triggered: true,
+            mode: 'PULLBACK_CONTINUATION' as const,
+            anchor: r.entryTrigger,
+            zoneLow: r.entryTrigger,
+            zoneHigh: r.entryTrigger,
+            entryPrice: r.entryTrigger,
+            stopPrice: r.stopPrice,
+            reason: r.stage6Reason || 'PULLBACK_CONTINUATION',
+          }
+        : undefined,
       rankScore: r.rankScore,
       passesAllFilters: r.passesAllFilters,
       passesRiskGates: true,
@@ -202,7 +222,7 @@ export async function GET() {
       regime: latestScan.regime,
       candidates,
       readyCount: passedFilters.filter((c) => c.status === 'READY').length,
-      watchCount: passedFilters.filter((c) => c.status === 'WATCH').length,
+      watchCount: passedFilters.filter((c) => c.status === 'WATCH' || c.status === 'WAIT_PULLBACK').length,
       farCount: candidates.filter((c) => c.status === 'FAR').length,
       totalScanned: candidates.length,
       passedFilters: passedFilters.length,

@@ -128,7 +128,10 @@ export async function syncSnapshot(
   const spyPrice = spyCloses[0] || 0;
 
   // Check regime stability (simple: is SPY clearly above/below MA200?)
-  const regimeStable = Math.abs(spyPrice - spyMa200) / spyMa200 > 0.02;
+  // Guard against division by zero when SPY data is unavailable
+  const regimeStable = spyMa200 > 0
+    ? Math.abs(spyPrice - spyMa200) / spyMa200 > 0.02
+    : true; // Default to stable when data is unavailable
 
   // 4. Get open positions for cluster exposure calc
   const openPositions = await prisma.position.findMany({

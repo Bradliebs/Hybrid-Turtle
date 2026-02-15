@@ -323,7 +323,7 @@ export default function SettingsPage() {
                 <option value="CONSERVATIVE">Conservative (0.75% / 8 pos)</option>
                 <option value="BALANCED">Balanced (0.95% / 5 pos)</option>
                 <option value="SMALL_ACCOUNT">Small Account (1.5% / 4 pos)</option>
-                <option value="AGGRESSIVE">Aggressive (1.0% / 2 pos)</option>
+                <option value="AGGRESSIVE">Aggressive (2.0% / 2 pos)</option>
               </select>
               <p className="text-xs text-muted-foreground mt-1">
                 Max positions: {profile.maxPositions} · Max total risk: {formatPercent(profile.maxOpenRisk)}

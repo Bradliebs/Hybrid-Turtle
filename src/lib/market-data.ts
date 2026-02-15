@@ -170,6 +170,19 @@ export function calculateMA(prices: number[], period: number): number {
   return slice.reduce((sum, p) => sum + p, 0) / period;
 }
 
+export function calculateEMA(prices: number[], period: number): number {
+  if (prices.length < period) return 0;
+  const multiplier = 2 / (period + 1);
+  // Data is sorted newest-first. Seed EMA with SMA of the OLDEST `period` bars.
+  const seedSlice = prices.slice(prices.length - period);
+  let ema = seedSlice.reduce((sum, p) => sum + p, 0) / period;
+  // Walk forward in time (from oldest to newest)
+  for (let i = prices.length - period - 1; i >= 0; i--) {
+    ema = prices[i] * multiplier + ema * (1 - multiplier);
+  }
+  return ema;
+}
+
 export function calculateATR(
   data: { high: number; low: number; close: number }[],
   period: number = 14
@@ -192,45 +205,71 @@ export function calculateADX(
   data: { high: number; low: number; close: number }[],
   period: number = 14
 ): { adx: number; plusDI: number; minusDI: number } {
-  if (data.length < period * 2) return { adx: 20, plusDI: 25, minusDI: 20 };
+  // Need at least 2×period bars to seed DM smoothing + ADX smoothing
+  if (data.length < period * 2 + 1) return { adx: 20, plusDI: 25, minusDI: 20 };
 
+  // Data is sorted newest-first — compute DM/TR walking from oldest to newest
+  const len = data.length;
   const plusDMs: number[] = [];
   const minusDMs: number[] = [];
   const trs: number[] = [];
 
-  for (let i = 0; i < data.length - 1; i++) {
-    const plusDM = data[i].high - data[i + 1].high;
-    const minusDM = data[i + 1].low - data[i].low;
+  // Build arrays in chronological order (oldest first)
+  for (let i = len - 1; i > 0; i--) {
+    const plusDM = data[i - 1].high - data[i].high;
+    const minusDM = data[i].low - data[i - 1].low;
 
     plusDMs.push(plusDM > minusDM && plusDM > 0 ? plusDM : 0);
     minusDMs.push(minusDM > plusDM && minusDM > 0 ? minusDM : 0);
 
     const tr = Math.max(
-      data[i].high - data[i].low,
-      Math.abs(data[i].high - data[i + 1].close),
-      Math.abs(data[i].low - data[i + 1].close)
+      data[i - 1].high - data[i - 1].low,
+      Math.abs(data[i - 1].high - data[i].close),
+      Math.abs(data[i - 1].low - data[i].close)
     );
     trs.push(tr);
   }
 
-  // Smoothed averages
+  // Seed smoothed values with first `period` bars
   let smoothPlusDM = plusDMs.slice(0, period).reduce((a, b) => a + b, 0);
   let smoothMinusDM = minusDMs.slice(0, period).reduce((a, b) => a + b, 0);
   let smoothTR = trs.slice(0, period).reduce((a, b) => a + b, 0);
 
+  // Collect DX values for ADX smoothing
+  const dxValues: number[] = [];
+
+  // First DX from the seed
+  const plusDI0 = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
+  const minusDI0 = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
+  const diSum0 = plusDI0 + minusDI0;
+  dxValues.push(diSum0 > 0 ? (Math.abs(plusDI0 - minusDI0) / diSum0) * 100 : 0);
+
+  // Continue smoothing DM/TR and collecting DX values
   for (let i = period; i < plusDMs.length; i++) {
     smoothPlusDM = smoothPlusDM - smoothPlusDM / period + plusDMs[i];
     smoothMinusDM = smoothMinusDM - smoothMinusDM / period + minusDMs[i];
     smoothTR = smoothTR - smoothTR / period + trs[i];
+
+    const pDI = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
+    const mDI = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
+    const diSum = pDI + mDI;
+    dxValues.push(diSum > 0 ? (Math.abs(pDI - mDI) / diSum) * 100 : 0);
   }
 
+  // Final +DI / -DI from last smoothed values
   const plusDI = smoothTR > 0 ? (smoothPlusDM / smoothTR) * 100 : 0;
   const minusDI = smoothTR > 0 ? (smoothMinusDM / smoothTR) * 100 : 0;
 
-  const diSum = plusDI + minusDI;
-  const dx = diSum > 0 ? (Math.abs(plusDI - minusDI) / diSum) * 100 : 0;
+  // Smooth DX values into ADX using Wilder's smoothing
+  if (dxValues.length < period) {
+    return { adx: dxValues[dxValues.length - 1] || 20, plusDI, minusDI };
+  }
+  let adx = dxValues.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < dxValues.length; i++) {
+    adx = (adx * (period - 1) + dxValues[i]) / period;
+  }
 
-  return { adx: dx, plusDI, minusDI };
+  return { adx, plusDI, minusDI };
 }
 
 export function calculateTrendEfficiency(prices: number[], period: number = 20): number {
@@ -258,6 +297,7 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
 
   const closes = dailyData.map((d) => d.close);
   const ma200 = calculateMA(closes, 200);
+  const ema20 = calculateEMA(closes, 20);
   const atr = calculateATR(dailyData, 14);
   const atr20DayAgo = dailyData.length >= 34
     ? calculateATR(dailyData.slice(20), 14)
@@ -289,10 +329,12 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
 
   return {
     ma200,
+    ema20,
     adx,
     plusDI,
     minusDI,
     atr,
+    dayLow: dailyData[0]?.low ?? closes[0],
     atr20DayAgo,
     atrSpiking,
     atrPercent,
@@ -411,16 +453,16 @@ export async function normalizePriceToGBP(
   ticker: string,
   stockCurrency?: string | null
 ): Promise<number> {
-  // UK stocks: .L suffix or T212 lowercase 'l' suffix — price is in GBX (pence)
-  if (isUKTicker(ticker)) {
+  // Determine source currency — check explicit currency first
+  const currency = stockCurrency?.toUpperCase() || (isUKTicker(ticker) ? 'GBX' : 'USD');
+
+  // UK tickers default to GBX (pence) but respect explicit stockCurrency
+  // e.g. a USD-denominated ETF on LSE would have stockCurrency='USD'
+  if (currency === 'GBX' || currency === 'GBp') {
     return price / 100;
   }
 
-  // Determine source currency
-  const currency = stockCurrency?.toUpperCase() || 'USD';
-
   if (currency === 'GBP') return price;
-  if (currency === 'GBX' || currency === 'GBp') return price / 100;
 
   // Convert foreign currency to GBP
   const rate = await getFXRate(currency, 'GBP');
@@ -437,8 +479,10 @@ export async function normalizeBatchPricesToGBP(
   const currenciesNeeded = new Set<string>();
 
   for (const [ticker] of Object.entries(prices)) {
-    if (isUKTicker(ticker)) continue; // handled by /100
-    const currency = stockCurrencies[ticker]?.toUpperCase() || 'USD';
+    // Determine effective currency: explicit stockCurrency takes priority,
+    // then fall back to GBX for UK tickers, USD otherwise
+    const currency = stockCurrencies[ticker]?.toUpperCase()
+      || (isUKTicker(ticker) ? 'GBX' : 'USD');
     if (currency !== 'GBP' && currency !== 'GBX' && currency !== 'GBp') {
       currenciesNeeded.add(currency);
     }
@@ -451,17 +495,14 @@ export async function normalizeBatchPricesToGBP(
 
   const normalized: Record<string, number> = {};
   for (const [ticker, price] of Object.entries(prices)) {
-    if (isUKTicker(ticker)) {
+    const currency = stockCurrencies[ticker]?.toUpperCase()
+      || (isUKTicker(ticker) ? 'GBX' : 'USD');
+    if (currency === 'GBP') {
+      normalized[ticker] = price;
+    } else if (currency === 'GBX' || currency === 'GBp') {
       normalized[ticker] = price / 100;
     } else {
-      const currency = stockCurrencies[ticker]?.toUpperCase() || 'USD';
-      if (currency === 'GBP') {
-        normalized[ticker] = price;
-      } else if (currency === 'GBX' || currency === 'GBp') {
-        normalized[ticker] = price / 100;
-      } else {
-        normalized[ticker] = price * (fxRates.get(currency) ?? 1);
-      }
+      normalized[ticker] = price * (fxRates.get(currency) ?? 1);
     }
   }
 

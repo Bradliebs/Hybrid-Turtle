@@ -58,31 +58,39 @@ export function checkClimaxTop(
 
 /**
  * Scan all open positions for climax signals using live data.
+ * Parallelized in batches of 10 to avoid overwhelming Yahoo Finance.
  */
 export async function scanClimaxSignals(
   positions: PositionForClimax[],
   mode: 'TRIM' | 'TIGHTEN' = 'TRIM'
 ): Promise<ClimaxSignal[]> {
   const signals: ClimaxSignal[] = [];
+  const BATCH_SIZE = 10;
 
-  for (const pos of positions) {
-    try {
-      const bars = await getDailyPrices(pos.ticker, 'compact');
-      if (bars.length < 20) continue;
+  for (let i = 0; i < positions.length; i += BATCH_SIZE) {
+    const batch = positions.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(async (pos) => {
+        const bars = await getDailyPrices(pos.ticker, 'compact');
+        if (bars.length < 20) return null;
 
-      const price = bars[0].close;
-      const closes = bars.slice(0, 20).map(b => b.close);
-      const ma20 = calculateMA(closes, 20);
-      const volume = bars[0].volume;
-      const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
+        const price = bars[0].close;
+        const closes = bars.slice(0, 20).map(b => b.close);
+        const ma20 = calculateMA(closes, 20);
+        const volume = bars[0].volume;
+        const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
 
-      const signal = checkClimaxTop(pos.ticker, pos.id, price, ma20, volume, avgVolume20, mode);
+        const signal = checkClimaxTop(pos.ticker, pos.id, price, ma20, volume, avgVolume20, mode);
+        return signal.isClimax ? signal : null;
+      })
+    );
 
-      if (signal.isClimax) {
-        signals.push(signal);
-      }
-    } catch {
-      // Skip failed tickers
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value) signals.push(r.value);
+    }
+
+    if (i + BATCH_SIZE < positions.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
 

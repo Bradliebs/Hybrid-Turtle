@@ -437,6 +437,17 @@ export async function GET(request: NextRequest) {
     // ── Pyramid Add Alerts ──
     const pyramidAlerts: PyramidAlert[] = [];
     try {
+      // Count existing pyramid adds per position from TradeLog
+      const addCounts = await prisma.tradeLog.groupBy({
+        by: ['positionId'],
+        where: { userId, tradeType: 'ADD', positionId: { not: null } },
+        _count: { id: true },
+      });
+      const addsMap = new Map<string, number>();
+      for (const row of addCounts) {
+        if (row.positionId) addsMap.set(row.positionId, row._count.id);
+      }
+
       for (const p of enrichedOpen) {
         if (p.sleeve === 'HEDGE') continue;
         if (p.currentPrice <= p.entryPrice) continue;
@@ -452,12 +463,13 @@ export async function GET(request: NextRequest) {
         const isUK = p.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.ticker);
         const priceCurrency = isUK ? 'GBX' : 'USD';
 
+        const currentAdds = addsMap.get(p.id) ?? 0;
         const pyramidCheck = canPyramid(
           p.currentPrice,
           p.entryPrice,
           p.initialRisk,
           atr ?? undefined,
-          0
+          currentAdds
         );
 
         pyramidAlerts.push({
@@ -468,7 +480,7 @@ export async function GET(request: NextRequest) {
           initialRisk: p.initialRisk,
           atr,
           rMultiple: pyramidCheck.rMultiple,
-          addsUsed: 0,
+          addsUsed: currentAdds,
           maxAdds: 2,
           nextAddNumber: pyramidCheck.addNumber,
           triggerPrice: pyramidCheck.triggerPrice,

@@ -406,14 +406,19 @@ export function normaliseRow(raw: Record<string, unknown>): SnapshotRow {
   }
 
   // Auto-convert rs_vs_benchmark_pct from decimal fractions → %
+  // Only convert if value looks like a true decimal (e.g. 0.03 for 3%)
+  // Values from snapshot-sync already come as percentages (e.g. 3 = 3%),
+  // so only convert values clearly < 1 in absolute terms.
   const rsVal = safeNum(mapped.rs_vs_benchmark_pct);
-  if (Math.abs(rsVal) < 5 && rsVal !== 0) {
+  if (Math.abs(rsVal) > 0 && Math.abs(rsVal) < 1) {
     mapped.rs_vs_benchmark_pct = rsVal * 100;
   }
 
   // Auto-convert atr_pct from decimal fractions → %
+  // Only values < 0.01 (i.e. 0.005 = 0.5%) are converted.
+  // Real ATR% values like 0.3 (meaning 0.3%) should NOT be converted.
   const atrVal = safeNum(mapped.atr_pct);
-  if (Math.abs(atrVal) < 0.5 && atrVal !== 0) {
+  if (atrVal > 0 && atrVal < 0.01) {
     mapped.atr_pct = atrVal * 100;
   }
 

@@ -10,6 +10,7 @@ import {
   Briefcase,
   Search,
   ClipboardList,
+  NotebookPen,
   ShieldAlert,
   Settings,
   User,
@@ -21,6 +22,7 @@ const iconMap: Record<string, React.ReactNode> = {
   Portfolio: <Briefcase className="w-4 h-4" />,
   Scan: <Search className="w-4 h-4" />,
   Plan: <ClipboardList className="w-4 h-4" />,
+  'Trade Log': <NotebookPen className="w-4 h-4" />,
   Risk: <ShieldAlert className="w-4 h-4" />,
   Settings: <Settings className="w-4 h-4" />,
 };

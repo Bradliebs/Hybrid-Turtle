@@ -35,13 +35,19 @@ interface CrossRefTicker {
   scanPassesAntiChase: boolean | null;
   scanDistancePercent: number | null;
   scanEntryTrigger: number | null;
+  scanStopPrice: number | null;
   scanPrice: number | null;
   scanShares: number | null;
+  scanRiskDollars: number | null;
   dualBQS: number | null;
   dualFWS: number | null;
   dualNCS: number | null;
   dualAction: string | null;
   dualStatus: string | null;
+  dualClose: number | null;
+  dualEntryTrigger: number | null;
+  dualStopLevel: number | null;
+  dualDistancePct: number | null;
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;
 }

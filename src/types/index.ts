@@ -8,6 +8,14 @@ export type RiskProfileType = 'CONSERVATIVE' | 'BALANCED' | 'SMALL_ACCOUNT' | 'A
 export interface RiskProfileConfig {
   name: string;
   riskPerTrade: number; // percentage
+  risk_cash_cap?: number;
+  risk_cash_floor?: number;
+  per_position_max_loss_pct?: number; // percentage
+  single_name_cap_pct?: number; // percentage
+  efficiency_min?: number;
+  adx_min?: number;
+  vol_ratio_min?: number;
+  initial_stop_atr_mult?: number;
   maxPositions: number;
   maxOpenRisk: number; // percentage
   description: string;
@@ -37,7 +45,13 @@ export const RISK_PROFILES: Record<RiskProfileType, RiskProfileConfig> = {
   },
   AGGRESSIVE: {
     name: 'Aggressive',
-    riskPerTrade: 1.0,
+    riskPerTrade: 2.0,
+    risk_cash_cap: 10,
+    single_name_cap_pct: 40,
+    efficiency_min: 35,
+    adx_min: 25,
+    vol_ratio_min: 1.2,
+    initial_stop_atr_mult: 2.0,
     maxPositions: 2,
     maxOpenRisk: 6.0,
     description: 'Building mode — 2 concentrated positions with expansion enabled',
@@ -93,6 +107,16 @@ const PROFILE_CAP_OVERRIDES: Partial<Record<RiskProfileType, Partial<ProfileCapO
   BALANCED: {
     positionSizeCaps: { CORE: 0.18 },
   },
+  AGGRESSIVE: {
+    clusterCap: 0.35,
+    sectorCap: 0.45,
+    positionSizeCaps: {
+      CORE: 0.40,
+      ETF: 0.40,
+      HIGH_RISK: 0.20,
+      HEDGE: 0.20,
+    },
+  },
 };
 
 /**
@@ -121,18 +145,22 @@ export type Sleeve = 'CORE' | 'HIGH_RISK' | 'ETF' | 'HEDGE';
 export type PositionStatus = 'OPEN' | 'CLOSED';
 export type ProtectionLevel = 'INITIAL' | 'BREAKEVEN' | 'LOCK_08R' | 'LOCK_1R_TRAIL';
 export type MarketRegime = 'BULLISH' | 'SIDEWAYS' | 'BEARISH';
-export type CandidateStatus = 'READY' | 'WATCH' | 'FAR';
+export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'FAR';
 export type WeeklyPhase = 'PLANNING' | 'OBSERVATION' | 'EXECUTION' | 'MAINTENANCE';
 export type HealthStatus = 'GREEN' | 'YELLOW' | 'RED';
 
 // ---- Weekly Phase Helpers ----
 export function getCurrentWeeklyPhase(): WeeklyPhase {
-  const day = new Date().getDay();
-  switch (day) {
-    case 0: return 'PLANNING';      // Sunday
-    case 1: return 'OBSERVATION';    // Monday
-    case 2: return 'EXECUTION';      // Tuesday
-    default: return 'MAINTENANCE';   // Wed-Fri (3-6)
+  // Use UK time (Europe/London) to match the trading calendar
+  const ukDay = new Date().toLocaleDateString('en-GB', {
+    weekday: 'short',
+    timeZone: 'Europe/London',
+  });
+  switch (ukDay) {
+    case 'Sun': return 'PLANNING';
+    case 'Mon': return 'OBSERVATION';
+    case 'Tue': return 'EXECUTION';
+    default:    return 'MAINTENANCE';   // Wed-Sat
   }
 }
 
@@ -256,10 +284,12 @@ export interface StockQuote {
 
 export interface TechnicalData {
   ma200: number;
+  ema20?: number;
   adx: number;
   plusDI: number;
   minusDI: number;
   atr: number;
+  dayLow?: number;
   atr20DayAgo: number;
   atrSpiking: boolean;
   atrPercent: number;
@@ -291,6 +321,16 @@ export interface ScanCandidate {
   passesRiskGates?: boolean;
   // Anti-chase result (Stage 6)
   antiChaseResult?: { passed: boolean; reason: string };
+  pullbackSignal?: {
+    triggered: boolean;
+    mode: 'BREAKOUT' | 'PULLBACK_CONTINUATION';
+    anchor: number;
+    zoneLow: number;
+    zoneHigh: number;
+    entryPrice?: number;
+    stopPrice?: number;
+    reason: string;
+  };
   passesAntiChase?: boolean;
   shares?: number;
   riskDollars?: number;
@@ -362,6 +402,7 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
   { label: 'Portfolio', href: '/portfolio/positions' },
   { label: 'Scan', href: '/scan' },
   { label: 'Plan', href: '/plan' },
+  { label: 'Trade Log', href: '/trade-log' },
   { label: 'Risk', href: '/risk' },
   { label: 'Settings', href: '/settings' },
 ];

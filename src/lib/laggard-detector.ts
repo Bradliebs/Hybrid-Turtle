@@ -72,6 +72,9 @@ export function detectLaggards(
     // Skip HEDGE positions — they're intentionally counter-trend
     if (pos.sleeve === 'HEDGE') continue;
 
+    // Skip positions with no valid initial risk — R-multiple is meaningless
+    if (pos.initialRisk <= 0) continue;
+
     // ── Check 1: Classic Laggard (underwater after holding period) ──
     if (
       daysHeld >= LAGGARD_CONFIG.holdingDays &&

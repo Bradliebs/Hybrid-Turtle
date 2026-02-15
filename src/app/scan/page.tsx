@@ -63,7 +63,7 @@ export default function ScanPage() {
   const candidates = useMemo(() => scanResult?.candidates ?? [], [scanResult]);
   const passesAll = useMemo(() => candidates.filter((c) => c.passesAllFilters), [candidates]);
   const readyCandidates = useMemo(() => passesAll.filter((c) => c.status === 'READY'), [passesAll]);
-  const watchCandidates = useMemo(() => passesAll.filter((c) => c.status === 'WATCH'), [passesAll]);
+  const watchCandidates = useMemo(() => passesAll.filter((c) => c.status === 'WATCH' || c.status === 'WAIT_PULLBACK'), [passesAll]);
   const farCandidates = useMemo(() => candidates.filter((c) => c.status === 'FAR'), [candidates]);
 
   const filterResults = useMemo(() => {

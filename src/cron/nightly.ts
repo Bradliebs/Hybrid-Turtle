@@ -70,21 +70,39 @@ async function runNightlyProcess() {
     // Step 3: Generate stop recommendations
     console.log('  [3/9] Generating stop recommendations...');
     const livePriceMap = new Map(Object.entries(livePrices));
-    const stopRecs = await generateStopRecommendations(userId, livePriceMap);
 
-    const stopChanges: NightlyStopChange[] = stopRecs.map((rec) => {
+    // Fetch ATR values so LOCK_1R_TRAIL gets the trailing component
+    const atrMap = new Map<string, number>();
+    for (const ticker of openTickers) {
+      try {
+        const bars = await getDailyPrices(ticker, 'compact');
+        if (bars.length >= 15) {
+          atrMap.set(ticker, calculateATR(bars, 14));
+        }
+      } catch { /* skip */ }
+    }
+
+    const stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);
+
+    const stopChanges: NightlyStopChange[] = [];
+    for (const rec of stopRecs) {
       const pos = positions.find((p) => p.id === rec.positionId);
       const isUK = rec.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(rec.ticker);
       const cur = isUK ? 'GBX' : (pos?.stock.currency || 'USD').toUpperCase();
-      return {
-        ticker: rec.ticker,
-        oldStop: rec.currentStop,
-        newStop: rec.newStop,
-        level: rec.newLevel,
-        reason: rec.reason,
-        currency: cur,
-      };
-    });
+      try {
+        await updateStopLoss(rec.positionId, rec.newStop, rec.reason);
+        stopChanges.push({
+          ticker: rec.ticker,
+          oldStop: rec.currentStop,
+          newStop: rec.newStop,
+          level: rec.newLevel,
+          reason: rec.reason,
+          currency: cur,
+        });
+      } catch {
+        // Monotonic violation or other error — skip silently
+      }
+    }
 
     // Step 3b: Trailing ATR stops
     const trailingStopChanges: NightlyStopChange[] = [];
@@ -337,6 +355,17 @@ async function runNightlyProcess() {
 
     let pyramidAlerts: NightlyPyramidAlert[] = [];
     try {
+      // Count existing pyramid adds per position from TradeLog
+      const addCounts = await prisma.tradeLog.groupBy({
+        by: ['positionId'],
+        where: { userId, tradeType: 'ADD', positionId: { not: null } },
+        _count: { id: true },
+      });
+      const addsMap = new Map<string, number>();
+      for (const row of addCounts) {
+        if (row.positionId) addsMap.set(row.positionId, row._count.id);
+      }
+
       for (const p of positions) {
         if (p.stock.sleeve === 'HEDGE') continue;
         const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
@@ -355,7 +384,7 @@ async function runNightlyProcess() {
           p.entryPrice,
           p.initialRisk,
           atr ?? undefined,
-          0
+          addsMap.get(p.id) ?? 0
         );
 
         if (pyramidCheck.allowed) {

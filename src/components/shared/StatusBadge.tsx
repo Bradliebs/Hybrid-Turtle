@@ -12,6 +12,7 @@ const statusStyles: Record<string, string> = {
   // Candidate Status
   READY: 'bg-profit/20 text-profit border border-profit/30',
   WATCH: 'bg-warning/20 text-warning border border-warning/30',
+  WAIT_PULLBACK: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
   FAR: 'bg-loss/20 text-loss border border-loss/30',
   TRIGGERED: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
   // Position Status

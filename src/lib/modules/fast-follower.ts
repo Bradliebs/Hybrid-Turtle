@@ -29,7 +29,6 @@ interface ClosedPositionForFF {
 export async function scanFastFollowers(
   closedPositions: ClosedPositionForFF[]
 ): Promise<FastFollowerSignal[]> {
-  const signals: FastFollowerSignal[] = [];
   const now = new Date();
 
   const recentStopOuts = closedPositions.filter(p => {
@@ -39,10 +38,12 @@ export async function scanFastFollowers(
     return daysSince <= MAX_DAYS_SINCE_EXIT;
   });
 
-  for (const pos of recentStopOuts) {
-    try {
+  if (recentStopOuts.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    recentStopOuts.map(async (pos): Promise<FastFollowerSignal | null> => {
       const bars = await getDailyPrices(pos.ticker, 'compact');
-      if (bars.length < 20) continue;
+      if (bars.length < 20) return null;
 
       const price = bars[0].close;
       const twentyDayHigh = calculate20DayHigh(bars);
@@ -56,22 +57,22 @@ export async function scanFastFollowers(
       const volumeOk = volumeRatio >= VOLUME_THRESHOLD;
 
       const eligible = reclaimedTwentyDayHigh && volumeOk;
+      if (!eligible) return null;
 
-      signals.push({
+      return {
         ticker: pos.ticker,
         exitDate: exitDate.toISOString().split('T')[0],
         daysSinceExit,
         reclaimedTwentyDayHigh,
         volumeRatio,
         eligible,
-        reason: eligible
-          ? `FAST-FOLLOWER: ${pos.ticker} reclaimed 20d high with ${volumeRatio.toFixed(1)}× volume after stop-hit ${daysSinceExit}d ago`
-          : `Not eligible: ${!reclaimedTwentyDayHigh ? 'below 20d high' : ''} ${!volumeOk ? `vol ${volumeRatio.toFixed(1)}× < 2×` : ''}`.trim(),
-      });
-    } catch {
-      // Skip failed tickers
-    }
-  }
+        reason: `FAST-FOLLOWER: ${pos.ticker} reclaimed 20d high with ${volumeRatio.toFixed(1)}× volume after stop-hit ${daysSinceExit}d ago`,
+      };
+    })
+  );
 
-  return signals.filter(s => s.eligible);
+  return results
+    .filter((r): r is PromiseFulfilledResult<FastFollowerSignal | null> => r.status === 'fulfilled')
+    .map(r => r.value)
+    .filter((v): v is FastFollowerSignal => v !== null);
 }

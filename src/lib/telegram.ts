@@ -11,7 +11,18 @@ interface TelegramMessage {
 }
 
 /**
- * Send a message via Telegram Bot API
+ * Escape HTML special characters for Telegram parse_mode=HTML
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Send a message via Telegram Bot API.
+ * Automatically splits messages longer than 4096 characters.
  */
 export async function sendTelegramMessage(message: TelegramMessage): Promise<boolean> {
   if (!BOT_TOKEN || !CHAT_ID) {
@@ -19,25 +30,48 @@ export async function sendTelegramMessage(message: TelegramMessage): Promise<boo
     return false;
   }
 
-  try {
-    const response = await fetch(
-      `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          text: message.text,
-          parse_mode: message.parseMode || 'HTML',
-          disable_web_page_preview: true,
-        }),
-      }
-    );
+  const MAX_LEN = 4096;
+  const chunks: string[] = [];
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Telegram API error:', error);
-      return false;
+  if (message.text.length <= MAX_LEN) {
+    chunks.push(message.text);
+  } else {
+    // Split on newline boundaries to avoid breaking HTML tags
+    let remaining = message.text;
+    while (remaining.length > 0) {
+      if (remaining.length <= MAX_LEN) {
+        chunks.push(remaining);
+        break;
+      }
+      // Find last newline within limit
+      let splitIdx = remaining.lastIndexOf('\n', MAX_LEN);
+      if (splitIdx <= 0) splitIdx = MAX_LEN; // fallback: hard split
+      chunks.push(remaining.slice(0, splitIdx));
+      remaining = remaining.slice(splitIdx + 1);
+    }
+  }
+
+  try {
+    for (const chunk of chunks) {
+      const response = await fetch(
+        `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: CHAT_ID,
+            text: chunk,
+            parse_mode: message.parseMode || 'HTML',
+            disable_web_page_preview: true,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Telegram API error:', error);
+        return false;
+      }
     }
 
     return true;
@@ -235,7 +269,7 @@ export async function sendNightlySummary(summary: {
   const stopLines = allStopChanges.length > 0
     ? allStopChanges.map((s) => {
         const sym = currencySymbol(s.currency);
-        return `  🔄 <b>${s.ticker}</b>  ${sym}${s.oldStop.toFixed(2)} → ${sym}${s.newStop.toFixed(2)}  [${s.level}]\n       <i>${s.reason}</i>`;
+        return `  🔄 <b>${escapeHtml(s.ticker)}</b>  ${sym}${s.oldStop.toFixed(2)} → ${sym}${s.newStop.toFixed(2)}  [${escapeHtml(s.level)}]\n       <i>${escapeHtml(s.reason)}</i>`;
       }).join('\n')
     : '  ✅ No stop changes';
 
@@ -283,7 +317,7 @@ export async function sendNightlySummary(summary: {
   const swapList = summary.swapAlerts || [];
   const swapLines = swapList.length > 0
     ? swapList.map((s) => {
-        return `  🔄 <b>${s.weakTicker}</b> (${s.weakRMultiple.toFixed(1)}R) → <b>${s.strongTicker}</b> in ${s.cluster}`;
+        return `  🔄 <b>${escapeHtml(s.weakTicker)}</b> (${s.weakRMultiple.toFixed(1)}R) → <b>${escapeHtml(s.strongTicker)}</b> in ${escapeHtml(s.cluster)}`;
       }).join('\n')
     : '';
 
@@ -314,8 +348,8 @@ export async function sendNightlySummary(summary: {
     ? laggardList.map((l) => {
         const emoji = l.flag === 'DEAD_MONEY' ? '💤' : '🐌';
         const rLabel = l.rMultiple >= 0 ? `+${l.rMultiple.toFixed(1)}R` : `${l.rMultiple.toFixed(1)}R`;
-        return `  ${emoji} <b>${l.ticker}</b>  ${l.daysHeld}d held  ${rLabel}  ${l.lossPct > 0 ? `-${l.lossPct.toFixed(1)}%` : 'flat'}
-       <i>${l.reason}</i>`;
+        return `  ${emoji} <b>${escapeHtml(l.ticker)}</b>  ${l.daysHeld}d held  ${rLabel}  ${l.lossPct > 0 ? `-${l.lossPct.toFixed(1)}%` : 'flat'}
+       <i>${escapeHtml(l.reason)}</i>`;
       }).join('\n')
     : '';
 

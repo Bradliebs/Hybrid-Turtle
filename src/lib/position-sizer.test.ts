@@ -27,8 +27,8 @@ describe('position-sizer formulas', () => {
       fxToGbp: 2,
     });
 
-    expect(result.shares).toBe(8);
-    expect(result.totalCost).toBe(1600);
+    expect(result.shares).toBe(9);
+    expect(result.totalCost).toBe(1800);
   });
 
   it('throws for invalid long stop placement', () => {
