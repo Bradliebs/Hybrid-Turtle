@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { getBatchPrices, normalizeBatchPricesToGBP, normalizePriceToGBP } from '@/lib/market-data';
 import { calculateRMultiple } from '@/lib/position-sizer';
+import { buildInitialRiskFields, computeOpenRiskGBP } from '@/lib/risk-fields';
 import { getRiskBudget } from '@/lib/risk-gates';
 import { getWeeklyEquityChangePercent, recordEquitySnapshot } from '@/lib/equity-snapshot';
 import type { RiskProfileType, Sleeve } from '@/types';
@@ -55,6 +56,8 @@ export async function GET(request: NextRequest) {
       const initialStop = p.entryPrice - p.initialRisk;
       const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
       const priceCurrency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
+      const { initialRiskGBP } = buildInitialRiskFields(entryPriceGbp, currentStopGbp, p.shares);
+      const openRiskGBP = computeOpenRiskGBP(currentPriceGbp, currentStopGbp, p.shares);
 
       return {
         id: p.id,
@@ -74,7 +77,10 @@ export async function GET(request: NextRequest) {
         currentPriceGbp,
         currentStopGbp,
         value: currentPriceGbp * p.shares,
-        riskDollars: Math.max(0, (currentPriceGbp - currentStopGbp) * p.shares),
+        initialRiskGBP,
+        // Explicit open risk (current → stop)
+        openRiskGBP,
+        riskDollars: openRiskGBP,
         priceCurrency,
       };
     }));

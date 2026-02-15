@@ -242,11 +242,11 @@ function TickerDetail({ t }: { t: CrossRefTicker }) {
                     </span>
                     <span className="flex items-center gap-1">
                       {t.scanPassesRiskGates == null ? <Minus className="w-3 h-3 text-slate-500" /> : t.scanPassesRiskGates ? <Check className="w-3 h-3 text-emerald-400" /> : <X className="w-3 h-3 text-red-400" />}
-                      Risk Gates
+                      {t.scanPassesRiskGates == null ? 'Risk Gates (Unknown)' : 'Risk Gates'}
                     </span>
                     <span className="flex items-center gap-1">
                       {t.scanPassesAntiChase == null ? <Minus className="w-3 h-3 text-slate-500" /> : t.scanPassesAntiChase ? <Check className="w-3 h-3 text-emerald-400" /> : <X className="w-3 h-3 text-red-400" />}
-                      Anti-Chase
+                      {t.scanPassesAntiChase == null ? 'Anti-Chase (Unknown)' : 'Anti-Chase'}
                     </span>
                   </div>
                 </div>

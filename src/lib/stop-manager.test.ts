@@ -1,10 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  calculateTrailingATRStop,
   calculateProtectionStop,
   calculateStopRecommendation,
   getProtectionLevel,
 } from './stop-manager';
+import * as marketData from './market-data';
 import type { ProtectionLevel } from '@/types';
+
+function isoDay(day: number): string {
+  return `2026-01-${String(day).padStart(2, '0')}`;
+}
+
+function newestFirstFromChronological(
+  bars: Array<{ date: string; high: number; low: number; close: number }>
+) {
+  return [...bars].reverse();
+}
 
 describe('stop-manager formulas', () => {
   it('maps R-multiple thresholds to expected protection levels', () => {
@@ -191,5 +203,67 @@ describe('sync-stops initialRisk handling (F-002)', () => {
     // New behavior (??):  0 ?? (100 - 110) = 0
     const newResult = matchedInitialRisk ?? (entryPrice - newStop);
     expect(newResult).toBe(0); // correct: kept the 0
+  });
+});
+
+describe('calculateTrailingATRStop regressions', () => {
+  it('returns deterministic trailing stop and never ratchets down with additional bars', async () => {
+    const baseChronological = Array.from({ length: 25 }, (_, idx) => {
+      const close = 100 + idx;
+      return {
+        date: isoDay(idx + 1),
+        high: close + 1.185,
+        low: close - 1.185,
+        close,
+      };
+    });
+
+    const baseBars = newestFirstFromChronological(baseChronological);
+    const entryDate = new Date(`${isoDay(15)}T00:00:00.000Z`);
+
+    const spy = vi.spyOn(marketData, 'getDailyPrices');
+    spy.mockResolvedValueOnce(baseBars as Awaited<ReturnType<typeof marketData.getDailyPrices>>);
+
+    const baseResult = await calculateTrailingATRStop('TEST', 114, entryDate, 100, 2.0);
+    expect(baseResult).not.toBeNull();
+    expect(baseResult?.trailingStop).toBe(119.26);
+
+    const extendedChronological = [
+      ...baseChronological,
+      { date: isoDay(26), high: 130, low: 70, close: 110 },
+      { date: isoDay(27), high: 128, low: 68, close: 109 },
+      { date: isoDay(28), high: 127, low: 67, close: 108 },
+    ];
+    const extendedBars = newestFirstFromChronological(extendedChronological);
+    spy.mockResolvedValueOnce(extendedBars as Awaited<ReturnType<typeof marketData.getDailyPrices>>);
+
+    const extendedResult = await calculateTrailingATRStop('TEST', 114, entryDate, 100, 2.0);
+    expect(extendedResult).not.toBeNull();
+    expect(extendedResult?.trailingStop).toBe(119.26);
+    expect(extendedResult!.trailingStop).toBeGreaterThanOrEqual(baseResult!.trailingStop);
+
+    spy.mockRestore();
+  });
+
+  it('uses a 14-period simple average of true ranges in trailing ATR window', async () => {
+    const constantTrChronological = Array.from({ length: 20 }, (_, idx) => ({
+      date: isoDay(idx + 1),
+      high: 102.5,
+      low: 97.5,
+      close: 100,
+    }));
+
+    const bars = newestFirstFromChronological(constantTrChronological);
+    const entryDate = new Date(`${isoDay(15)}T00:00:00.000Z`);
+
+    const spy = vi.spyOn(marketData, 'getDailyPrices');
+    spy.mockResolvedValueOnce(bars as Awaited<ReturnType<typeof marketData.getDailyPrices>>);
+
+    const result = await calculateTrailingATRStop('CONST_TR', 100, entryDate, 80, 2.0);
+    expect(result).not.toBeNull();
+    expect(result?.trailingStop).toBe(90);
+    expect(result?.currentATR).toBe(5);
+
+    spy.mockRestore();
   });
 });

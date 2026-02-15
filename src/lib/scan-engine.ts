@@ -295,6 +295,10 @@ export async function runFullScan(
 
           // ── Stage 6: Anti-Chase / Execution Guard ──
           const extATR = technicals.atr > 0 ? (price - entryTrigger) / technicals.atr : 0;
+          // Volatility expansion anti-chase override (all days):
+          // If price stretches too far above trigger in ATR terms (extATR > 0.8),
+          // force WAIT_PULLBACK regardless of earlier READY/WATCH classification.
+          // This is separate from the Monday-only gap guard in scan-guards.ts.
           if (extATR > 0.8) {
             antiChaseResult = {
               passed: false,

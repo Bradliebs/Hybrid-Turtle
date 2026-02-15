@@ -25,6 +25,8 @@ interface Position {
   gainPercent: number;
   gainDollars: number;
   value: number;
+  initialRiskGBP?: number;
+  // @deprecated Use initialRiskGBP instead.
   riskGBP?: number;
   priceCurrency?: string;
   rating?: string;
@@ -75,8 +77,18 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   const sorted = [...filtered].sort((a, b) => {
     const aVal = a[sortField as keyof Position];
     const bVal = b[sortField as keyof Position];
-    if (typeof aVal === 'string') return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+
+    if (typeof aVal === 'string' || typeof bVal === 'string') {
+      const aString = typeof aVal === 'string' ? aVal : '';
+      const bString = typeof bVal === 'string' ? bVal : '';
+      return sortDir === 'asc'
+        ? aString.localeCompare(bString)
+        : bString.localeCompare(aString);
+    }
+
+    const aNumber = typeof aVal === 'number' ? aVal : 0;
+    const bNumber = typeof bVal === 'number' ? bVal : 0;
+    return sortDir === 'asc' ? aNumber - bNumber : bNumber - aNumber;
   });
 
   const toggleSort = (field: string) => {
@@ -181,7 +193,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   Value <ArrowUpDown className="w-3 h-3" />
                 </span>
               </th>
-              <th className="text-right">Risk $</th>
+              <th className="text-right">Initial Risk (Entry → Stop)</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -278,7 +290,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                       pos.rMultiple >= 0 ? 'text-profit' : 'text-loss'
                     )}
                   >
-                    {formatCurrency(pos.riskGBP ?? 0)}
+                    {formatCurrency(pos.initialRiskGBP ?? pos.riskGBP ?? 0)}
                   </span>
                 </td>
                 <td>

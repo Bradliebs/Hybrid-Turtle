@@ -13,6 +13,10 @@ interface Position {
   protectionLevel: string;
   shares: number;
   priceCurrency?: string;
+  initialRiskGBP?: number;
+  openRiskGBP?: number;
+  // @deprecated Use initialRiskGBP instead.
+  riskGBP?: number;
 }
 
 interface StopLossPanelProps {
@@ -59,10 +63,9 @@ export default function StopLossPanel({ positions = [] }: StopLossPanelProps) {
           </div>
         )}
         {positions.map((pos) => {
-          const riskPerShare = pos.currentPrice - pos.currentStop;
-          const totalRisk = riskPerShare * pos.shares;
           const gainPerShare = pos.currentPrice - pos.entryPrice;
-          const stopGainLoss = pos.currentStop - pos.entryPrice;
+          const initialRiskGBP = pos.initialRiskGBP ?? pos.riskGBP ?? Math.max(0, (pos.entryPrice - pos.currentStop) * pos.shares);
+          const openRiskGBP = pos.openRiskGBP ?? Math.max(0, (pos.currentPrice - pos.currentStop) * pos.shares);
 
           return (
             <div key={pos.ticker} className="bg-navy-800 rounded-lg p-3 space-y-3">
@@ -107,12 +110,21 @@ export default function StopLossPanel({ positions = [] }: StopLossPanelProps) {
 
               <div className="grid grid-cols-3 gap-2 text-xs">
                 <div>
-                  <span className="text-muted-foreground">Risk at Stop</span>
+                  <span className="text-muted-foreground">Initial Risk (Entry → Stop)</span>
                   <div className={cn(
                     'font-mono',
-                    stopGainLoss >= 0 ? 'text-profit' : 'text-loss'
+                    initialRiskGBP > 0 ? 'text-loss' : 'text-profit'
                   )}>
-                    {stopGainLoss >= 0 ? '+' : ''}{formatCurrency(stopGainLoss * pos.shares)}
+                    {formatCurrency(initialRiskGBP)}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Open Risk (Current → Stop)</span>
+                  <div className={cn(
+                    'font-mono',
+                    openRiskGBP > 0 ? 'text-loss' : 'text-profit'
+                  )}>
+                    {formatCurrency(openRiskGBP)}
                   </div>
                 </div>
                 <div>
@@ -123,8 +135,6 @@ export default function StopLossPanel({ positions = [] }: StopLossPanelProps) {
                   )}>
                     {gainPerShare >= 0 ? '+' : ''}{formatCurrency(gainPerShare * pos.shares)}
                   </div>
-                </div>
-                <div className="text-right">
                   <button className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 ml-auto mt-1">
                     <ArrowUp className="w-3 h-3" />
                     Raise Stop

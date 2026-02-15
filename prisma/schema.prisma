@@ -139,6 +139,8 @@ model ScanResult {
   stage6Reason     String?
   rankScore        Float
   passesAllFilters Boolean
+  passesRiskGates  Boolean?
+  passesAntiChase  Boolean?
   shares           Int?
   riskDollars      Float?
 

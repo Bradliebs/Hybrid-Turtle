@@ -31,10 +31,34 @@ interface PositionData {
   gainPercent: number;
   gainDollars: number;
   value: number;
-  riskGBP: number;
+  initialRiskGBP: number;
+  riskGBP?: number;
   priceCurrency: string;
   source: string;
   stock?: { ticker: string; name: string; sleeve: string };
+}
+
+interface PositionApiResponse {
+  id: string;
+  stock?: { ticker: string; name: string; sleeve: string };
+  t212Ticker?: string;
+  status: string;
+  entryPrice: number;
+  entryDate: string;
+  shares: number;
+  currentStop?: number;
+  stopLoss?: number;
+  initialRisk?: number;
+  protectionLevel?: string;
+  currentPrice?: number;
+  rMultiple?: number;
+  gainPercent?: number;
+  gainDollars?: number;
+  value?: number;
+  initialRiskGBP?: number;
+  riskGBP?: number;
+  priceCurrency?: string;
+  source?: string;
 }
 
 interface AccountData {
@@ -54,7 +78,7 @@ export default function PositionsPage() {
   // Fetch T212 positions from the database (enriched with live Yahoo prices)
   const fetchPositions = useCallback(async () => {
     try {
-      const data = await apiRequest<PositionData[]>(
+      const data = await apiRequest<PositionApiResponse[]>(
         `/api/positions?userId=${DEFAULT_USER_ID}&source=trading212&status=OPEN`
       );
 
@@ -75,8 +99,9 @@ export default function PositionsPage() {
         rMultiple: p.rMultiple || 0,
         gainPercent: p.gainPercent || 0,
         gainDollars: p.gainDollars || 0,
-        value: p.value || p.currentPrice * p.shares,
-        riskGBP: p.riskGBP || 0,
+        value: p.value || (p.currentPrice ?? p.entryPrice) * p.shares,
+        initialRiskGBP: p.initialRiskGBP ?? p.riskGBP ?? 0,
+        riskGBP: p.riskGBP,
         priceCurrency: p.priceCurrency || 'GBP',
         source: p.source || 'trading212',
       }));

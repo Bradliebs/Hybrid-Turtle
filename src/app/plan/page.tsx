@@ -45,7 +45,7 @@ interface ReadyCandidate {
   distancePercent: number;
   shares?: number;
   riskDollars?: number;
-  matchType?: string;
+  matchType?: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'CONFLICT';
   agreementScore?: number;
   dualNCS?: number;
   dualBQS?: number;
@@ -60,7 +60,7 @@ interface CrossRefTicker {
   ticker: string;
   name: string;
   sleeve: string;
-  matchType: string;
+  matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'CONFLICT' | 'BOTH_REJECT';
   scanStatus?: string;
   scanPrice?: number;
   scanEntryTrigger?: number;
@@ -81,7 +81,6 @@ interface CrossRefTicker {
   dualDistancePct?: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface HealthReportData {
   overall: string;
   checks: Record<string, string>;
@@ -94,6 +93,7 @@ interface RiskSummaryData {
     usedRiskPercent: number;
     maxPositions: number;
     usedPositions: number;
+    sleeveUtilization: Record<string, { used: number; max: number }>;
   };
 }
 
@@ -213,8 +213,8 @@ export default function PlanPage() {
     const fetchHealthRiskAndScan = async () => {
       try {
         const [healthResult, riskResult, crossRefResult] = await Promise.allSettled([
-          apiRequest(`/api/health-check?userId=${DEFAULT_USER_ID}`),
-          apiRequest(`/api/risk?userId=${DEFAULT_USER_ID}`),
+          apiRequest<HealthReportData>(`/api/health-check?userId=${DEFAULT_USER_ID}`),
+          apiRequest<RiskSummaryData>(`/api/risk?userId=${DEFAULT_USER_ID}`),
           apiRequest<{ tickers?: CrossRefTicker[] }>('/api/scan/cross-ref'),
         ]);
 
@@ -239,7 +239,7 @@ export default function PlanPage() {
               ticker: t.ticker,
               name: t.name,
               sleeve: t.sleeve,
-              status: t.scanStatus || (t.dualNCS >= 70 ? 'READY' : 'WATCH'),
+              status: t.scanStatus || ((t.dualNCS ?? 0) >= 70 ? 'READY' : 'WATCH'),
               price: t.scanPrice || t.dualClose || 0,
               entryTrigger: t.scanEntryTrigger || t.dualEntryTrigger || 0,
               stopPrice: t.scanStopPrice || t.dualStopLevel || 0,
@@ -247,7 +247,7 @@ export default function PlanPage() {
               shares: t.scanShares,
               riskDollars: t.scanRiskDollars ?? undefined,
               // Cross-ref enrichment
-              matchType: t.matchType,
+              matchType: t.matchType === 'BOTH_REJECT' ? undefined : t.matchType,
               agreementScore: t.agreementScore,
               dualNCS: t.dualNCS,
               dualBQS: t.dualBQS,

@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/lib/dual-score';
 import type { ScanCandidate } from '@/types';
 import { apiError } from '@/lib/api-response';
+import { getPassedGateCounts, reconstructCandidatesFromDbRows } from '@/lib/scan-db-reconstruction';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -161,52 +162,10 @@ async function getScanDataWithFallback(): Promise<CachedScanResult | null> {
     }
 
     // Reconstruct scan result shape from DB rows
-    const candidates = latestScan.results.map((r) => ({
-      id: r.stock.ticker,
-      ticker: r.stock.ticker,
-      name: r.stock.name,
-      sleeve: r.stock.sleeve,
-      sector: r.stock.sector || 'Unknown',
-      cluster: r.stock.cluster || 'General',
-      price: r.price,
-      priceCurrency: r.stock.ticker.endsWith('.L') ? 'GBX' : (r.stock.currency || 'USD'),
-      technicals: {
-        ma200: r.ma200,
-        adx: r.adx,
-        plusDI: r.plusDI,
-        minusDI: r.minusDI,
-        atrPercent: r.atrPercent,
-        efficiency: r.efficiency,
-        twentyDayHigh: r.twentyDayHigh,
-        atr: 0,
-        volumeRatio: 1,
-        relativeStrength: 0,
-        atrSpiking: false,
-      },
-      entryTrigger: r.entryTrigger,
-      stopPrice: r.stopPrice,
-      distancePercent: r.distancePercent,
-      status: r.status,
-      rankScore: r.rankScore,
-      passesAllFilters: r.passesAllFilters,
-      passesRiskGates: true,
-      passesAntiChase: true,
-      shares: r.shares,
-      riskDollars: r.riskDollars,
-      filterResults: {
-        priceAboveMa200: r.price > r.ma200,
-        adxAbove20: r.adx >= 20,
-        plusDIAboveMinusDI: r.plusDI > r.minusDI,
-        atrPercentBelow8: r.atrPercent < 8,
-        efficiencyAbove30: r.efficiency >= 30,
-        dataQuality: r.ma200 > 0 && r.adx > 0,
-        passesAll: r.passesAllFilters,
-        atrSpiking: false,
-        atrSpikeAction: 'NONE' as const,
-      },
-    }));
+    const candidates = reconstructCandidatesFromDbRows(latestScan.results);
 
     const passedFilters = candidates.filter((c) => c.passesAllFilters);
+    const gateCounts = getPassedGateCounts(candidates);
 
     const dbResult: CachedScanResult = {
       regime: latestScan.regime,
@@ -216,8 +175,8 @@ async function getScanDataWithFallback(): Promise<CachedScanResult | null> {
       farCount: candidates.filter((c) => c.status === 'FAR').length,
       totalScanned: candidates.length,
       passedFilters: passedFilters.length,
-      passedRiskGates: passedFilters.length,
-      passedAntiChase: passedFilters.length,
+      passedRiskGates: gateCounts.passedRiskGates,
+      passedAntiChase: gateCounts.passedAntiChase,
       cachedAt: latestScan.runDate.toISOString(),
       userId: latestScan.userId,
       riskProfile: 'BALANCED',

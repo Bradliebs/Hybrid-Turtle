@@ -76,17 +76,17 @@ export default function ScanPage() {
   }, [candidates]);
 
   const antiChaseResults = useMemo(() => {
-    // Use server-side anti-chase results
     return passesAll.map((c) => ({
       ...c,
-      guard: c.antiChaseResult || { passed: true, reason: 'Not evaluated' },
+      guard: c.antiChaseResult,
+      antiChasePassed: c.passesAntiChase ?? c.antiChaseResult?.passed,
     }));
   }, [passesAll]);
 
   const funnelStages = useMemo(() => {
     const sizedCount = passesAll.filter((c) => (c.shares || 0) > 0).length;
-    const riskGateCount = scanResult?.passedRiskGates ?? passesAll.filter((c) => c.passesRiskGates !== false).length;
-    const antiChaseCount = scanResult?.passedAntiChase ?? antiChaseResults.filter((c) => c.guard.passed).length;
+    const riskGateCount = scanResult?.passedRiskGates ?? passesAll.filter((c) => c.passesRiskGates === true).length;
+    const antiChaseCount = scanResult?.passedAntiChase ?? antiChaseResults.filter((c) => c.antiChasePassed === true).length;
     return [
       { label: 'Stage 1: Universe', count: scanResult?.totalScanned || 0, color: '#7c3aed' },
       { label: 'Stage 2: Technical', count: scanResult?.passedFilters || 0, color: '#3b82f6' },
@@ -358,7 +358,7 @@ export default function ScanPage() {
                   <div className="card-surface p-4 text-center border-warning/30 border">
                     <div className="text-3xl font-bold text-warning font-mono">{watchCandidates.length}</div>
                     <StatusBadge status="WATCH" className="mt-2" />
-                    <div className="text-xs text-muted-foreground mt-1">≤ 5% from breakout</div>
+                    <div className="text-xs text-muted-foreground mt-1">≤ 3% from breakout</div>
                   </div>
                   <div className="card-surface p-4 text-center border-loss/30 border">
                     <div className="text-3xl font-bold text-loss font-mono">{farCandidates.length}</div>
@@ -394,6 +394,10 @@ export default function ScanPage() {
                       <span className="text-profit">R</span> / <span className="text-warning">W</span> / <span className="text-loss">F</span>
                     </div>
                   </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground px-1" title="WAIT_PULLBACK can be triggered by volatility expansion (extATR > 0.8) or Monday gap anti-chase rules.">
+                  WAIT_PULLBACK can be triggered by volatility expansion (extATR &gt; 0.8) or Monday gap anti-chase rules.
                 </div>
 
                 {/* Entry formula — inline compact */}
@@ -543,20 +547,29 @@ export default function ScanPage() {
                 {passesAll.length > 0 && (
                   <div className="space-y-3">
                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Per-Candidate Gate Results</h4>
-                    {passesAll.filter((c) => c.riskGateResults).map((c) => {
-                      const failed = c.riskGateResults!.filter((g) => !g.passed);
+                    {passesAll.map((c) => {
+                      const failed = c.riskGateResults?.filter((g) => !g.passed) ?? [];
+                      const gateStatus = c.passesRiskGates;
+                      const icon = gateStatus === true
+                        ? <Check className="w-4 h-4 text-profit flex-shrink-0" />
+                        : gateStatus === false
+                          ? <X className="w-4 h-4 text-loss flex-shrink-0" />
+                          : <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />;
+                      const message = c.riskGateResults
+                        ? (failed.length === 0
+                          ? `All ${c.riskGateResults.length} gates passed`
+                          : failed.map((g) => g.message).join(' | '))
+                        : gateStatus === true
+                          ? 'Passed'
+                          : gateStatus === false
+                            ? 'Failed'
+                            : 'Unknown';
                       return (
                         <div key={c.ticker} className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg">
-                          {failed.length === 0 ? (
-                            <Check className="w-4 h-4 text-profit flex-shrink-0" />
-                          ) : (
-                            <X className="w-4 h-4 text-loss flex-shrink-0" />
-                          )}
+                          {icon}
                           <span className="text-primary-400 font-semibold w-16">{c.ticker}</span>
                           <span className="text-sm text-muted-foreground flex-1">
-                            {failed.length === 0
-                              ? `All ${c.riskGateResults.length} gates passed`
-                              : failed.map((g) => g.message).join(' | ')}
+                            {message}
                           </span>
                         </div>
                       );
@@ -586,13 +599,15 @@ export default function ScanPage() {
                   )}
                   {antiChaseResults.map((c) => (
                     <div key={c.ticker} className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg">
-                      {c.guard.passed ? (
+                      {c.antiChasePassed === true ? (
                         <Check className="w-4 h-4 text-profit" />
-                      ) : (
+                      ) : c.antiChasePassed === false ? (
                         <X className="w-4 h-4 text-loss" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-warning" />
                       )}
                       <span className="text-primary-400 font-semibold">{c.ticker}</span>
-                      <span className="text-sm text-muted-foreground">— {c.guard.reason}</span>
+                      <span className="text-sm text-muted-foreground">— {c.guard?.reason ?? 'Unknown'}</span>
                     </div>
                   ))}
                 </div>

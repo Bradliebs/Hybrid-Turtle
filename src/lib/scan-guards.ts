@@ -1,6 +1,11 @@
 // Shared client/server scan guard utilities.
-// Execution Guard: (Price - Entry) / ATR ≤ 0.75  AND  Price / Entry - 1 ≤ 3.0%
-// Prevents chasing gaps — applies to all triggered candidates.
+// Monday-only gap anti-chase guard (Mode A):
+// - Purpose: avoid impulsive Monday entries after an opening gap above trigger.
+// - Active only when dayOfWeek === 1 (Monday) AND currentPrice >= entryTrigger.
+// - Blocks when either threshold is exceeded:
+//   1) gapATR > 0.75 where gapATR = (currentPrice - entryTrigger) / ATR
+//   2) percentAbove > 3.0 where percentAbove = ((currentPrice / entryTrigger) - 1) * 100
+// - Outside those conditions, this guard is intentionally inactive.
 
 export function checkAntiChasingGuard(
   currentPrice: number,

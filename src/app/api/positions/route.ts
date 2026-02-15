@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { calculateRMultiple, calculateGainPercent, calculateGainDollars } from '@/lib/position-sizer';
 import { getBatchPrices, getMarketRegime, normalizeBatchPricesToGBP } from '@/lib/market-data';
+import { buildInitialRiskFields } from '@/lib/risk-fields';
 import { apiError } from '@/lib/api-response';
 import { getCurrentWeeklyPhase } from '@/types';
 import { z } from 'zod';
@@ -128,7 +129,7 @@ export async function GET(request: NextRequest) {
         : priceCurrency !== 'GBP'
           ? (p.currentStop || 0) * (rawPrice > 0 ? currentPriceGBP / rawPrice : 1)
           : (p.currentStop || 0);
-      const riskGBP = Math.max(0, (entryPriceGBP - stopGBP) * p.shares);
+      const { initialRiskGBP, riskGBP } = buildInitialRiskFields(entryPriceGBP, stopGBP, p.shares);
 
       return {
         ...p,
@@ -144,6 +145,8 @@ export async function GET(request: NextRequest) {
         gainPercent,
         gainDollars,
         value,
+        initialRiskGBP,
+        // Deprecated: use initialRiskGBP instead
         riskGBP,
         pyramidAdds: addsMap.get(p.id) ?? 0,
       };

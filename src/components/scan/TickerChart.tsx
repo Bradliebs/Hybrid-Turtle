@@ -333,11 +333,11 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
 
       // Crosshair sync
       mainChart.subscribeCrosshairMove((param) => {
-        if (param.time) rsiChart.setCrosshairPosition(NaN, param.time as unknown as number, rsiSeries);
+        if (param.time) rsiChart.setCrosshairPosition(NaN, param.time as Time, rsiSeries);
         else rsiChart.clearCrosshairPosition();
       });
       rsiChart.subscribeCrosshairMove((param) => {
-        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as unknown as number, candleSeries);
+        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as Time, candleSeries);
         else mainChart.clearCrosshairPosition();
       });
     }
@@ -419,11 +419,11 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
 
       // Crosshair sync
       mainChart.subscribeCrosshairMove((param) => {
-        if (param.time) macdChart.setCrosshairPosition(NaN, param.time as unknown as number, macdLineSeries);
+        if (param.time) macdChart.setCrosshairPosition(NaN, param.time as Time, macdLineSeries);
         else macdChart.clearCrosshairPosition();
       });
       macdChart.subscribeCrosshairMove((param) => {
-        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as unknown as number, candleSeries);
+        if (param.time) mainChart.setCrosshairPosition(NaN, param.time as Time, candleSeries);
         else mainChart.clearCrosshairPosition();
       });
     }

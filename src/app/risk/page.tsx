@@ -10,7 +10,23 @@ import RiskBudgetMeter from '@/components/risk/RiskBudgetMeter';
 import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
 import { Shield, Lock, Loader2 } from 'lucide-react';
-import type { RiskProfileType, Sleeve, PositionData } from '@/types';
+import type { RiskProfileType, Sleeve } from '@/types';
+
+interface RiskPositionData {
+  ticker: string;
+  entryPrice: number;
+  currentPrice: number;
+  currentStop: number;
+  initialStop: number;
+  rMultiple: number;
+  protectionLevel: string;
+  shares: number;
+  priceCurrency?: string;
+  initialRiskGBP?: number;
+  openRiskGBP?: number;
+  // @deprecated Use initialRiskGBP instead.
+  riskGBP?: number;
+}
 
 interface RiskBudget {
   usedRiskPercent: number;
@@ -28,7 +44,7 @@ interface RiskSummaryResponse {
   riskEfficiency: number | null;
   weeklyEquityChangePercent: number | null;
   maxOpenRiskUsedPercent: number;
-  positions: PositionData[];
+  positions: RiskPositionData[];
 }
 
 const DEFAULT_USER_ID = 'default-user';

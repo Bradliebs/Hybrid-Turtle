@@ -74,11 +74,12 @@ export function validateRiskGates(
   });
 
   // Gate 3: Sleeve limits
-  const totalPortfolioValue = existingPositions.reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+  const totalInvestedValue = existingPositions.reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+  const denom = Math.max(equity, totalInvestedValue);
   const sleeveValue = existingPositions
     .filter((p) => p.sleeve === newPosition.sleeve)
     .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
-  const sleevePercent = totalPortfolioValue > 0 ? sleeveValue / totalPortfolioValue : 0;
+  const sleevePercent = denom > 0 ? sleeveValue / denom : 0;
   const sleeveCap = SLEEVE_CAPS[newPosition.sleeve];
   results.push({
     passed: sleevePercent <= sleeveCap,
@@ -93,7 +94,7 @@ export function validateRiskGates(
     const clusterValue = existingPositions
       .filter((p) => p.cluster === newPosition.cluster)
       .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
-    const clusterPercent = totalPortfolioValue > 0 ? clusterValue / totalPortfolioValue : 0;
+    const clusterPercent = denom > 0 ? clusterValue / denom : 0;
     results.push({
       passed: clusterPercent <= caps.clusterCap,
       gate: 'Cluster Concentration',
@@ -108,7 +109,7 @@ export function validateRiskGates(
     const sectorValue = existingPositions
       .filter((p) => p.sector === newPosition.sector)
       .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
-    const sectorPercent = totalPortfolioValue > 0 ? sectorValue / totalPortfolioValue : 0;
+    const sectorPercent = denom > 0 ? sectorValue / denom : 0;
     results.push({
       passed: sectorPercent <= caps.sectorCap,
       gate: 'Sector Concentration',
@@ -120,7 +121,7 @@ export function validateRiskGates(
 
   // Gate 6: Position size cap (profile-aware)
   const positionSizeCap = caps.positionSizeCaps[newPosition.sleeve] ?? POSITION_SIZE_CAPS.CORE;
-  const positionSizePercent = totalPortfolioValue > 0 ? newPosition.value / totalPortfolioValue : 0;
+  const positionSizePercent = denom > 0 ? newPosition.value / denom : 0;
   results.push({
     passed: positionSizePercent <= positionSizeCap,
     gate: 'Position Size',

@@ -7,11 +7,16 @@ import {
   SCAN_CACHE_TTL_MS,
   setScanCache,
 } from '@/lib/scan-cache';
-import type { RiskProfileType } from '@/types';
+import {
+  ATR_VOLATILITY_CAP_ALL,
+  ATR_VOLATILITY_CAP_HIGH_RISK,
+  type RiskProfileType,
+} from '@/types';
 import prisma from '@/lib/prisma';
 import { apiError } from '@/lib/api-response';
 import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
+import { normalizePersistedPassFlag } from '@/lib/scan-pass-flags';
 
 const scanRequestSchema = z.object({
   userId: z.string().trim().min(1),
@@ -66,6 +71,8 @@ export async function POST(request: NextRequest) {
                 status: c.status,
                 entryMode: c.pullbackSignal?.triggered ? 'PULLBACK_CONTINUATION' : 'BREAKOUT',
                 stage6Reason: c.pullbackSignal?.reason ?? c.antiChaseResult?.reason ?? null,
+                passesRiskGates: c.passesRiskGates ?? null,
+                passesAntiChase: c.passesAntiChase ?? null,
                 rankScore: c.rankScore,
                 passesAllFilters: c.passesAllFilters,
                 shares: c.shares ?? null,
@@ -153,68 +160,74 @@ export async function GET() {
     }
 
     // Reconstruct the scan result shape from DB rows
-    const candidates = latestScan.results.map((r) => ({
-      id: r.stock.ticker,
-      ticker: r.stock.ticker,
-      name: r.stock.name,
-      sleeve: r.stock.sleeve,
-      sector: r.stock.sector || 'Unknown',
-      cluster: r.stock.cluster || 'General',
-      price: r.price,
-      priceCurrency: r.stock.ticker.endsWith('.L') ? 'GBX' : (r.stock.currency || 'USD'),
-      technicals: {
-        ma200: r.ma200,
-        adx: r.adx,
-        plusDI: r.plusDI,
-        minusDI: r.minusDI,
-        atrPercent: r.atrPercent,
-        efficiency: r.efficiency,
-        twentyDayHigh: r.twentyDayHigh,
-        atr: 0,
-        volumeRatio: 1,
-        relativeStrength: 0,
-        atrSpiking: false,
-      },
-      entryTrigger: r.entryTrigger,
-      stopPrice: r.stopPrice,
-      distancePercent: r.distancePercent,
-      status: r.status,
-      antiChaseResult: r.stage6Reason
-        ? {
-            passed: !r.stage6Reason.includes('WAIT_PULLBACK') && !r.stage6Reason.includes('CHASE RISK'),
-            reason: r.stage6Reason,
-          }
-        : undefined,
-      pullbackSignal: r.entryMode === 'PULLBACK_CONTINUATION'
-        ? {
-            triggered: true,
-            mode: 'PULLBACK_CONTINUATION' as const,
-            anchor: r.entryTrigger,
-            zoneLow: r.entryTrigger,
-            zoneHigh: r.entryTrigger,
-            entryPrice: r.entryTrigger,
-            stopPrice: r.stopPrice,
-            reason: r.stage6Reason || 'PULLBACK_CONTINUATION',
-          }
-        : undefined,
-      rankScore: r.rankScore,
-      passesAllFilters: r.passesAllFilters,
-      passesRiskGates: true,
-      passesAntiChase: true,
-      shares: r.shares,
-      riskDollars: r.riskDollars,
-      filterResults: {
-        priceAboveMa200: r.price > r.ma200,
-        adxAbove20: r.adx >= 20,
-        plusDIAboveMinusDI: r.plusDI > r.minusDI,
-        atrPercentBelow8: r.atrPercent < 8,
-        efficiencyAbove30: r.efficiency >= 30,
-        dataQuality: r.ma200 > 0 && r.adx > 0,
-        passesAll: r.passesAllFilters,
-        atrSpiking: false,
-        atrSpikeAction: 'NONE' as const,
-      },
-    }));
+    const candidates = latestScan.results.map((r) => {
+      const atrCap = r.stock.sleeve === 'HIGH_RISK'
+        ? ATR_VOLATILITY_CAP_HIGH_RISK
+        : ATR_VOLATILITY_CAP_ALL;
+
+      return {
+        id: r.stock.ticker,
+        ticker: r.stock.ticker,
+        name: r.stock.name,
+        sleeve: r.stock.sleeve,
+        sector: r.stock.sector || 'Unknown',
+        cluster: r.stock.cluster || 'General',
+        price: r.price,
+        priceCurrency: r.stock.ticker.endsWith('.L') ? 'GBX' : (r.stock.currency || 'USD'),
+        technicals: {
+          ma200: r.ma200,
+          adx: r.adx,
+          plusDI: r.plusDI,
+          minusDI: r.minusDI,
+          atrPercent: r.atrPercent,
+          efficiency: r.efficiency,
+          twentyDayHigh: r.twentyDayHigh,
+          atr: 0,
+          volumeRatio: 1,
+          relativeStrength: 0,
+          atrSpiking: false,
+        },
+        entryTrigger: r.entryTrigger,
+        stopPrice: r.stopPrice,
+        distancePercent: r.distancePercent,
+        status: r.status,
+        antiChaseResult: r.stage6Reason
+          ? {
+              passed: !r.stage6Reason.includes('WAIT_PULLBACK') && !r.stage6Reason.includes('CHASE RISK'),
+              reason: r.stage6Reason,
+            }
+          : undefined,
+        pullbackSignal: r.entryMode === 'PULLBACK_CONTINUATION'
+          ? {
+              triggered: true,
+              mode: 'PULLBACK_CONTINUATION' as const,
+              anchor: r.entryTrigger,
+              zoneLow: r.entryTrigger,
+              zoneHigh: r.entryTrigger,
+              entryPrice: r.entryTrigger,
+              stopPrice: r.stopPrice,
+              reason: r.stage6Reason || 'PULLBACK_CONTINUATION',
+            }
+          : undefined,
+        rankScore: r.rankScore,
+        passesAllFilters: r.passesAllFilters,
+        passesRiskGates: normalizePersistedPassFlag(r.passesRiskGates),
+        passesAntiChase: normalizePersistedPassFlag(r.passesAntiChase),
+        shares: r.shares,
+        riskDollars: r.riskDollars,
+        filterResults: {
+          priceAboveMa200: r.price > r.ma200,
+          adxAbove20: r.adx >= 20,
+          plusDIAboveMinusDI: r.plusDI > r.minusDI,
+          atrPercentBelow8: r.atrPercent < atrCap,
+          efficiencyAbove30: r.efficiency >= 30,
+          dataQuality: r.ma200 > 0 && r.adx > 0,
+          passesAll: r.passesAllFilters,
+          atrSpiking: false,
+          atrSpikeAction: 'NONE' as const,
+        },
+      };
+    });
 
     const passedFilters = candidates.filter((c) => c.passesAllFilters);
 
@@ -226,8 +239,8 @@ export async function GET() {
       farCount: candidates.filter((c) => c.status === 'FAR').length,
       totalScanned: candidates.length,
       passedFilters: passedFilters.length,
-      passedRiskGates: passedFilters.length,
-      passedAntiChase: passedFilters.length,
+      passedRiskGates: passedFilters.filter((c) => c.passesRiskGates === true).length,
+      passedAntiChase: passedFilters.filter((c) => c.passesAntiChase === true).length,
       cachedAt: latestScan.runDate.toISOString(),
       userId: latestScan.userId,
       riskProfile: 'BALANCED',

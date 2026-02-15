@@ -2,6 +2,116 @@ import { describe, expect, it } from 'vitest';
 import { canPyramid, validateRiskGates } from './risk-gates';
 
 describe('risk-gates formulas', () => {
+  it('does not auto-fail concentration gates at 100% on empty book', () => {
+    const results = validateRiskGates(
+      {
+        sleeve: 'CORE',
+        sector: 'TECH',
+        cluster: 'SOFTWARE',
+        value: 1000,
+        riskDollars: 95,
+      },
+      [],
+      10_000,
+      'BALANCED'
+    );
+
+    const sleeveGate = results.find((r) => r.gate === 'Sleeve Limit');
+    const clusterGate = results.find((r) => r.gate === 'Cluster Concentration');
+    const sectorGate = results.find((r) => r.gate === 'Sector Concentration');
+    const positionSizeGate = results.find((r) => r.gate === 'Position Size');
+
+    expect(sleeveGate?.current).toBeCloseTo(10, 8);
+    expect(clusterGate?.current).toBeCloseTo(10, 8);
+    expect(sectorGate?.current).toBeCloseTo(10, 8);
+    expect(positionSizeGate?.current).toBeCloseTo(10, 8);
+
+    expect(sleeveGate?.passed).toBe(true);
+    expect(clusterGate?.passed).toBe(true);
+    expect(sectorGate?.passed).toBe(true);
+    expect(positionSizeGate?.passed).toBe(true);
+  });
+
+  it('fails oversized first trade against sleeve and position-size caps', () => {
+    const results = validateRiskGates(
+      {
+        sleeve: 'CORE',
+        sector: 'TECH',
+        cluster: 'SOFTWARE',
+        value: 9000,
+        riskDollars: 300,
+      },
+      [],
+      10_000,
+      'BALANCED'
+    );
+
+    const sleeveGate = results.find((r) => r.gate === 'Sleeve Limit');
+    const positionSizeGate = results.find((r) => r.gate === 'Position Size');
+
+    expect(sleeveGate?.current).toBeCloseTo(90, 8);
+    expect(sleeveGate?.passed).toBe(false);
+
+    expect(positionSizeGate?.current).toBeCloseTo(90, 8);
+    expect(positionSizeGate?.passed).toBe(false);
+  });
+
+  it('uses invested value as denominator when invested value exceeds equity', () => {
+    const existingPositions = [
+      {
+        id: 'c1',
+        ticker: 'AAA',
+        sleeve: 'CORE' as const,
+        sector: 'TECH',
+        cluster: 'SOFTWARE',
+        value: 8000,
+        riskDollars: 200,
+        shares: 10,
+        entryPrice: 100,
+        currentStop: 90,
+        currentPrice: 120,
+      },
+      {
+        id: 'e1',
+        ticker: 'BBB',
+        sleeve: 'ETF' as const,
+        sector: 'ETF',
+        cluster: 'INDEX',
+        value: 5000,
+        riskDollars: 100,
+        shares: 20,
+        entryPrice: 50,
+        currentStop: 45,
+        currentPrice: 55,
+      },
+    ];
+
+    const results = validateRiskGates(
+      {
+        sleeve: 'CORE',
+        sector: 'TECH',
+        cluster: 'SOFTWARE',
+        value: 2000,
+        riskDollars: 100,
+      },
+      existingPositions,
+      10_000,
+      'BALANCED'
+    );
+
+    const sleeveGate = results.find((r) => r.gate === 'Sleeve Limit');
+    const clusterGate = results.find((r) => r.gate === 'Cluster Concentration');
+    const sectorGate = results.find((r) => r.gate === 'Sector Concentration');
+    const positionSizeGate = results.find((r) => r.gate === 'Position Size');
+
+    // totalInvestedValue = 8000 + 5000 + 2000 = 15000 > equity 10000
+    // denom should be 15000
+    expect(sleeveGate?.current).toBeCloseTo((10000 / 15000) * 100, 8);
+    expect(clusterGate?.current).toBeCloseTo((10000 / 15000) * 100, 8);
+    expect(sectorGate?.current).toBeCloseTo((10000 / 15000) * 100, 8);
+    expect(positionSizeGate?.current).toBeCloseTo((2000 / 15000) * 100, 8);
+  });
+
   it('fails total open risk gate when risk exceeds profile cap', () => {
     const results = validateRiskGates(
       {

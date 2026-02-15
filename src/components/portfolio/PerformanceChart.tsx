@@ -13,12 +13,26 @@ import {
 import { useState } from 'react';
 
 interface PerformanceChartProps {
-  data?: { date: string; portfolio: number; benchmark: number }[];
+  data?: Array<
+    { date: string; portfolio: number; benchmark: number }
+    | { date: string; value: number }
+  >;
 }
 export default function PerformanceChart({ data = [] }: PerformanceChartProps) {
   const [timeRange, setTimeRange] = useState('1Y');
 
-  if (data.length === 0) {
+  const normalizedData = data.map((point) => {
+    if ('portfolio' in point && 'benchmark' in point) {
+      return point;
+    }
+    return {
+      date: point.date,
+      portfolio: point.value,
+      benchmark: point.value,
+    };
+  });
+
+  if (normalizedData.length === 0) {
     return (
       <div className="card-surface p-4">
         <div className="flex items-center justify-between mb-4">
@@ -68,7 +82,7 @@ export default function PerformanceChart({ data = [] }: PerformanceChartProps) {
       </div>
 
       <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={data}>
+        <LineChart data={normalizedData}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(139, 92, 246, 0.1)" />
           <XAxis
             dataKey="date"
