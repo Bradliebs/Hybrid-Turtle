@@ -44,7 +44,7 @@ export const dynamic = 'force-dynamic';
 // Prevents duplicate heavy computation when multiple browser
 // components trigger overlapping requests.
 let _modulesCache: { json: AllModulesResult; expiry: number; userId: string } | null = null;
-const MODULES_CACHE_TTL = 60_000; // 60 seconds
+const MODULES_CACHE_TTL = 5 * 60_000; // 5 minutes — dashboard is checked infrequently
 
 export async function GET(request: NextRequest) {
   const t0 = Date.now();

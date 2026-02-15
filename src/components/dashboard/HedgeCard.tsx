@@ -67,9 +67,7 @@ export default function HedgeCard() {
   };
 
   useEffect(() => {
-    fetchHedge();
-    const interval = setInterval(fetchHedge, 10 * 60 * 1000); // Refresh every 10 min (price data is cached server-side)
-    return () => clearInterval(interval);
+    fetchHedge(); // Fetch once on mount — manual refresh via button
   }, []);
 
   const formatGBP = (v: number) =>

@@ -57,9 +57,9 @@ interface CacheEntry<T> {
 
 const quoteCache = new Map<string, CacheEntry<StockQuote>>();
 const historicalCache = new Map<string, CacheEntry<DailyBar[]>>();
-const QUOTE_TTL = 60_000;          // 1 minute
+const QUOTE_TTL = 30 * 60_000;     // 30 minutes — prices fetched once per session, manual refresh available
 const HISTORICAL_TTL = 86_400_000; // 24 hours (daily bars don't change intraday)
-const FX_TTL = 300_000;            // 5 minutes
+const FX_TTL = 30 * 60_000;        // 30 minutes — FX rates move slowly
 
 // ── Rate-limited chart queue ──
 // Serialises yf.chart() calls with a configurable delay to avoid rate-limiting.

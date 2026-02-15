@@ -12,7 +12,7 @@ import type {
 import { getCurrentWeeklyPhase } from '@/types';
 
 // ── Cache staleness window (ms) ──
-const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const CACHE_TTL = 10 * 60 * 1000; // 10 minutes — avoids re-fetch when navigating between pages
 
 // ---- Store Types ----
 interface Position {

@@ -87,12 +87,10 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // Fetch market data + publications in parallel on mount; refresh market data every 5 min
+  // Fetch market data + publications in parallel on mount (no auto-polling — manual refresh via MarketIndicesBar)
   useEffect(() => {
     fetchLiveMarketData();
     fetchPublications();
-    const interval = setInterval(fetchLiveMarketData, 300_000); // 5 min
-    return () => clearInterval(interval);
   }, [fetchLiveMarketData, fetchPublications]);
 
   return (
