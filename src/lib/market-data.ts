@@ -555,9 +555,15 @@ export async function normalizeBatchPricesToGBP(
     }
   }
 
-  // Fetch all needed FX rates
-  for (const curr of Array.from(currenciesNeeded)) {
-    fxRates.set(curr, await getFXRate(curr, 'GBP'));
+  // Fetch all needed FX rates in parallel
+  const fxEntries = await Promise.all(
+    Array.from(currenciesNeeded).map(async (curr) => {
+      const rate = await getFXRate(curr, 'GBP');
+      return [curr, rate] as const;
+    })
+  );
+  for (const [curr, rate] of fxEntries) {
+    fxRates.set(curr, rate);
   }
 
   const normalized: Record<string, number> = {};

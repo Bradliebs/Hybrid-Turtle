@@ -74,13 +74,6 @@ export default function DashboardPage() {
     }
   }, [setMarketIndices, setFearGreed, setMarketRegime]);
 
-  // Fetch on mount and refresh every 60 seconds
-  useEffect(() => {
-    fetchLiveMarketData();
-    const interval = setInterval(fetchLiveMarketData, 60_000);
-    return () => clearInterval(interval);
-  }, [fetchLiveMarketData]);
-
   const fetchPublications = useCallback(async () => {
     try {
       const data = await apiRequest<{ publications?: PublicationItem[] }>(`/api/publications?userId=${DEFAULT_USER_ID}`);
@@ -94,9 +87,13 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // Fetch market data + publications in parallel on mount; refresh market data every 5 min
   useEffect(() => {
+    fetchLiveMarketData();
     fetchPublications();
-  }, [fetchPublications]);
+    const interval = setInterval(fetchLiveMarketData, 300_000); // 5 min
+    return () => clearInterval(interval);
+  }, [fetchLiveMarketData, fetchPublications]);
 
   return (
     <div className="min-h-screen bg-background">
