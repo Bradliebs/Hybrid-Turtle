@@ -132,7 +132,7 @@ All routes are under `/api`. Key endpoint groups:
 | `/api/health-check` | System health diagnostics |
 | `/api/heartbeat` | Liveness ping |
 | `/api/market-data` | Yahoo Finance price/quote proxy |
-| `/api/modules` | Dashboard module data |
+| `/api/modules` | Dashboard module data (5 min server cache, parallelised) |
 | `/api/nightly` | Nightly automation trigger |
 | `/api/plan` | Weekly execution plans |
 | `/api/portfolio` | Portfolio overview & metrics |
@@ -153,6 +153,19 @@ All routes are under `/api`. Key endpoint groups:
 - [DASHBOARD-GUIDE.md](DASHBOARD-GUIDE.md) — full feature and operations reference
 - [TRADING-LOGIC.md](TRADING-LOGIC.md) — trading rules, risk logic, and system constraints
 - [Agent.md](Agent.md) — AI agent ruleset for codebase contributions
+
+## Performance notes
+
+The dashboard relies on `/api/modules` which runs 21 module checks including several Yahoo Finance calls. To keep load times low:
+
+- **Parallelised external calls** — breadth calculation, climax scan, dual-regime detection, fast-follower scan, re-entry scan, SPY ADX, and pyramid ATR fetches all run concurrently via `Promise.allSettled`.
+- **Shared data** — SPY historical bars are fetched once and reused for both ADX and dual-regime calculations.
+- **Server-side response cache** — the `/api/modules` result is cached for 5 minutes so repeat visits within a session don't re-run everything.
+- **Client-side TTL** — the Zustand store marks module data stale after 10 minutes; the `useModulesData` hook prevents concurrent duplicate fetches.
+- **Yahoo Finance caching** — quote data is cached for 30 minutes, historical bars for 24 hours, and FX rates for 30 minutes (all in-process memory).
+- **No auto-polling** — data is fetched once when the dashboard loads. Manual refresh buttons on the market bar and hedge card let you pull fresh data on demand. This suits an infrequent-use pattern (checking once or twice a day).
+
+On first server start with an empty cache, background pre-caching fetches historical bars for all active tickers so the first dashboard load doesn't trigger hundreds of sequential chart calls.
 
 ## Tech stack
 

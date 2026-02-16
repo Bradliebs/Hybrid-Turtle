@@ -65,21 +65,11 @@ export default function LiveDataBootstrap() {
       }
     };
 
+    // Fetch once on mount — no auto-polling (dashboard is checked 1-2× daily)
     fetchSettings();
     recordHeartbeat();
     fetchHealth();
     fetchRegime();
-
-    // Re-record heartbeat every 30 minutes to keep it fresh
-    const heartbeatInterval = setInterval(recordHeartbeat, 30 * 60_000);
-    const healthInterval = setInterval(fetchHealth, 300_000);
-    const regimeInterval = setInterval(fetchRegime, 300_000);
-
-    return () => {
-      clearInterval(heartbeatInterval);
-      clearInterval(healthInterval);
-      clearInterval(regimeInterval);
-    };
   }, [setHealthStatus, setHeartbeat, setMarketRegime, setRiskProfile, setEquity]);
 
   return null;
