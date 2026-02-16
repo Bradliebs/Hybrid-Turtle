@@ -19,7 +19,7 @@ import { useStore } from '@/store/useStore';
 import { formatDate } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import type { FearGreedData, MarketRegime } from '@/types';
-import { Bell, Play, FileText } from 'lucide-react';
+import { Bell, Play, FileText, Zap } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -37,6 +37,18 @@ interface MarketIndex {
   changePercent: number;
 }
 
+interface ScanCandidateSummary {
+  ticker: string;
+  distancePercent: number;
+  passesAllFilters: boolean;
+}
+
+interface ScanApiSummary {
+  candidates?: ScanCandidateSummary[];
+  cachedAt?: string;
+  hasCache?: boolean;
+}
+
 export default function DashboardPage() {
   const {
     marketRegime,
@@ -48,6 +60,9 @@ export default function DashboardPage() {
     setMarketRegime,
   } = useStore();
   const [publications, setPublications] = useState<PublicationItem[]>([]);
+  const [triggerMetCount, setTriggerMetCount] = useState(0);
+  const [triggerMetTickers, setTriggerMetTickers] = useState<string[]>([]);
+  const [scanCachedAt, setScanCachedAt] = useState<string | null>(null);
 
   const fetchLiveMarketData = useCallback(async () => {
     try {
@@ -87,11 +102,28 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const fetchTriggerStatus = useCallback(async () => {
+    try {
+      const data = await apiRequest<ScanApiSummary>('/api/scan');
+      const candidates = data.candidates || [];
+      const triggered = candidates.filter((candidate) => candidate.passesAllFilters && candidate.distancePercent <= 0);
+
+      setTriggerMetCount(triggered.length);
+      setTriggerMetTickers(triggered.map((candidate) => candidate.ticker));
+      setScanCachedAt(data.cachedAt || null);
+    } catch {
+      setTriggerMetCount(0);
+      setTriggerMetTickers([]);
+      setScanCachedAt(null);
+    }
+  }, []);
+
   // Fetch market data + publications in parallel on mount (no auto-polling — manual refresh via MarketIndicesBar)
   useEffect(() => {
     fetchLiveMarketData();
     fetchPublications();
-  }, [fetchLiveMarketData, fetchPublications]);
+    fetchTriggerStatus();
+  }, [fetchLiveMarketData, fetchPublications, fetchTriggerStatus]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -146,6 +178,44 @@ export default function DashboardPage() {
             </div>
           </div>
           <HeartbeatMonitor />
+        </div>
+
+        <div className="card-surface p-4">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Zap className="w-4 h-4 text-emerald-400" />
+            Trigger Status
+          </h3>
+          {triggerMetCount > 0 ? (
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-xs font-bold">
+                {triggerMetCount} TRIGGERED — READY TO BUY
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {triggerMetTickers.slice(0, 8).map((ticker) => (
+                  <span
+                    key={ticker}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-semibold border border-emerald-500/30"
+                  >
+                    {ticker}
+                  </span>
+                ))}
+                {triggerMetTickers.length > 8 && (
+                  <span className="px-2.5 py-1 rounded-lg bg-navy-700 text-muted-foreground text-xs font-semibold border border-border">
+                    +{triggerMetTickers.length - 8} more
+                  </span>
+                )}
+              </div>
+              {scanCachedAt && (
+                <div className="text-xs text-muted-foreground">
+                  Based on latest scan cache: {new Date(scanCachedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              No trigger met in the latest scan cache.
+            </div>
+          )}
         </div>
 
         {/* Quick Actions */}
