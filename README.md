@@ -76,6 +76,7 @@ Copy `.env.example` to `.env` before first run. Required variables are marked wi
 | `TELEGRAM_BOT_TOKEN` | | — | Telegram bot token for nightly alerts (see below) |
 | `TELEGRAM_CHAT_ID` | | — | Telegram chat ID for alert delivery |
 | `NIGHTLY_CRON` | | `30 21 * * *` | Cron expression for nightly run (default 9:30 PM UK) |
+| `USE_PRIOR_20D_HIGH_FOR_TRIGGER` | | `false` | When `true`, entry trigger uses prior 20-day high (excludes latest bar) for A/B comparison |
 
 ## Telegram notifications (optional)
 

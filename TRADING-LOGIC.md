@@ -556,6 +556,11 @@ Scales entry buffer inversely with ATR%:
 adjustedEntryTrigger = twentyDayHigh + bufferPercent × ATR
 ```
 
+Feature flag for A/B comparison:
+
+- `USE_PRIOR_20D_HIGH_FOR_TRIGGER=true` → `adjustedEntryTrigger = prior20DayHigh + bufferPercent × ATR` (excludes most recent bar)
+- unset/`false` (default) → `adjustedEntryTrigger = twentyDayHigh + bufferPercent × ATR` (includes most recent bar)
+
 ### Module 12: Super-Cluster
 
 **Source:** `src/lib/modules/super-cluster.ts`

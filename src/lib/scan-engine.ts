@@ -216,7 +216,8 @@ export async function runFullScan(
           stock.ticker,
           technicals.twentyDayHigh,
           technicals.atr,
-          technicals.atrPercent
+          technicals.atrPercent,
+          technicals.priorTwentyDayHigh
         );
         let entryTrigger = adaptiveBuffer.adjustedEntryTrigger;
         let stopPrice = entryTrigger - technicals.atr * ATR_STOP_MULTIPLIER;

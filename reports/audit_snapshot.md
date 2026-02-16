@@ -1,6 +1,6 @@
 # Audit Snapshot Report
 
-**Generated:** 2026-02-15T10:54:03.219Z  
+**Generated:** 2026-02-16T18:05:03.819Z  
 **Regime:** BULLISH  
 **Equity:** £15,000  
 **Risk Profile:** BALANCED  
@@ -15,7 +15,7 @@
 | AAPL | CORE | ✓ | READY | +1.37% | 103.6 | ✗ | ✓ | 12 | £81 | 0.54% | INITIAL |
 | MSFT | CORE | ✓ | READY | +1.57% | 105.5 | ✗ | ✓ | 6 | £72 | 0.48% | INITIAL |
 | PLTR | HIGH_RISK | ✗ | BLOCKED | +3.00% | 0 | ✗ | ✓ | — | — | — | INITIAL |
-| XOM | CORE | ✗ | BLOCKED | +7.14% | 0 | ✗ | ✓ | — | — | — | INITIAL |
+| XOM | CORE | ✗ | BLOCKED | +7.14% | 0 | ✓ | ✓ | — | — | — | INITIAL |
 | VWRL.L | ETF | ✓ | READY | +0.84% | 74.1 | ✗ | ✓ | 0 | £0 | 0.00% | INITIAL |
 
 ---
@@ -36,10 +36,10 @@
 |------|------|---------|-------|
 | Total Open Risk | ✓ | 2.3 | 5.5 |
 | Max Positions | ✓ | 3.0 | 5.0 |
-| Sleeve Limit | ✗ | 100.0 | 80.0 |
-| Cluster Concentration | ✗ | 60.5 | 20.0 |
-| Sector Concentration | ✗ | 100.0 | 25.0 |
-| Position Size | ✗ | 25.9 | 18.0 |
+| Sleeve Limit | ✓ | 54.0 | 80.0 |
+| Cluster Concentration | ✗ | 32.7 | 20.0 |
+| Sector Concentration | ✗ | 54.0 | 25.0 |
+| Position Size | ✓ | 14.0 | 18.0 |
 
 **Anti-Chase (Monday):** ✓ PASS — Below entry trigger — no chase risk
 
@@ -65,10 +65,10 @@
 |------|------|---------|-------|
 | Total Open Risk | ✓ | 2.7 | 5.5 |
 | Max Positions | ✓ | 3.0 | 5.0 |
-| Sleeve Limit | ✗ | 100.0 | 80.0 |
-| Cluster Concentration | ✗ | 68.6 | 20.0 |
-| Sector Concentration | ✗ | 100.0 | 25.0 |
-| Position Size | ✗ | 41.2 | 18.0 |
+| Sleeve Limit | ✓ | 68.0 | 80.0 |
+| Cluster Concentration | ✗ | 46.7 | 20.0 |
+| Sector Concentration | ✗ | 68.0 | 25.0 |
+| Position Size | ✗ | 28.0 | 18.0 |
 
 **Anti-Chase (Monday):** ✓ PASS — Below entry trigger — no chase risk
 
@@ -94,10 +94,10 @@
 |------|------|---------|-------|
 | Total Open Risk | ✓ | 2.1 | 5.5 |
 | Max Positions | ✓ | 3.0 | 5.0 |
-| Sleeve Limit | ✓ | 6.0 | 40.0 |
-| Cluster Concentration | ✓ | 6.0 | 20.0 |
-| Sector Concentration | ✗ | 100.0 | 25.0 |
-| Position Size | ✓ | 6.0 | 12.0 |
+| Sleeve Limit | ✓ | 2.5 | 40.0 |
+| Cluster Concentration | ✓ | 2.5 | 20.0 |
+| Sector Concentration | ✗ | 42.5 | 25.0 |
+| Position Size | ✓ | 2.5 | 12.0 |
 
 **Anti-Chase (Monday):** ✓ PASS — Below entry trigger — no chase risk
 
@@ -123,10 +123,10 @@
 |------|------|---------|-------|
 | Total Open Risk | ✓ | 2.2 | 5.5 |
 | Max Positions | ✓ | 3.0 | 5.0 |
-| Sleeve Limit | ✗ | 100.0 | 80.0 |
-| Cluster Concentration | ✓ | 14.9 | 20.0 |
-| Sector Concentration | ✓ | 14.9 | 25.0 |
-| Position Size | ✓ | 14.9 | 18.0 |
+| Sleeve Limit | ✓ | 47.0 | 80.0 |
+| Cluster Concentration | ✓ | 7.0 | 20.0 |
+| Sector Concentration | ✓ | 7.0 | 25.0 |
+| Position Size | ✓ | 7.0 | 18.0 |
 
 **Anti-Chase (Monday):** ✓ PASS — Below entry trigger — no chase risk
 

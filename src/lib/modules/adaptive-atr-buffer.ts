@@ -18,7 +18,8 @@ export function calculateAdaptiveBuffer(
   ticker: string,
   twentyDayHigh: number,
   atr: number,
-  atrPercent: number
+  atrPercent: number,
+  priorTwentyDayHigh?: number
 ): AdaptiveBufferResult {
   // Scale: ATR% 2 → 20% buffer, ATR% 6 → 5% buffer
   // Clamp to [5%, 20%]
@@ -37,7 +38,11 @@ export function calculateAdaptiveBuffer(
     bufferPercent = maxBuffer - ((atrPercent - minATR) / (maxATR - minATR)) * (maxBuffer - minBuffer);
   }
 
-  const adjustedEntryTrigger = twentyDayHigh + bufferPercent * atr;
+  const usePrior20DayHighForTrigger = process.env.USE_PRIOR_20D_HIGH_FOR_TRIGGER === 'true';
+  const triggerBaseHigh = usePrior20DayHighForTrigger && typeof priorTwentyDayHigh === 'number'
+    ? priorTwentyDayHigh
+    : twentyDayHigh;
+  const adjustedEntryTrigger = triggerBaseHigh + bufferPercent * atr;
 
   return {
     ticker,

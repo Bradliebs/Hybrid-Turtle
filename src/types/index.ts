@@ -298,6 +298,7 @@ export interface TechnicalData {
   atrSpiking: boolean;
   atrPercent: number;
   twentyDayHigh: number;
+  priorTwentyDayHigh?: number;
   efficiency: number;
   relativeStrength: number;
   volumeRatio: number;

@@ -354,6 +354,12 @@ export function calculate20DayHigh(data: { high: number }[]): number {
   return Math.max(...highs);
 }
 
+export function getPriorNDayHigh(data: { high: number }[], n: number): number {
+  if (n <= 0 || data.length <= 1) return 0;
+  const highs = data.slice(1, n + 1).map((d) => d.high);
+  return highs.length ? Math.max(...highs) : 0;
+}
+
 // ---- Full Technical Data ----
 export async function getTechnicalData(ticker: string): Promise<TechnicalData | null> {
   const dailyData = await getDailyPrices(ticker, 'full');
@@ -374,6 +380,7 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
   const { adx, plusDI, minusDI } = calculateADX(dailyData, 14);
   const efficiency = calculateTrendEfficiency(closes, 20);
   const twentyDayHigh = calculate20DayHigh(dailyData);
+  const priorTwentyDayHigh = getPriorNDayHigh(dailyData, 20);
 
   // Relative strength vs SPY
   let relativeStrength = 50;
@@ -407,6 +414,7 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
     atrSpiking,
     atrPercent,
     twentyDayHigh,
+    priorTwentyDayHigh,
     efficiency,
     relativeStrength,
     volumeRatio,
