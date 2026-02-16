@@ -80,6 +80,8 @@ export async function GET(request: NextRequest) {
         initialRiskGBP,
         // Explicit open risk (current → stop)
         openRiskGBP,
+        openRiskDollars: openRiskGBP,
+        // @deprecated Use openRiskGBP/openRiskDollars instead.
         riskDollars: openRiskGBP,
         priceCurrency,
       };

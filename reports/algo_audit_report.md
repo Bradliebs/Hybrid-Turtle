@@ -1,315 +1,315 @@
 # Quant Algorithm Audit Report
 
-Date: 2026-02-15  
+Date: 2026-02-16  
 Scope: readiness/state classification, stops, sizing/risk, performance, re-entry logic
 
 ---
 
 ## 1) INVENTORY
 
-### 1.1 Target modules: inputs, outputs, writes
+### 1.1 Target modules (outputs, inputs, writes)
 
 | Module | What it computes (outputs) | What it reads (inputs) | What it writes |
 |---|---|---|---|
-| `src/lib/scan-engine.ts` (`runTechnicalFilters`, `classifyCandidate`, `runFullScan`) | Candidate filter pass/fail, status (`READY/WATCH/WAIT_PULLBACK/FAR`), entry trigger/stop, rank, sizing, gate pass flags | Market data (`getTechnicalData`, `getMarketRegime`, `getQuickPrice`, FX), universe from DB stocks, open positions for risk gates | Returns scan object; persisted via API scan route into `Scan`/`ScanResult` (`src/app/api/scan/route.ts`) |
-| `src/lib/scan-guards.ts` (`checkAntiChasingGuard`, `checkPullbackContinuationEntry`) | Anti-chasing pass/fail + reason; pullback continuation trigger + entry/stop | Current price, entry trigger, ATR, day-of-week; HH20/EMA20/low/close | Pure functions (no write) |
-| `src/lib/risk-gates.ts` (`validateRiskGates`, `getRiskBudget`, `canPyramid`) | Six gate results, budget utilization, pyramid eligibility | New position candidate + existing positions + equity + risk profile | Pure functions (no write) |
-| `src/lib/stop-manager.ts` (`calculateStopRecommendation`, `updateStopLoss`, `calculateTrailingATRStop`) | Protection level transitions, recommended stop, trailing ATR stop recommendations | Entry/current/stop/ATR, DB open positions, price history from market-data | Writes `StopHistory`, updates `Position.currentStop/stopLoss/protectionLevel` |
-| `prisma/sync-stops.ts` (`syncStops`) | CSV-driven stop update decisions and protection levels | `Planning/positions_state.csv`, open positions + stock tickers | Writes `StopHistory`, updates `Position` |
-| `src/lib/position-sizer.ts` (`calculatePositionSize`) | Shares, total cost, risk cash, risk % | Equity, risk profile, entry/stop, sleeve cap, FX | Pure function (no write) |
-| `src/lib/regime-detector.ts` (`detectRegime`, `checkRegimeStability`, `detectDualRegime`) | Regime classification and stability labels | SPY/VWRL prices + MA values + ADX/DI/VIX/A-D (for deprecated path) | Pure functions (no write) |
-| `src/cron/nightly.ts` (`runNightlyProcess`) | Nightly decisions + summaries (stops, laggards, modules, snapshots, ready list) | DB positions/users, Yahoo prices/bars, stop manager, snapshot sync, risk modules | Updates stops via `updateStopLoss`, writes `Heartbeat`, writes `EquitySnapshot`, sends Telegram |
-| `src/app/api/positions/route.ts` (`GET`) | Enriched position payload (R, gain %, value, `riskGBP`) | DB positions + recent stop history, live prices + FX | Read-only response |
-| `src/app/api/risk/route.ts` (`GET`) | Risk budget, enriched positions, risk efficiency | DB user+positions, live prices + FX, `getRiskBudget` | Writes equity snapshot via `recordEquitySnapshot` |
-| `src/app/risk/page.tsx` + `src/components/risk/*` | Risk UI rendering (budget, stops, protection progress, trailing controls) | `/api/risk`, `/api/stops/sync` payloads | UI state only |
-| `prisma/schema.prisma` | DB schema contracts for Position/Stop/Scan/Risk fields | N/A | Defines persisted source-of-truth fields |
-| `src/lib/risk-gates.test.ts`, `src/lib/stop-manager.test.ts`, `src/lib/position-sizer.test.ts` | Verified expected formula behavior | Unit test fixtures | Test-only |
+| `src/lib/stop-manager.ts` | Protection levels, recommended stop upgrades, trailing ATR stop recommendations | Current price, entry, initial risk, current stop, ATR, historical bars | Writes `StopHistory`; updates `Position.currentStop`, `Position.stopLoss`, `Position.protectionLevel` via `updateStopLoss` |
+| `src/lib/stop-manager.test.ts` | Verifies thresholds/formulas/monotonic behavior | Synthetic fixtures + mocked market bars | Test-only |
+| `prisma/sync-stops.ts` | CSV stop sync decisions, protection-level derivation on import | `Planning/positions_state.csv`, open positions, ticker matching rules | Writes `StopHistory`; updates `Position` (only when new stop is higher) |
+| `src/lib/risk-gates.ts` | Gate pass/fail set, risk budget utilization, pyramid eligibility | Candidate position, existing positions, equity, risk profile caps | Pure compute (no DB/API writes) |
+| `src/lib/risk-gates.test.ts` | Verifies gate formulas, denominator behavior, pyramid triggers | Synthetic fixtures | Test-only |
+| `src/lib/regime-detector.ts` | `detectRegime`, `checkRegimeStability`, `detectDualRegime` outputs | SPY/VWRL + MA + DI/ADX + VIX + A/D inputs | Pure compute (no writes); marked deprecated for production trade gates |
+| `src/lib/position-sizer.ts` | Shares, cost, risk cash, risk %, R-per-share | Equity, risk profile, entry/stop, optional sleeve, optional FX rate | Pure compute |
+| `src/lib/scan-engine.ts` | Filters, candidate status, distance %, rank, sizing outputs, risk-gate and anti-chase flags | Technical data, regime, FX, risk profile, open positions | Returns scan payload; persisted in scan API route |
+| `src/lib/scan-guards.ts` | Monday anti-chase decision and pullback-continuation trigger | Price, trigger, ATR, day-of-week, HH20/EMA20/low/close | Pure compute |
+| `src/cron/nightly.ts` | Nightly workflow outputs: stop updates, risk snapshots, module alerts, READY/trigger lists | DB positions/user, live prices/bars, stop manager, risk modules, snapshot sync | Writes stop updates, heartbeat, equity snapshot, notifications |
+| `prisma/schema.prisma` | Persistence contracts for position/stop/scan/risk metrics | N/A | Defines DB source-of-truth fields |
+| `src/app/api/positions/route.ts` | Position payload incl. `rMultiple`, `gainPercent`, GBP fields (`initialRiskGBP`) | Positions, live prices, FX normalization, risk helpers | API response only |
+| `src/app/api/risk/route.ts` | Risk summary, budget, open-risk fields, risk efficiency | User/profile, open positions, prices/FX, risk budget/equity snapshot funcs | API response + writes equity snapshot |
+| `src/app/risk/page.tsx` + `src/components/risk/*` | Risk dashboard rendering from API | `/api/risk` payload | UI state only |
 
-Evidence anchors:  
-- `scan-engine`: `src/lib/scan-engine.ts:runFullScan:123`, `classifyCandidate:73`, `runTechnicalFilters:41`  
-- `scan-guards`: `src/lib/scan-guards.ts:checkAntiChasingGuard:5`, `checkPullbackContinuationEntry:75`  
-- `risk-gates`: `src/lib/risk-gates.ts:validateRiskGates:33`, `getRiskBudget:237`, `canPyramid:167`  
-- `stop-manager`: `src/lib/stop-manager.ts:calculateStopRecommendation:66`, `updateStopLoss:108`, `calculateTrailingATRStop:233`  
-- `sync-stops`: `prisma/sync-stops.ts:syncStops:16`  
-- `position-sizer`: `src/lib/position-sizer.ts:calculatePositionSize:20`  
-- `regime-detector`: `src/lib/regime-detector.ts:detectRegime:28`, `detectDualRegime:148`  
-- `nightly`: `src/cron/nightly.ts:runNightlyProcess:40`  
-- API/UI: `src/app/api/positions/route.ts:GET:35`, `src/app/api/risk/route.ts:GET:14`, `src/app/risk/page.tsx:RiskPage:34`  
-- Schema: `prisma/schema.prisma:model Position:58`, `StopHistory:96`, `ScanResult:120`, `EquitySnapshot:250`
+Evidence pointers (current):
+- `src/lib/stop-manager.ts:getProtectionLevel:19`, `calculateStopRecommendation:63`, `calculateTrailingATRStop:233`, `updateStopLoss:101`
+- `prisma/sync-stops.ts:syncStops:16`
+- `src/lib/risk-gates.ts:validateRiskGates:28`, `getRiskBudget:237`, `canPyramid:167`
+- `src/lib/regime-detector.ts:detectRegime:28`, `checkRegimeStability:119`, `detectDualRegime:148`
+- `src/lib/position-sizer.ts:calculatePositionSize:20`
+- `src/lib/scan-engine.ts:runTechnicalFilters:38`, `classifyCandidate:73`, `runFullScan:115`
+- `src/lib/scan-guards.ts:checkAntiChasingGuard:11`, `checkPullbackContinuationEntry:75`
+- `src/cron/nightly.ts:runNightlyProcess:40`
+- `src/app/api/positions/route.ts:GET:35`, `src/app/api/risk/route.ts:GET:14`
+- `prisma/schema.prisma:model Position:56`, `StopHistory:91`, `ScanResult:115`, `EquitySnapshot:250`
 
 ### 1.2 Data flow (implemented)
 
-- Scan universe + technicals: `runFullScan` (`src/lib/scan-engine.ts:123`)  
-- Technical filters + status: `runTechnicalFilters` + `classifyCandidate` (`src/lib/scan-engine.ts:41`, `:73`)  
-- Guards: anti-chase + pullback continuation (`src/lib/scan-engine.ts:297`, `src/lib/scan-guards.ts:5`, `:75`)  
-- Risk gates: `validateRiskGates` (`src/lib/scan-engine.ts:279`, `src/lib/risk-gates.ts:33`)  
-- Stop manager: recs + trailing updates (`src/cron/nightly.ts:100`, `:125`, `src/lib/stop-manager.ts:157`, `:311`)  
-- Position sizing: `calculatePositionSize` (`src/lib/scan-engine.ts:258`, `src/lib/position-sizer.ts:20`)  
-- DB sync: scan persistence + stop history + position updates (`src/app/api/scan/route.ts:46`, `src/lib/stop-manager.ts:143`, `:154`, `prisma/sync-stops.ts:118`, `:129`)  
-- API: `/api/scan`, `/api/risk`, `/api/positions`, `/api/stops/sync` (`src/app/api/*/route.ts`)  
-- UI: risk dashboard and scan page consume API fields (`src/app/risk/page.tsx:44`, `src/app/scan/page.tsx`)
+- `scan-engine.runFullScan` runs universe + technical fetch + filter/status/ranking (`src/lib/scan-engine.ts:115-447`)
+- `scan-guards` applies anti-chase and pullback continuation conditions (`src/lib/scan-engine.ts:296-351`, `src/lib/scan-guards.ts:11-131`)
+- `risk-gates.validateRiskGates` computes gate set from sizing/open positions (`src/lib/scan-engine.ts:269-293`, `src/lib/risk-gates.ts:28-141`)
+- `stop-manager` computes + persists stop upgrades and trailing stops (`src/cron/nightly.ts:88-152`, `src/lib/stop-manager.ts:63-341`)
+- `position-sizer.calculatePositionSize` provides shares/risk for candidates (`src/lib/scan-engine.ts:246-267`, `src/lib/position-sizer.ts:20-95`)
+- DB sync path updates stops from CSV (`prisma/sync-stops.ts:16-165`)
+- API layer serves positions/risk summaries (`src/app/api/positions/route.ts:35+`, `src/app/api/risk/route.ts:14+`)
+- UI reads APIs and displays risk state (`src/app/risk/page.tsx:50-65,121-143`)
 
-### 1.3 Single source of truth + duplicates
+### 1.3 Source-of-truth map + duplicate calculations
 
-- READY/WATCH/FAR status source: `scan-engine.classifyCandidate` (`src/lib/scan-engine.ts:73-81`) with later overrides (`WAIT_PULLBACK`, efficiency downgrade) (`src/lib/scan-engine.ts:234`, `:303`).
-- Stop source of truth: `Position.currentStop` + `StopHistory` (`prisma/schema.prisma:72`, `:96`), mutated centrally by `updateStopLoss` (`src/lib/stop-manager.ts:108`).
-- ATR source(s):
-  - General ATR utility: `market-data.calculateATR` (`src/lib/market-data.ts:253`).
-  - Separate trailing ATR loop inside `calculateTrailingATRStop` (`src/lib/stop-manager.ts:264-285`) (duplicated ATR implementation).
-- Risk-per-trade source: `RISK_PROFILES[*].riskPerTrade` (`src/types/index.ts:24-58`).
-- Open risk source for budget/gates: `(currentPrice - currentStop) * shares` in `risk-gates` (`src/lib/risk-gates.ts:50`, `:252`) and risk API (`src/app/api/risk/route.ts:77`).
-- Performance source in positions API: `gainPercent`, `rMultiple`, GBP value/PnL enrichment in positions route (`src/app/api/positions/route.ts:123-129`).
-- Re-entry logic source: pullback continuation (`scan-guards`) and add-on pyramiding (`risk-gates.canPyramid`); no separate "post-stop re-entry" module found in target scope.
+- READY/WATCH/FAR/WAIT_PULLBACK: `scan-engine` status + override path (`classifyCandidate` + extATR override) (`src/lib/scan-engine.ts:73-81`, `296-314`)
+- Stop level in storage: `Position.currentStop` + `StopHistory` (`prisma/schema.prisma:64,91`), mutated by `updateStopLoss` and `sync-stops`
+- ATR values:
+  - core ATR utility in `market-data.calculateATR` (`src/lib/market-data.ts:253-269`)
+  - separate rolling ATR loop in `stop-manager.calculateTrailingATRStop` (`src/lib/stop-manager.ts:264-285`)
+- Risk-per-trade constants: `RISK_PROFILES[*].riskPerTrade` (`src/types/index.ts:22-51`)
+- Open-risk formula source in risk workflows: `max(0, (currentPrice - currentStop)*shares)` with GBP-normalization where applicable (`src/lib/risk-gates.ts:46-52`, `src/lib/risk-fields.ts:14-20`, `src/app/api/risk/route.ts:60-84`)
+- Re-entry behavior in audited scope: pullback continuation (`scan-guards`) + pyramiding add checks (`risk-gates.canPyramid`); no separate “post-stop re-entry engine” module found in listed targets
 
 ---
 
 ## 2) RULES EXTRACT (AS CODED)
 
-### 2A) Readiness/state classification
+### 2A) Readiness / state classification
 
 #### `risk-gates.ts` (`validateRiskGates`)
 
-1. **Total Open Risk gate**  
-   - Formula: `((currentOpenRisk + newPosition.riskDollars) / equity) * 100`  
-   - Pass condition: `<= profile.maxOpenRisk`  
-   - Existing open risk excludes HEDGE positions; per-position risk fallback: `(currentPrice - currentStop) * shares`, clamped `Math.max(0, risk)`  
+1. **Total Open Risk gate**
+   - `currentOpenRisk = Σ max(0, riskDollars ?? (currentPrice-currentStop)*shares)` excluding `sleeve==='HEDGE'`
+   - `totalOpenRiskPercent = ((currentOpenRisk + newPosition.riskDollars) / equity) * 100`
+   - pass if `totalOpenRiskPercent <= profile.maxOpenRisk`
    - Evidence: `src/lib/risk-gates.ts:44-62`
 
-2. **Max Positions gate**  
-   - `openPositions = nonHedgePositions.length`  
-   - Pass condition: `openPositions < profile.maxPositions`  
+2. **Max Positions gate**
+   - `openPositions = nonHedgePositions.length`
+   - pass if `openPositions < profile.maxPositions`
    - Evidence: `src/lib/risk-gates.ts:65-74`
 
-3. **Sleeve limit gate**  
-   - `totalPortfolioValue = sum(existing.value) + newPosition.value`  
-   - `sleevePercent = sleeveValue / totalPortfolioValue`  
-   - Pass condition: `sleevePercent <= SLEEVE_CAPS[newPosition.sleeve]`  
-   - Evidence: `src/lib/risk-gates.ts:77-89`
+3. **Sleeve/cluster/sector/position-size denominators**
+   - `totalInvestedValue = Σ existing.value + newPosition.value`
+   - `denom = Math.max(equity, totalInvestedValue)`
+   - Evidence: `src/lib/risk-gates.ts:77-79`
 
-4. **Cluster concentration gate**  
-   - Only if `newPosition.cluster` exists  
-   - `clusterPercent = clusterValue / totalPortfolioValue`  
-   - Pass condition: `clusterPercent <= caps.clusterCap`  
-   - Evidence: `src/lib/risk-gates.ts:92-103`
+4. **Sleeve limit**
+   - `sleevePercent = sleeveValue / denom`
+   - pass if `sleevePercent <= SLEEVE_CAPS[newPosition.sleeve]`
+   - Evidence: `src/lib/risk-gates.ts:80-90`
 
-5. **Sector concentration gate**  
-   - Only if `newPosition.sector` exists  
-   - `sectorPercent = sectorValue / totalPortfolioValue`  
-   - Pass condition: `sectorPercent <= caps.sectorCap`  
-   - Evidence: `src/lib/risk-gates.ts:107-118`
+5. **Cluster concentration** (if cluster present)
+   - `clusterPercent = clusterValue / denom`
+   - pass if `clusterPercent <= caps.clusterCap`
+   - Evidence: `src/lib/risk-gates.ts:93-104`
 
-6. **Position size gate**  
-   - `positionSizePercent = newPosition.value / totalPortfolioValue`  
-   - Cap: `caps.positionSizeCaps[newPosition.sleeve] ?? POSITION_SIZE_CAPS.CORE`  
-   - Pass condition: `positionSizePercent <= positionSizeCap`  
-   - Evidence: `src/lib/risk-gates.ts:122-131`
+6. **Sector concentration** (if sector present)
+   - `sectorPercent = sectorValue / denom`
+   - pass if `sectorPercent <= caps.sectorCap`
+   - Evidence: `src/lib/risk-gates.ts:108-119`
 
-#### `scan-guards.ts` READY/WATCH/SKIP-related logic
+7. **Position size cap**
+   - `positionSizeCap = caps.positionSizeCaps[sleeve] ?? POSITION_SIZE_CAPS.CORE`
+   - `positionSizePercent = newPosition.value / denom`
+   - pass if `positionSizePercent <= positionSizeCap`
+   - Evidence: `src/lib/risk-gates.ts:123-132`
 
-- Monday-only anti-chase guard active only when `dayOfWeek === 1` and `currentPrice >= entryTrigger` (`src/lib/scan-guards.ts:11-19`).
-- Reject if `gapATR > 0.75` (`>` operator) (`src/lib/scan-guards.ts:25`).
-- Reject if `%above > 3.0` (`>` operator) (`src/lib/scan-guards.ts:33`).
-- Pullback mode is only active for `status === 'WAIT_PULLBACK'` (`src/lib/scan-guards.ts:85`).
+#### `scan-guards.ts` and `scan-engine.ts`
 
-#### `scan-engine.ts` status logic + DIST formulas
+- Anti-chase guard active only when Monday (`dayOfWeek===1`) and `currentPrice>=entryTrigger`
+- reject if `gapATR > 0.75`
+- reject if `percentAbove > 3.0`
+- Evidence: `src/lib/scan-guards.ts:16-41`
 
-- Distance formula (percent units):  
-  `distance = ((entryTrigger - price) / price) * 100`  
-  Evidence: `src/lib/scan-engine.ts:77`
-- **DIST_READY** (implicit): `distance <= 2` ⇒ `READY`  
-  Evidence: `src/lib/scan-engine.ts:79`
-- **DIST_WATCH** (implicit): `2 < distance <= 3` ⇒ `WATCH`  
-  Evidence: `src/lib/scan-engine.ts:80`
-- Else: `FAR` (`src/lib/scan-engine.ts:81`).
-- Additional state override: if `extATR > 0.8`, set `WAIT_PULLBACK` (`src/lib/scan-engine.ts:298-303`).
+- Base status classification (`scan-engine.classifyCandidate`):
+  - `distance = ((entryTrigger - price) / price) * 100`
+  - `distance <= 2` => `READY`
+  - `distance <= 3` => `WATCH`
+  - else `FAR`
+- Evidence: `src/lib/scan-engine.ts:73-81`
+
+- Stage-6 all-day extension guard override in `runFullScan`:
+  - `extATR = (price-entryTrigger)/atr`
+  - if `extATR > 0.8` => set `status='WAIT_PULLBACK'`
+- Evidence: `src/lib/scan-engine.ts:296-314`
+
+DIST definitions as coded:
+- `DIST_READY`: `distance <= 2` (percent)
+- `DIST_WATCH`: `2 < distance <= 3` (percent)
 
 ### 2B) Regime detection
 
-#### `regime-detector.ts`
+- `regime-detector.ts` is marked deprecated for production trade gating (`@deprecated`); trade gates use `market-data.getMarketRegime()`
+- Evidence: `src/lib/regime-detector.ts:8,25`, `src/lib/market-data.ts:649-662`
 
-- Module marked deprecated for trading decisions; comments state production gates use `getMarketRegime()` from market-data (`src/lib/regime-detector.ts:8`, `:25`).
-- CHOP band constant: `CHOP_BAND_PCT = 0.02` (±2%) (`src/lib/regime-detector.ts:19`).
-- `detectRegime` scoring uses SPY vs MA200, DI comparison, VIX, A/D ratio; if in chop band, regime forced to `SIDEWAYS` (`src/lib/regime-detector.ts:39-109`).
-- `checkRegimeStability`: stable only if `consecutiveDays >= 3` (`>=` operator) (`src/lib/regime-detector.ts:131`).
-- `detectDualRegime`: SPY+VWRL each get chop/bull/bear by ±2% around MA200; combined is BULLISH only if both bullish, BEARISH if either bearish (`src/lib/regime-detector.ts:148-177`).
+- In deprecated `detectRegime`:
+  - `CHOP_BAND_PCT = 0.02` (±2% around MA200)
+  - if SPY in chop band -> force `SIDEWAYS`
+  - bullish/bearish point scoring from price vs MA200, DI relation, VIX, A/D ratio
+- Evidence: `src/lib/regime-detector.ts:19,38-109`
 
-#### Production regime in use (integration context)
+- `checkRegimeStability`:
+  - stable if `consecutiveDays >= 3`
+  - else display as CHOP/SIDEWAYS proxy
+- Evidence: `src/lib/regime-detector.ts:131-143`
 
-- Live trading paths call `getMarketRegime()` (`src/lib/market-data.ts:649`).
-- Rule: BULLISH if `spyPrice > spyMa200 && spyMa50 > spyMa200`; BEARISH if both below; else SIDEWAYS (`src/lib/market-data.ts:659-661`).
+- `detectDualRegime`:
+  - per benchmark regime via ±2% MA200 chop band
+  - combined `BULLISH` only if both bullish; `BEARISH` if either bearish
+- Evidence: `src/lib/regime-detector.ts:156-177`
+
+- Production regime (`getMarketRegime`):
+  - `BULLISH` if `spyPrice > spyMa200 && spyMa50 > spyMa200`
+  - `BEARISH` if `spyPrice < spyMa200 && spyMa50 < spyMa200`
+  - else `SIDEWAYS`
+- Evidence: `src/lib/market-data.ts:659-661`
+
+Candle timing:
+- Technical/regime calculations use daily bars from `getDailyPrices(..., 'full'|'compact')`
+- No weekly-candle regime path in audited modules
+- Evidence: `src/lib/market-data.ts:286-336,649-662`
 
 ### 2C) Stops
 
-#### `stop-manager.ts`
-
-- Protection level thresholds (`getProtectionLevel`):
-  - `>= 3.0` → `LOCK_1R_TRAIL`
-  - `>= 2.5` → `LOCK_08R`
-  - `>= 1.5` → `BREAKEVEN`
+- Protection levels by R-multiple:
+  - `>=3.0` => `LOCK_1R_TRAIL`
+  - `>=2.5` => `LOCK_08R`
+  - `>=1.5` => `BREAKEVEN`
   - else `INITIAL`
-  - Evidence: `src/lib/stop-manager.ts:22-26`
+- Evidence: `src/lib/stop-manager.ts:19-26`
 
 - Protection stop formulas (`calculateProtectionStop`):
   - `INITIAL`: `entry - initialRisk`
   - `BREAKEVEN`: `entry`
-  - `LOCK_08R`: `entry + 0.5 * initialRisk`
-  - `LOCK_1R_TRAIL`: `max(entry + 1.0 * initialRisk, currentPrice - 2 * currentATR)` if ATR present; else lock floor
-  - Evidence: `src/lib/stop-manager.ts:40-56`
+  - `LOCK_08R`: `entry + 0.5*initialRisk`
+  - `LOCK_1R_TRAIL`: `max(entry + 1.0*initialRisk, currentPrice - 2*currentATR)`
+- Evidence: `src/lib/stop-manager.ts:34-56`
 
-- Recommendation upgrade rule (`calculateStopRecommendation`):
-  - Compute `rMultiple = (currentPrice - entryPrice) / initialRisk`
-  - Upgrade only if new level index is higher than current level (`recommendedIdx > currentIdx`)
-  - Monotonic guard: if `newStop <= currentStop`, return null
-  - Evidence: `src/lib/stop-manager.ts:78-93`
+- Recommendation constraints (`calculateStopRecommendation`):
+  - computes `rMultiple = (currentPrice-entryPrice)/initialRisk`
+  - only higher protection-level upgrades (`recommendedIdx > currentIdx`)
+  - monotonic recommendation guard: ignore if `newStop <= currentStop`
+- Evidence: `src/lib/stop-manager.ts:74-93`
 
-- Hard monotonic persistence rule (`updateStopLoss`): throws if `newStop < currentStop`  
-  Evidence: `src/lib/stop-manager.ts:124-130`
+- Persisted monotonic hard-stop (`updateStopLoss`): throws if `newStop < currentStop`
+- Evidence: `src/lib/stop-manager.ts:124-130`
 
-- Trailing ATR implementation (`calculateTrailingATRStop`):
-  - Uses daily bars since entry date
-  - ATR computed as simple average of rolling 14 true ranges in loop
-  - Candidate trailing stop = `highestClose - atrMultiplier * atr` (default multiplier `2.0`)
-  - Ratchets only upward (`candidateStop > trailingStop`)
-  - Output stop rounded to 2 decimals (`Math.round(x*100)/100`)
-  - Evidence: `src/lib/stop-manager.ts:233-306`
+- Trailing ATR stop (`calculateTrailingATRStop`):
+  - rolling ATR uses arithmetic average of 14 true ranges in loop (SMA-style, not Wilder smoothing)
+  - candidate stop: `highestClose - atrMultiplier*atr` (default `2.0`)
+  - ratchet only upward (`candidateStop > trailingStop`)
+  - output `trailingStop` rounded to 2 decimals
+- Evidence: `src/lib/stop-manager.ts:233-306`
 
-- `sync-stops.ts` CSV import path:
-  - updates only if `newStop > oldStop`
-  - derives protection level using `rMultiple = (newStop - entryPrice) / initialRisk`
-  - writes `StopHistory` and updates `Position`
-  - Evidence: `prisma/sync-stops.ts:101-131`
+- CSV sync (`sync-stops.ts`):
+  - apply only if `newStop > oldStop`
+  - level from `rMultiple=(newStop-entryPrice)/initialRisk` and same threshold ladder
+- Evidence: `prisma/sync-stops.ts:101-132`
 
 ### 2D) Sizing
 
-#### `position-sizer.ts`
+- `riskPercent = customRiskPercent ?? RISK_PROFILES[riskProfile].riskPerTrade`
+- `riskPerShare = (entryPrice-stopPrice) * fxToGbp`
+- `riskCashRaw = equity*(riskPercent/100)` then optional `risk_cash_cap` / `risk_cash_floor`
+- `shares = floor(riskCash/riskPerShare)`
+- enforce sleeve position-size cap against GBP cost: `shares*entryPrice*fxToGbp <= equity*cap`
+- enforce per-position max loss cap if configured: `riskPerShare*shares <= equity*(per_position_max_loss_pct/100)`
+- output risk%: `(actualRiskDollars/equity)*100`
+- Evidence: `src/lib/position-sizer.ts:37-89`
 
-- Input constraints for long positions: `stopPrice < entryPrice` required (`src/lib/position-sizer.ts:33`).
-- Risk cash: `riskCashRaw = equity * (riskPercent / 100)` where `riskPercent = customRiskPercent ?? profile.riskPerTrade` (`src/lib/position-sizer.ts:38-41`).
-- Risk per share: `(entryPrice - stopPrice) * fxToGbp` (`src/lib/position-sizer.ts:39`).
-- Shares: `Math.floor(riskCash / riskPerShare)` (always round down) (`src/lib/position-sizer.ts:52`).
-- Position-size cap enforcement by sleeve/profile: `shares` reduced if `shares*entry*fx > equity*cap` (`src/lib/position-sizer.ts:55-63`).
-- Per-position loss cap: `per_position_max_loss_pct ?? riskPercent` then floor to cap (`src/lib/position-sizer.ts:66-70`).
-- Actual risk % output: `(actualRiskDollars / equity) * 100` (`src/lib/position-sizer.ts:86`).
+Key constants used:
+- `ATR_STOP_MULTIPLIER = 1.5`
+- `ATR_VOLATILITY_CAP_ALL = 8`
+- `ATR_VOLATILITY_CAP_HIGH_RISK = 7`
+- `BALANCED`: `riskPerTrade=0.95`, `maxPositions=5`, `maxOpenRisk=5.5`
+- Evidence: `src/types/index.ts:30-37,74-81`
 
 ---
 
 ## 3) CONSISTENCY & INTEGRATION CHECKS
 
-### Potential Mismatch A — UI watch threshold text vs coded threshold (Resolved)
+### Potential Mismatch 1 — Monday anti-chase threshold text vs coded threshold
 
-- Coded WATCH threshold is `distance <= 3` (`src/lib/scan-engine.ts:80`).
-- Scan UI explanatory text is now aligned to `≤ 3% from breakout` (`src/app/scan/page.tsx:361`).
-- Status: fixed via UI wording update only; no classification logic changes.
+- Risk page immutable-rule text states: “NEVER chase a Monday gap >1 ATR”.
+- Actual guard code blocks at `gapATR > 0.75` (and separately `percentAbove > 3.0`).
+- Evidence: `src/app/risk/page.tsx:106`, `src/lib/scan-guards.ts:29-41`
 
-### Potential Mismatch B — Cached scan route forces gates/anti-chase to pass
+### Potential Mismatch 2 — Risk metric naming across APIs
 
-- DB fallback reconstruction sets `passesRiskGates: true` and `passesAntiChase: true` for all candidates (`src/app/api/scan/route.ts:202-203`).
-- Original scan computes these dynamically per candidate (`src/lib/scan-engine.ts:279-292`, `:297-366`).
-- Cached data can overstate executable readiness.
+- `/api/risk` uses open risk (`currentPrice - currentStop`) via `computeOpenRiskGBP`.
+- `/api/positions` exposes `initialRiskGBP` and deprecated alias `riskGBP` from (`entryPrice - stop`).
+- Same “risk” label family can be read as one concept while formulas differ by intent.
+- Evidence: `src/app/api/risk/route.ts:60-84`, `src/lib/risk-fields.ts:1-20`, `src/app/api/positions/route.ts:131-156`
 
-### Potential Mismatch C — ATR% filter threshold reconstructed as fixed 8 in cache path
+### Potential Mismatch 3 — Stop rounding differs by path
 
-- Live scan uses sleeve-aware ATR cap: HIGH_RISK uses `7`, others `8` (`src/lib/scan-engine.ts:53-55`, constants in `src/types/index.ts:80-81`).
-- Cached reconstruction hardcodes `atrPercentBelow8: r.atrPercent < 8` (`src/app/api/scan/route.ts:210`).
+- Trailing ATR path rounds to 2 decimals (`Math.round(x*100)/100`).
+- R-based recommendation path and CSV sync do not apply explicit rounding before persistence.
+- Evidence: `src/lib/stop-manager.ts:299`, `src/lib/stop-manager.ts:84-93,143-154`, `prisma/sync-stops.ts:118-131`
 
-### Potential Mismatch D — "Risk at stop" metric differs across APIs
+### Nightly ordering check (stale-data risk)
 
-- `/api/positions` computes `riskGBP = (entryPriceGBP - stopGBP) * shares` (`src/app/api/positions/route.ts:131`).
-- `/api/risk` uses `riskDollars = (currentPriceGbp - currentStopGbp) * shares` (`src/app/api/risk/route.ts:77`), matching `risk-gates` open-risk formula (`src/lib/risk-gates.ts:50`, `:252`).
-- Same label family (“risk” in UI/API) maps to different formulas.
+- Nightly step order is: stop updates (step 3/3b) -> equity snapshot (step 6) -> snapshot sync/query (step 7).
+- This ordering uses post-update stops before risk snapshot; no stale ordering issue observed.
+- Evidence: `src/cron/nightly.ts:88-152`, `355-382`, `429-519`
 
-### Potential Mismatch E — Concentration/size gates denominator is invested-position value only
-
-- `totalPortfolioValue = existing position value + new position value` (no cash/equity denominator) (`src/lib/risk-gates.ts:77`).
-- With no existing positions, sleeve/cluster/sector/position-size percentages are all 100% and fail caps.
-- Verified by synthetic execution:
-  - `validateRiskGates(..., existingPositions=[], equity=10000, BALANCED)` returns failed Sleeve/Cluster/Sector/Position Size despite low open-risk and position count.
-  - Terminal run output captured during audit (2026-02-15).
-
-### Nightly ordering check (stop vs snapshot)
-
-- Nightly sequence updates stops in step 3 (`src/cron/nightly.ts:79-147`) before recording equity snapshot in step 6 (`src/cron/nightly.ts:352-368`) and snapshot sync step 7 (`src/cron/nightly.ts:429-454`); ordering is consistent with using latest stop levels before risk snapshot.
+No proven mismatch found in current code for previously flagged items:
+- Risk-gates denominator now uses `Math.max(equity, totalInvestedValue)` (prevents empty-book 100% concentration auto-fail)
+- Scan DB fallback now preserves nullable pass flags via `normalizePersistedPassFlag` (no forced `true`)
+- Evidence: `src/lib/risk-gates.ts:77-79`, `src/app/api/scan/route.ts:217-220`
 
 ---
 
 ## 4) NUMERICAL VALIDATION (3 WORKED EXAMPLES)
 
-Validation basis:
-- Executed tests: `npm run test:unit -- src/lib/risk-gates.test.ts src/lib/stop-manager.test.ts src/lib/position-sizer.test.ts` → **26/26 passed**.
-- Executed synthetic runs via `npx tsx -e` for gates/sizing/stop examples.
+Validation execution performed:
+- `npm run test:unit -- src/lib/risk-gates.test.ts src/lib/stop-manager.test.ts src/lib/position-sizer.test.ts` => **31/31 passed**.
+- Synthetic examples executed with `npx tsx -e` using:
+  - `classifyCandidate`
+  - `calculatePositionSize`
+  - `validateRiskGates`
+  - `calculateStopRecommendation`
 
-Assumptions for examples:
-- Equity = 10,000 GBP equivalent
-- Risk profile = BALANCED (`riskPerTrade=0.95`, `maxOpenRisk=5.5`) (`src/types/index.ts:32-37`)
-- ATR stop multiplier = 1.5 (`src/types/index.ts:83`)
+Assumptions used in synthetic run:
+- Equity = 10,000
+- Profile = BALANCED (`riskPerTrade=0.95`, `maxOpenRisk=5.5`)
+- ATR = 4 for entry-stop examples
+- Initial stop formula from scan path: `entry - 1.5*ATR`
 
 ### Example 1 — Clearly READY
 
 Inputs:
-- Price = 100
-- Entry trigger = 101
-- ATR = 4
-- Sleeve = CORE
-- Existing positions = none
+- `price=100`, `entry=101`, `atr=4`, no existing positions
 
 Step-by-step:
-1. **Readiness**:  
-   `distance = ((101-100)/100)*100 = 1.0%` ⇒ READY (`<=2`) (`src/lib/scan-engine.ts:77-79`)
-2. **Initial stop** (scan):  
-   `stop = entry - 1.5*ATR = 101 - 6 = 95` (`src/lib/scan-engine.ts:224`, `src/types/index.ts:83`)
-3. **Trailing/protection** (if already in trade and at 3R):  
-   For entry=100, initialRisk=10, currentPrice=130, ATR=5:  
-   lock floor = 110; trail = 130 - 10 = 120; new stop = max(110,120)=120 (`src/lib/stop-manager.ts:48-56`).  
-   Executed synthetic check returned `newStop=120`.
-4. **Position size**:  
-   risk/share = `101-95=6`; risk cash = `10000*0.95%=95`; shares=`floor(95/6)=15`; risk=`90` (`src/lib/position-sizer.ts:38-53`).
-5. **Open risk contribution**:  
-   candidate risk contribution = `90`; open risk % = `0.9%` (`src/lib/risk-gates.ts:57`).
-6. **Gate result from implementation** with no existing positions:  
-   Total Open Risk and Max Positions pass; Sleeve/Cluster/Sector/Position Size fail at 100% (synthetic execution + `src/lib/risk-gates.ts:77-131`).
-7. **API/UI value mapping**:  
-   - Scan UI displays `distancePercent` and `status` directly (`src/app/scan/page.tsx` READY/WATCH table).  
-   - Risk UI displays `/api/risk` budget and positions directly (`src/app/risk/page.tsx:44,111-126`).
+1. Readiness distance: `((101-100)/100)*100 = 1.0%` -> `READY` (`<=2`)
+2. Initial stop: `101 - 1.5*4 = 95`
+3. Sizing: risk/share `=6`; risk cash `=10000*0.95%=95`; shares `=floor(95/6)=15`; risk `=90`; cost `=1515`
+4. Gates:
+   - open risk `% = (0+90)/10000*100 = 0.9%` -> pass (`<=5.5`)
+   - sleeve/cluster/sector/position-size each `15.15%` (denom=10000) -> all pass
+5. Trailing stop worked check (separate trade-state example): `calculateStopRecommendation(130,100,10,90,'INITIAL',5)` returns `newStop=120`, `newLevel=LOCK_1R_TRAIL`
 
 ### Example 2 — Clearly WATCH
 
 Inputs:
-- Price = 100
-- Entry trigger = 103
-- ATR = 4
+- `price=100`, `entry=102.5`, `atr=4`, no existing positions
 
 Step-by-step:
-1. **Readiness**:  
-   `distance = ((103-100)/100)*100 = 3.0%` ⇒ WATCH (`<=3` and not `<=2`) (`src/lib/scan-engine.ts:79-80`).
-2. **Initial stop**:  
-   `stop = 103 - 1.5*4 = 97`.
-3. **Trailing stop**: not active pre-entry; protection progression applies only after position exists.
-4. **Position size**:  
-   risk/share `= 6`; risk cash `=95`; shares `=15`; risk dollars `=90` (same as Example 1 formula path).
-5. **Open risk contribution**: `0.9%` of equity from this candidate risk amount.
-6. **API/UI mapping check**:
-   - Status from `scan-engine` is persisted in `ScanResult.status` (`src/app/api/scan/route.ts:61-66`, schema `prisma/schema.prisma:137`).
-   - UI watch explanatory text now matches coded threshold (`≤ 3%`) (`src/app/scan/page.tsx:361`, `src/lib/scan-engine.ts:80`).
+1. Readiness distance: `((102.5-100)/100)*100 = 2.5%` -> `WATCH` (`>2 && <=3`)
+2. Initial stop: `102.5 - 6 = 96.5`
+3. Sizing: shares `=15`; risk `=90`; risk% `=0.9`; cost `=1537.5`
+4. Gates: all pass; sleeve/cluster/sector/position-size each `15.38%`
+5. Trailing stop example remains monotonic (`newStop=120` for the dedicated +3R sample)
 
-### Example 3 — Borderline threshold case
+### Example 3 — Borderline threshold (exact boundary)
 
 Inputs:
-- Price = 100
-- Entry trigger = 102
-- ATR = 4
+- `price=100`, `entry=102`, `atr=4`, no existing positions
 
 Step-by-step:
-1. **Readiness**:  
-   `distance = ((102-100)/100)*100 = 2.0%`  
-   Because comparison is `<= 2`, classification is READY (borderline) (`src/lib/scan-engine.ts:79`).
-2. **Initial stop**: `102 - 6 = 96`.
-3. **Sizing**: shares `= floor(95/6)=15`, risk dollars `=90`, risk % `=0.9%`.
-4. **Open risk + caps behavior**:
-   - Open risk gate passes at `0.9% <= 5.5%`.  
-   - With `existingPositions=[]`, concentration and position-size gates evaluate at 100% and fail (same denominator behavior as Example 1).
-5. **API/UI match**:
-   - READY count in scan response is built from candidate statuses (`src/lib/scan-engine.ts:446-447`).
-   - Scan page groups READY/WATCH by `status` and table shows `distancePercent` (`src/app/scan/page.tsx` around READY/WATCH table block).
+1. Readiness distance: `((102-100)/100)*100 = 2.0%`
+2. Because comparison is `<=2`, status => `READY` (borderline)
+3. Initial stop: `102 - 6 = 96`
+4. Sizing: shares `=15`; risk `=90`; risk% `=0.9`; cost `=1530`
+5. Gates: all pass; sleeve/cluster/sector/position-size each `15.30%`
+
+API/UI confirmation for these values (code-path evidence):
+- Status and distance are surfaced from scan candidate payload and displayed directly in scan UI cards/table.
+  - Evidence: `src/app/api/scan/route.ts:167-176,241-249`, `src/app/scan/page.tsx:354-361`
+- Risk dashboard uses `/api/risk` fields directly; open-risk is sourced from `computeOpenRiskGBP` formula.
+  - Evidence: `src/app/api/risk/route.ts:60-84,111-120`, `src/app/risk/page.tsx:53-65,125-142`
 
 ---
 
@@ -317,53 +317,61 @@ Step-by-step:
 
 | Severity (P0–P3) | Area | Finding | Evidence (file:function:line) | Impact | Minimal Fix | Validation Steps |
 |---|---|---|---|---|---|---|
-| P1 | Risk gates | Concentration/position-size gates use invested-position total as denominator, causing 100% sleeve/cluster/sector/size on first position (`existingPositions=[]`) and systematic gate failures even at low open-risk. | `src/lib/risk-gates.ts:validateRiskGates:77-131`; synthetic run output (2026-02-15) | Misclassifies readiness executable state; can block valid entries and distort gate pass rates. | In `validateRiskGates`, compute concentration/size percentages against a denominator that includes uninvested capital (e.g., equity) or explicitly gate only when denominator > threshold and behavior is intended. | Add/extend unit test in `risk-gates.test.ts` for empty-book scenario; run `npm run test:unit -- src/lib/risk-gates.test.ts`. |
-| P1 | Scan cache integration | DB cache reconstruction forces `passesRiskGates=true` and `passesAntiChase=true` for all candidates. | `src/app/api/scan/route.ts:GET:202-203`; live calc source `src/lib/scan-engine.ts:279-366` | Cached scan may present blocked candidates as executable, increasing wrong-trade risk from stale/flattened gate states. | Persist and restore real gate/anti-chase outcomes (or mark unknown) instead of forcing true in cache fallback path. | Add API test/fixture or manual DB fallback check; verify candidate flags in `/api/scan` memory vs DB source are consistent. |
-| P2 | UI/Readiness display | WATCH label mismatch resolved: UI now shows `≤ 3%`, matching logic `<=3%`. | `src/app/scan/page.tsx:361`; `src/lib/scan-engine.ts:classifyCandidate:80` | Resolved; removes user-facing threshold confusion. | Completed (UI text update only). | Confirm scan page cards show READY `≤ 2%` and WATCH `≤ 3%`. |
-| P2 | API risk metrics | `/api/positions` risk metric uses entry-to-stop (`riskGBP`), while `/api/risk`/risk-gates use current-to-stop (`riskDollars`). | `src/app/api/positions/route.ts:131`; `src/app/api/risk/route.ts:77`; `src/lib/risk-gates.ts:50,252` | Reporting inconsistency across pages/endpoints; potential confusion during risk review. | Standardize metric naming or unify formula by endpoint intent. | Compare same position across `/api/positions` and `/api/risk` responses; ensure labels clarify formula. |
-| P3 | Regime module ownership | `regime-detector.ts` documented deprecated while production trade gate uses `market-data.getMarketRegime()`. | `src/lib/regime-detector.ts:8,25`; `src/lib/market-data.ts:649-661` | Maintainability/documentation ambiguity rather than immediate trading bug. | Document canonical regime source in one place and keep deprecated module clearly non-production. | Docs/code comments check; no behavioral test required. |
+| P2 | UI vs execution guard | Risk page immutable rule says Monday chase block is `>1 ATR`, but actual guard blocks at `>0.75 ATR` (also `>3%` above trigger). | `src/app/risk/page.tsx:RiskPage:106`; `src/lib/scan-guards.ts:checkAntiChasingGuard:29-41` | User-facing threshold can mislead manual trade decisions and post-trade reviews. | Update risk-page banner text to match coded thresholds (`>0.75 ATR` and `>3%`). | Visual check risk page text + unit test unchanged; optionally add UI copy snapshot/assertion if present. |
+| P2 | Reporting semantics | “Risk” fields differ by endpoint intent: `/api/risk` = open risk; `/api/positions` = initial risk (`initialRiskGBP`, deprecated `riskGBP`). | `src/app/api/risk/route.ts:GET:60-84`; `src/app/api/positions/route.ts:GET:131-156`; `src/lib/risk-fields.ts:1-20` | Can cause cross-screen comparison confusion if users treat both as the same risk metric. | Clarify labels/tooltips (e.g., “Initial Risk GBP” vs “Open Risk GBP”) without changing formulas. | Compare both endpoints for same position and confirm labels communicate formula differences. |
+| P3 | Module ownership clarity | `regime-detector.ts` still present but marked deprecated while production gate uses `getMarketRegime()`. | `src/lib/regime-detector.ts:8,25`; `src/lib/market-data.ts:getMarketRegime:649-662` | Maintenance ambiguity only; not a confirmed trading-logic defect. | Add explicit doc note in audit/docs naming canonical regime source. | Documentation check only. |
+
+No P0/P1 issue is proven in current target-module state from this audit.
+
+### Post-audit updates (2026-02-16)
+
+- Implemented: anti-chase banner copy now matches coded guard thresholds (`>0.75 ATR` and `>3%`).
+  - Evidence: `src/app/risk/page.tsx:106`; guard logic `src/lib/scan-guards.ts:29-41`.
+- Implemented: `/api/risk` now exposes explicit `openRiskDollars` alias (same formula/value as `openRiskGBP`) while keeping `riskDollars` for compatibility.
+  - Evidence: `src/app/api/risk/route.ts:86-91`; test `src/app/api/risk/route.test.ts:57-92`.
+- Validation run (post-change):
+  - `npm run test:unit -- src/app/api/risk/route.test.ts src/app/api/positions/route.test.ts` (2/2 passing).
 
 ---
 
 ## 6) MINIMAL FIX PLAN + VALIDATION CHECKLIST
 
-### P1 Issue A — Risk gate denominator behavior (`validateRiskGates`)
+### P0/P1 minimal fixes
 
-- **Smallest change target**: `src/lib/risk-gates.ts`, function `validateRiskGates`.
-- **Before**: `sleeve/cluster/sector/position-size` percentages divide by `sum(existing.value)+newPosition.value` only.
-- **After (minimal safe intent)**: percentages divide by an equity-aware denominator (or skip concentration checks when denominator equals only proposed position and policy disallows that edge case explicitly). Keep gate ordering and messages intact.
-- **Validation**:
-  - Extend unit test for empty existing positions and low-risk single candidate to verify expected pass/fail semantics.
-  - Run `npm run test:unit -- src/lib/risk-gates.test.ts`.
-  - Spot-check with `npx tsx -e` synthetic call used in this audit.
+- None required: no P0/P1 findings were proven.
+- Per non-negotiable rule, no behavior-changing code patch is proposed.
 
-### P1 Issue B — Cache fallback forcing pass flags (`/api/scan` GET)
+### P2/P3 safe cleanup plan (optional, non-behavioral)
 
-- **Smallest change target**: `src/app/api/scan/route.ts`, DB reconstruction block in `GET`.
-- **Before**: sets `passesRiskGates: true`, `passesAntiChase: true` unconditionally.
-- **After**: restore persisted values where available; if unavailable, set explicit unknown state and avoid showing as pass.
-- **Validation**:
-  - Run a fresh scan (`POST /api/scan`), then retrieve via memory and DB fallback and compare gate flags.
-  - Ensure UI stage 5 behavior does not silently assume pass for DB-restored rows.
+1. **Align anti-chase UI text with code**
+   - File/function: `src/app/risk/page.tsx` (`RiskPage` banner copy)
+   - Before: says `>1 ATR`
+   - After: says `>0.75 ATR` and include `>3%` condition
+   - Behavior impact: none (display text only)
 
-### Global validation checklist
+2. **Clarify risk labels across endpoints/UI**
+   - Files: `src/app/api/positions/route.ts`, risk UI labels/components consuming these fields
+   - Before: similar naming for initial-vs-open risk paths
+   - After: explicit naming/labeling (no formula change)
+   - Behavior impact: none (semantic clarity only)
 
-1. Unit tests:
-   - `npm run test:unit -- src/lib/risk-gates.test.ts src/lib/stop-manager.test.ts src/lib/position-sizer.test.ts`
-2. Type/lint:
-   - `npm run lint`
-   - `npx tsc --noEmit`
-3. Spot checks:
-   - READY/WATCH boundary at 2.0% and 3.0%
-   - One candidate with no existing positions through risk gates
-   - `/api/scan` memory vs DB fallback candidate flags
-   - `/api/positions` vs `/api/risk` risk field naming/formula consistency
+### Validation steps
+
+- Targeted tests:
+  - `npm run test:unit -- src/lib/risk-gates.test.ts src/lib/stop-manager.test.ts src/lib/position-sizer.test.ts`
+- Static checks:
+  - `npm run lint`
+  - `npx tsc --noEmit`
+- Spot checks:
+  - READY/WATCH boundaries at exactly `2.0%` and `3.0%`
+  - Monday anti-chase copy vs coded thresholds
+  - Compare `/api/risk` vs `/api/positions` risk field semantics for one open position
 
 ### How to rerun this audit
 
-1. Re-read target modules listed in scope and collect rules with `file:function:line` evidence.
-2. Run focused tests (`risk-gates`, `stop-manager`, `position-sizer`).
-3. Execute at least 3 synthetic examples (READY, WATCH, borderline) via direct function calls.
-4. Compare computed values to API payload fields and UI display bindings.
-5. Rebuild findings table with provable items only (no speculative fixes).
-6. Update this report and timestamp.
+1. Re-read target modules listed in the request and extract every threshold/operator with `file:function:line` evidence.
+2. Run focused unit tests for risk gates, stops, and position sizing.
+3. Run three synthetic examples (READY, WATCH, borderline) through actual exported functions.
+4. Trace API payload mapping into UI components for status/risk/stop displays.
+5. Rebuild the findings table with only provable issues (no speculation).
+6. Update this report date and evidence pointers.

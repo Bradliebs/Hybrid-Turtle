@@ -106,7 +106,7 @@ export default function RiskPage() {
             <div className="text-xs text-loss/80">• NEVER lower a stop-loss</div>
             <div className="text-xs text-loss/80">• NEVER buy without regime = BULLISH</div>
             <div className="text-xs text-loss/80">• NEVER skip the 16-point health check</div>
-            <div className="text-xs text-loss/80">• NEVER chase a Monday gap &gt;1 ATR</div>
+            <div className="text-xs text-loss/80">• NEVER chase Monday if gap &gt;0.75 ATR or &gt;3% above trigger</div>
             <div className="text-xs text-loss/80">• NEVER override sleeve/cluster caps</div>
             <div className="text-xs text-loss/80">• NEVER round position size UP</div>
             <div className="text-xs text-loss/80">• NEVER enter with $0 stop-loss</div>

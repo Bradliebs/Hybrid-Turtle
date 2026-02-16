@@ -54,7 +54,7 @@ describe('/api/risk GET open risk fields', () => {
     prismaMock.position.findMany.mockReset();
   });
 
-  it('returns openRiskGBP computed as max(0, current-stop)*shares and keeps compatibility risk field', async () => {
+  it('returns openRiskGBP/openRiskDollars computed as max(0, current-stop)*shares and keeps compatibility risk field', async () => {
     prismaMock.user.findUnique.mockResolvedValue({
       equity: 10_000,
       riskProfile: 'BALANCED',
@@ -87,6 +87,7 @@ describe('/api/risk GET open risk fields', () => {
 
     const expectedOpenRisk = Math.max(0, (90 - 95) * 10);
     expect(body.positions[0].openRiskGBP).toBe(expectedOpenRisk);
+    expect(body.positions[0].openRiskDollars).toBe(expectedOpenRisk);
     expect(body.positions[0].riskDollars).toBe(expectedOpenRisk);
   });
 });
