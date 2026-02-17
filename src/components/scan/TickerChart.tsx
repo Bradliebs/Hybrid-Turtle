@@ -238,13 +238,15 @@ export default function TickerChart({ tickers, initialTicker }: TickerChartProps
     });
 
     candleSeries.setData(
-      bars.map((b) => ({
-        time: b.date,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-      }))
+      bars
+        .filter((b) => b.open != null && b.high != null && b.low != null && b.close != null)
+        .map((b) => ({
+          time: b.date,
+          open: b.open,
+          high: b.high,
+          low: b.low,
+          close: b.close,
+        }))
     );
 
     // ── Fibonacci levels ──
