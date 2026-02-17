@@ -99,6 +99,17 @@ export default function StopUpdateQueue({ updates }: StopUpdateQueueProps) {
               </div>
             </div>
 
+            {/* Gain lock-in context */}
+            {update.direction === 'up' && update.currentPrice > 0 && update.recommendedStop > update.currentStop && (
+              <div className="flex items-center gap-2 text-[10px] mt-1 mb-1 px-2 py-1 rounded bg-profit/10 border border-profit/20">
+                <span className="text-muted-foreground">Lock-in:</span>
+                <span className="font-mono text-profit font-semibold">
+                  {(((update.recommendedStop - update.currentStop) / (update.currentPrice - update.currentStop)) * 100).toFixed(0)}%
+                </span>
+                <span className="text-muted-foreground">of open gain protected</span>
+              </div>
+            )}
+
             <div className="text-xs text-muted-foreground mt-1">
               {update.reason}
             </div>

@@ -2,7 +2,8 @@
 
 import StatusBadge from '@/components/shared/StatusBadge';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
-import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap } from 'lucide-react';
+import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap, Info, X } from 'lucide-react';
+import { useState } from 'react';
 
 interface Candidate {
   ticker: string;
@@ -39,6 +40,7 @@ const matchTypeBadge: Record<string, { label: string; color: string; icon: typeo
 };
 
 export default function ReadyCandidates({ candidates, heldTickers = new Set() }: ReadyCandidatesProps) {
+  const [showScoreHelp, setShowScoreHelp] = useState(false);
   const ready = candidates.filter(c => c.status === 'READY');
   const watch = candidates.filter(c => c.status === 'WATCH');
 
@@ -154,9 +156,21 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                   {c.agreementScore != null && (
                     <span className={cn(
                       "font-medium",
-                      c.agreementScore >= 70 ? 'text-emerald-400' : c.agreementScore >= 40 ? 'text-amber-400' : 'text-red-400'
-                    )}>
+                      c.agreementScore >= 80 ? 'text-emerald-400' : c.agreementScore >= 60 ? 'text-amber-400' : 'text-red-400'
+                    )}
+                      title={
+                        c.agreementScore >= 80 ? 'High Conviction — strong cross-system alignment' :
+                        c.agreementScore >= 60 ? 'Acceptable — proceed with normal sizing' :
+                        'Low agreement — avoid unless expansion phase'
+                      }
+                    >
                       Agreement: {c.agreementScore}%
+                      <span className={cn(
+                        "ml-1 text-[9px] opacity-80",
+                        c.agreementScore >= 80 ? 'text-emerald-400' : c.agreementScore >= 60 ? 'text-amber-400' : 'text-red-400'
+                      )}>
+                        {c.agreementScore >= 80 ? '· High' : c.agreementScore >= 60 ? '· OK' : '· Low'}
+                      </span>
                     </span>
                   )}
                 </div>
@@ -172,38 +186,137 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                   </div>
                   <div>
                     <span className="text-muted-foreground">Distance</span>
-                    <div className="font-mono text-profit">{formatPercent(c.distancePercent)}</div>
+                    <div className={cn(
+                      "font-mono font-bold",
+                      c.distancePercent < 1 ? 'text-orange-400' :
+                      c.distancePercent <= 2 ? 'text-amber-400' :
+                      'text-blue-400'
+                    )}>
+                      {formatPercent(c.distancePercent)}
+                      <span className={cn(
+                        "ml-1 text-[9px] font-semibold uppercase tracking-wide",
+                        c.distancePercent < 1 ? 'text-orange-400' :
+                        c.distancePercent <= 2 ? 'text-amber-400' :
+                        'text-blue-400/70'
+                      )}>
+                        {c.distancePercent < 1 ? '🔥 HOT' : c.distancePercent <= 2 ? 'WATCH' : 'EARLY'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Dual Score bar */}
+                {/* Dual Score breakdown */}
                 {c.dualNCS != null && (
-                  <div className="mt-2 pt-2 border-t border-navy-600">
-                    <div className="flex items-center justify-between text-[10px] mb-1">
-                      <span className="text-muted-foreground">Dual Score</span>
-                      <div className="flex items-center gap-2">
-                        <span className={cn("font-mono font-medium", c.dualNCS >= 70 ? 'text-emerald-400' : c.dualNCS >= 40 ? 'text-amber-400' : 'text-red-400')}>
-                          NCS {c.dualNCS?.toFixed(0)}
-                        </span>
-                        {c.dualBQS != null && (
-                          <span className="text-muted-foreground font-mono">BQS {c.dualBQS.toFixed(0)}</span>
+                  <div className="mt-2 pt-2 border-t border-navy-600 space-y-1.5">
+                    {/* Score header with explainer toggle */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground">Dual Score</span>
+                      <button
+                        onClick={() => setShowScoreHelp(!showScoreHelp)}
+                        className="inline-flex items-center gap-1 text-[9px] text-primary-400 hover:text-primary-300 transition-colors"
+                        title="What do these scores mean?"
+                      >
+                        {showScoreHelp ? (
+                          <><X className="w-3 h-3" /> hide</>
+                        ) : (
+                          <><Info className="w-3 h-3" /> guide</>
                         )}
-                        {c.dualFWS != null && (
-                          <span className={cn("font-mono", c.dualFWS <= 30 ? 'text-emerald-400' : 'text-red-400')}>
-                            FWS {c.dualFWS.toFixed(0)}
+                      </button>
+                    </div>
+
+                    {showScoreHelp && (
+                      <div className="bg-navy-700 border border-primary-400/30 rounded-lg p-3 mb-2 text-[10px] space-y-2">
+                        <p className="text-primary-400 font-semibold text-[11px]">Score Guide</p>
+                        <div>
+                          <p className="text-emerald-400 font-semibold">Breakout Quality Score (BQS)</p>
+                          <p className="text-muted-foreground">Measures setup strength — trend alignment, base quality, volume pattern. Higher = stronger breakout setup. 70+ is ideal.</p>
+                        </div>
+                        <div>
+                          <p className="text-amber-400 font-semibold">Fatal Weakness Score (FWS)</p>
+                          <p className="text-muted-foreground">Counts structural risks — overhead supply, weak sector, poor earnings. Lower = safer. Above 60 is a red flag.</p>
+                        </div>
+                        <div>
+                          <p className="text-foreground font-semibold">Net Composite Score (NCS)</p>
+                          <p className="text-muted-foreground">Final ranking = BQS − FWS penalty. This is the number that determines candidate priority. 70+ = high conviction, 40–69 = acceptable, &lt;40 = avoid.</p>
+                        </div>
+                      </div>
+                    )}
+                    {/* BQS — Breakout Quality Score (strength) */}
+                    {c.dualBQS != null && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] mb-0.5">
+                          <span className="text-muted-foreground">
+                            Breakout Quality <span className="opacity-60">(strength)</span>
                           </span>
-                        )}
+                          <span className={cn(
+                            "font-mono font-medium",
+                            c.dualBQS >= 70 ? 'text-emerald-400' : c.dualBQS >= 40 ? 'text-amber-400' : 'text-red-400'
+                          )}>
+                            {c.dualBQS.toFixed(0)}
+                          </span>
+                        </div>
+                        <div className="w-full h-1 bg-navy-700 rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              c.dualBQS >= 70 ? 'bg-emerald-500' : c.dualBQS >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                            )}
+                            style={{ width: `${Math.min(100, Math.max(0, c.dualBQS))}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* FWS — Fatal Weakness Score (risk) */}
+                    {c.dualFWS != null && (
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] mb-0.5">
+                          <span className="text-muted-foreground">
+                            Fatal Weakness <span className="opacity-60">(risk)</span>
+                          </span>
+                          <span className={cn(
+                            "font-mono font-medium",
+                            c.dualFWS <= 30 ? 'text-emerald-400' : c.dualFWS <= 60 ? 'text-amber-400' : 'text-red-400'
+                          )}>
+                            {c.dualFWS.toFixed(0)}
+                          </span>
+                        </div>
+                        <div className="w-full h-1 bg-navy-700 rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              c.dualFWS <= 30 ? 'bg-emerald-500' : c.dualFWS <= 60 ? 'bg-amber-500' : 'bg-red-500'
+                            )}
+                            style={{ width: `${Math.min(100, Math.max(0, c.dualFWS))}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* NCS — Net Composite Score (rank) */}
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] mb-0.5">
+                        <span className="text-foreground font-semibold">
+                          Net Composite <span className="opacity-60 font-normal">(rank)</span>
+                        </span>
+                        <span className={cn(
+                          "font-mono font-bold",
+                          c.dualNCS >= 70 ? 'text-emerald-400' : c.dualNCS >= 40 ? 'text-amber-400' : 'text-red-400'
+                        )}>
+                          {c.dualNCS.toFixed(0)}
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 bg-navy-700 rounded-full overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full rounded-full transition-all",
+                            c.dualNCS >= 70 ? 'bg-emerald-500' : c.dualNCS >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                          )}
+                          style={{ width: `${Math.min(100, Math.max(0, c.dualNCS))}%` }}
+                        />
                       </div>
                     </div>
-                    <div className="w-full h-1.5 bg-navy-700 rounded-full overflow-hidden">
-                      <div
-                        className={cn(
-                          "h-full rounded-full transition-all",
-                          c.dualNCS >= 70 ? 'bg-emerald-500' : c.dualNCS >= 40 ? 'bg-amber-500' : 'bg-red-500'
-                        )}
-                        style={{ width: `${Math.min(100, Math.max(0, c.dualNCS))}%` }}
-                      />
-                    </div>
+
                     {c.dualAction && (
                       <div className="text-[10px] text-muted-foreground mt-1 italic">
                         {c.dualAction}
