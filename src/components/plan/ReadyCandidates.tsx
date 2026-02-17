@@ -25,6 +25,8 @@ interface Candidate {
   dualAction?: string | null;
   scanRankScore?: number | null;
   scanPassesFilters?: boolean | null;
+  scanPassesRiskGates?: boolean | null;
+  scanPassesAntiChase?: boolean | null;
 }
 
 interface ReadyCandidatesProps {
@@ -100,6 +102,12 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
             const BadgeIcon = badge.icon;
             const isHeld = heldTickers.has(c.ticker);
             const isTriggerMet = c.price > 0 && c.entryTrigger > 0 && c.price >= c.entryTrigger;
+            const isBuyReady = c.matchType === 'BOTH_RECOMMEND'
+              && !isHeld
+              && isTriggerMet
+              && c.scanPassesFilters !== false
+              && c.scanPassesRiskGates !== false
+              && c.scanPassesAntiChase !== false;
             return (
               <div
                 key={c.ticker}
@@ -137,7 +145,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                       </span>
                     )}
                   </div>
-                  {c.matchType === 'BOTH_RECOMMEND' && !isHeld ? (
+                  {isBuyReady ? (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-500 text-navy-900 cursor-default select-none">
                       <Zap className="w-3.5 h-3.5" />
                       BUY

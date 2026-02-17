@@ -255,6 +255,8 @@ export default function PlanPage() {
               dualAction: t.dualAction,
               scanRankScore: t.scanRankScore,
               scanPassesFilters: t.scanPassesFilters,
+              scanPassesRiskGates: t.scanPassesRiskGates,
+              scanPassesAntiChase: t.scanPassesAntiChase,
             }));
           setScanCandidates(mapped);
         }
