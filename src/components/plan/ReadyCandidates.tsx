@@ -138,10 +138,10 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                     )}
                   </div>
                   {c.matchType === 'BOTH_RECOMMEND' && !isHeld ? (
-                    <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-navy-900 transition-colors">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-emerald-500 text-navy-900 cursor-default select-none">
                       <Zap className="w-3.5 h-3.5" />
                       BUY
-                    </button>
+                    </span>
                   ) : (
                     <ArrowUpRight className="w-4 h-4 text-profit" />
                   )}
