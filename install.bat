@@ -370,6 +370,6 @@ goto :eof
 > "%~dp0nightly-task.bat" echo @echo off
 >> "%~dp0nightly-task.bat" echo cd /d "%%~dp0"
 >> "%~dp0nightly-task.bat" echo echo [%%date%% %%time%%] Starting nightly process... ^>^> nightly.log
->> "%~dp0nightly-task.bat" echo call npx tsx src/cron/nightly.ts --run-now ^>^> nightly.log 2^>^&1
+>> "%~dp0nightly-task.bat" echo call npx tsx src/cron/nightly.ts --run-now 2^>^&1 ^| powershell -NoProfile -Command "$input ^| Tee-Object -FilePath 'nightly.log' -Append"
 >> "%~dp0nightly-task.bat" echo echo [%%date%% %%time%%] Nightly process finished ^(exit code: %%ERRORLEVEL%%^) ^>^> nightly.log
 goto :eof

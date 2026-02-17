@@ -278,9 +278,11 @@ export async function sendNightlySummary(summary: {
     ? summary.alerts.map((a) => `  ⚠️ ${a}`).join('\n')
     : '  ✅ No alerts';
 
-  // ── Ready to buy lines ──
-  const readyLines = summary.readyToBuy.length > 0
-    ? summary.readyToBuy.map((r) => {
+  // ── Ready to buy lines (only trigger-met candidates) ──
+  const readyToBuyAtEntry = summary.readyToBuy
+    .filter((r) => r.entryTrigger > 0 && r.close >= r.entryTrigger);
+  const readyLines = readyToBuyAtEntry.length > 0
+    ? readyToBuyAtEntry.map((r) => {
         const sym = currencySymbol(r.currency);
         return `  🎯 <b>${r.ticker}</b> (${r.sleeve})  ${sym}${r.close.toFixed(2)}
        Entry: ${sym}${r.entryTrigger.toFixed(2)}  Stop: ${sym}${r.stopLevel.toFixed(2)}  Dist: ${r.distancePct.toFixed(1)}%  ADX: ${r.adx14.toFixed(0)}`;
@@ -375,7 +377,7 @@ ${positionLines}
 <b>━━━ Stop Changes (${allStopChanges.length}) ━━━</b>
 ${stopLines}
 
-<b>━━━ Ready to Buy (${summary.readyToBuy.length}) ━━━</b>
+<b>━━━ At Entry (${readyToBuyAtEntry.length}) ━━━</b>
 ${readyLines}
 
 ${triggerMetList.length > 0 ? `<b>━━━ 🚨 TRIGGER MET (${triggerMetList.length}) ━━━</b>

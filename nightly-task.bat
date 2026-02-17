@@ -39,7 +39,7 @@ echo.
 echo [%date% %time%] Starting nightly process... >> nightly.log
 
 :: Run nightly task — show output in console AND append to log
-call npx tsx src/cron/nightly.ts --run-now 2>&1 | powershell -NoProfile -Command "$input | ForEach-Object { Write-Host $_; Add-Content -Path 'nightly.log' -Value $_ }"
+call npx tsx src/cron/nightly.ts --run-now 2>&1 | powershell -NoProfile -Command "$input | Tee-Object -FilePath 'nightly.log' -Append"
 
 set EXIT_CODE=%ERRORLEVEL%
 

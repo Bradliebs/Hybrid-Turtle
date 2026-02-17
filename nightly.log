@@ -1094,3 +1094,219 @@ At the end of the doc, there's also a section on how to "Help Fix Validation Err
 [YF] Historical failed for ULVR: No data found, symbol may be delisted
 [Sync] Failed ULVR: Insufficient data: 0 bars
 [Sync] Failed VUSA: Insufficient data: 0 bars
+[17/02/2026 20:16:23.54] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-17T20:16:27.076Z
+========================================
+  [0/9] Pre-caching historical data for all active tickers...
+[Pre-cache] Starting historical data fetch for 266 tickers...
+[Startup] Historical cache already populated ÔÇö skipping pre-cache
+[Pre-cache] Progress: 50/266
+[Pre-cache] Progress: 100/266
+[Pre-cache] Progress: 150/266
+[Pre-cache] Progress: 200/266
+[Pre-cache] Progress: 250/266
+[Pre-cache] Progress: 266/266
+[Pre-cache] Complete: 266/266 succeeded, 0 failed in 60.8s
+        266/266 tickers cached in 60.8s
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 460.11, Risk: 4.1%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+        Snapshot: 266 synced, 0 failed
+  [8/9] Sending Telegram summary...
+Telegram credentials not configured
+        Telegram: NOT SENT (check credentials)
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 1
+  Telegram: Not sent
+========================================
+[17/02/2026 20:17:53.80] Nightly process finished (exit code: 0) 
+[17/02/2026 20:19:58.01] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-17T20:20:00.085Z
+========================================
+  [0/9] Pre-caching historical data for all active tickers...
+[Pre-cache] Starting historical data fetch for 266 tickers...
+[Startup] Historical cache already populated ÔÇö skipping pre-cache
+[Pre-cache] Progress: 50/266
+[Pre-cache] Progress: 100/266
+[Pre-cache] Progress: 150/266
+[Pre-cache] Progress: 200/266
+[Pre-cache] Progress: 250/266
+[Pre-cache] Progress: 266/266
+[Pre-cache] Complete: 266/266 succeeded, 0 failed in 60.6s
+        266/266 tickers cached in 60.6s
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 460.11, Risk: 4.0%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+        Snapshot: 266 synced, 0 failed
+  [8/9] Sending Telegram summary...
+Telegram credentials not configured
+        Telegram: NOT SENT (check credentials)
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 1
+  Telegram: Not sent
+========================================
+[17/02/2026 20:21:27.37] Nightly process finished (exit code: 0) 
+[17/02/2026 20:24:27.04] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-17T20:24:29.218Z
+========================================
+  [0/9] Pre-caching historical data for all active tickers...
+[Pre-cache] Starting historical data fetch for 266 tickers...
+[Startup] Historical cache already populated ÔÇö skipping pre-cache
+[Pre-cache] Progress: 50/266
+[Pre-cache] Progress: 100/266
+[Pre-cache] Progress: 150/266
+[Pre-cache] Progress: 200/266
+[Pre-cache] Progress: 250/266
+[Pre-cache] Progress: 266/266
+[Pre-cache] Complete: 266/266 succeeded, 0 failed in 60.4s
+        266/266 tickers cached in 60.4s
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Breadth sample: 30 of 266 tickers
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 460.11, Risk: 4.0%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+        Snapshot: 266 synced, 0 failed
+  [8/9] Sending Telegram summary...
+        Telegram: SENT
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 1
+  Telegram: Sent
+========================================
+[17/02/2026 20:25:54.49] Nightly process finished (exit code: 0) 
+[17/02/2026 20:32:40.45] Starting nightly process... 
+[HybridTurtle] Running nightly process immediately (--run-now)
+========================================
+[HybridTurtle] Nightly process started at 2026-02-17T20:32:42.515Z
+========================================
+  [0/9] Pre-caching historical data for all active tickers...
+[Pre-cache] Starting historical data fetch for 266 tickers...
+[Startup] Historical cache already populated ÔÇö skipping pre-cache
+[Pre-cache] Progress: 50/266
+[Pre-cache] Progress: 100/266
+[Pre-cache] Progress: 150/266
+[Pre-cache] Progress: 200/266
+[Pre-cache] Progress: 250/266
+[Pre-cache] Progress: 266/266
+[Pre-cache] Complete: 266/266 succeeded, 0 failed in 59.7s
+        266/266 tickers cached in 59.7s
+  [1/9] Running health check...
+        Health: YELLOW
+  [2/9] Fetching positions and live prices...
+        1 positions, 1 prices fetched
+  [3/9] Generating stop recommendations...
+        0 R-based, 0 trailing ATR
+  [4/9] Detecting laggards...
+        0 laggards flagged
+  [5/9] Running risk-signal modules...
+        Climax: 0, Swap: 0, Whipsaw: 0
+  [6/9] Recording equity snapshot...
+        Equity: 460.11, Risk: 4.0%, Pyramids: 0
+  [7/9] Syncing snapshot data...
+        Snapshot: 266 synced, 0 failed
+  [8/9] Sending Telegram summary...
+Telegram API error: {
+  ok: false,
+  error_code: 400,
+  description: `Bad Request: can't parse entities: Unsupported start tag "" at byte offset 529`
+}
+        Telegram: NOT SENT (check credentials)
+  [9/9] Writing heartbeat...
+========================================
+[HybridTurtle] Nightly process completed successfully
+  Health: YELLOW
+  Positions: 1
+  Alerts: 2
+  Telegram: Not sent
+========================================
+[17/02/2026 20:34:06.73] Nightly process finished (exit code: 0) 
+[17/02/2026 20:34:55.75] Starting nightly process... 
+[ H y b r i d T u r t l e ]   R u n n i n g   n i g h t l y   p r o c e s s   i m m e d i a t e l y   ( - - r u n - n o w )  
+ = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
+ [ H y b r i d T u r t l e ]   N i g h t l y   p r o c e s s   s t a r t e d   a t   2 0 2 6 - 0 2 - 1 7 T 2 0 : 3 4 : 5 7 . 8 9 6 Z  
+ = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
+     [ 0 / 9 ]   P r e - c a c h i n g   h i s t o r i c a l   d a t a   f o r   a l l   a c t i v e   t i c k e r s . . .  
+ [ P r e - c a c h e ]   S t a r t i n g   h i s t o r i c a l   d a t a   f e t c h   f o r   2 6 6   t i c k e r s . . .  
+ [ S t a r t u p ]   H i s t o r i c a l   c a c h e   a l r e a d y   p o p u l a t e d   Ô Ç ö   s k i p p i n g   p r e - c a c h e  
+ [ P r e - c a c h e ]   P r o g r e s s :   5 0 / 2 6 6  
+ [ P r e - c a c h e ]   P r o g r e s s :   1 0 0 / 2 6 6  
+ [ P r e - c a c h e ]   P r o g r e s s :   1 5 0 / 2 6 6  
+ [ P r e - c a c h e ]   P r o g r e s s :   2 0 0 / 2 6 6  
+ [ P r e - c a c h e ]   P r o g r e s s :   2 5 0 / 2 6 6  
+ [ P r e - c a c h e ]   P r o g r e s s :   2 6 6 / 2 6 6  
+ [ P r e - c a c h e ]   C o m p l e t e :   2 6 6 / 2 6 6   s u c c e e d e d ,   0   f a i l e d   i n   6 0 . 2 s  
+                 2 6 6 / 2 6 6   t i c k e r s   c a c h e d   i n   6 0 . 2 s  
+     [ 1 / 9 ]   R u n n i n g   h e a l t h   c h e c k . . .  
+                 H e a l t h :   Y E L L O W  
+     [ 2 / 9 ]   F e t c h i n g   p o s i t i o n s   a n d   l i v e   p r i c e s . . .  
+                 1   p o s i t i o n s ,   1   p r i c e s   f e t c h e d  
+     [ 3 / 9 ]   G e n e r a t i n g   s t o p   r e c o m m e n d a t i o n s . . .  
+                 0   R - b a s e d ,   0   t r a i l i n g   A T R  
+     [ 4 / 9 ]   D e t e c t i n g   l a g g a r d s . . .  
+                 0   l a g g a r d s   f l a g g e d  
+     [ 5 / 9 ]   R u n n i n g   r i s k - s i g n a l   m o d u l e s . . .  
+                 B r e a d t h   s a m p l e :   3 0   o f   2 6 6   t i c k e r s  
+                 C l i m a x :   0 ,   S w a p :   0 ,   W h i p s a w :   0  
+     [ 6 / 9 ]   R e c o r d i n g   e q u i t y   s n a p s h o t . . .  
+                 E q u i t y :   4 6 0 . 1 1 ,   R i s k :   4 . 0 % ,   P y r a m i d s :   0  
+     [ 7 / 9 ]   S y n c i n g   s n a p s h o t   d a t a . . .  
+                 S n a p s h o t :   2 6 6   s y n c e d ,   0   f a i l e d  
+     [ 8 / 9 ]   S e n d i n g   T e l e g r a m   s u m m a r y . . .  
+                 T e l e g r a m :   S E N T  
+     [ 9 / 9 ]   W r i t i n g   h e a r t b e a t . . .  
+ = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
+ [ H y b r i d T u r t l e ]   N i g h t l y   p r o c e s s   c o m p l e t e d   s u c c e s s f u l l y  
+     H e a l t h :   Y E L L O W  
+     P o s i t i o n s :   1  
+     A l e r t s :   1  
+     T e l e g r a m :   S e n t  
+ = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =  
+ [17/02/2026 20:36:23.08] Nightly process finished (exit code: 0) 
