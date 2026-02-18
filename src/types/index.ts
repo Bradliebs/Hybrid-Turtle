@@ -45,16 +45,11 @@ export const RISK_PROFILES: Record<RiskProfileType, RiskProfileConfig> = {
   },
   AGGRESSIVE: {
     name: 'Aggressive',
-    riskPerTrade: 2.0,
-    risk_cash_cap: 10,
-    single_name_cap_pct: 40,
-    efficiency_min: 35,
-    adx_min: 25,
-    vol_ratio_min: 1.2,
+    riskPerTrade: 3.0,
     initial_stop_atr_mult: 2.0,
-    maxPositions: 2,
-    maxOpenRisk: 6.0,
-    description: 'Building mode — 2 concentrated positions with expansion enabled',
+    maxPositions: 3,
+    maxOpenRisk: 12.0,
+    description: 'High-conviction mode — 3% risk, 3 positions, wider concentration limits',
   },
 };
 

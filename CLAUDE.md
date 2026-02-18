@@ -90,7 +90,7 @@ Do not add, remove, or reorder stages without being asked explicitly.
 | CONSERVATIVE | 0.75% | 8 | 7.0% |
 | BALANCED | 0.95% | 5 | 5.5% |
 | SMALL_ACCOUNT | 2.00% | 4 | 10.0% |
-| AGGRESSIVE | 1.00% | 2 | 6.0% |
+| AGGRESSIVE | 3.00% | 3 | 12.0% |
 
 **Active profile is SMALL_ACCOUNT.** Max 4 positions. This is not a bug.
 
