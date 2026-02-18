@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { HealthStatus, HealthCheckResult, RiskProfileType } from '@/types';
-import { HEALTH_CHECK_ITEMS, RISK_PROFILES, SLEEVE_CAPS, CLUSTER_CAP, SECTOR_CAP } from '@/types';
+import { HEALTH_CHECK_ITEMS, RISK_PROFILES, SLEEVE_CAPS, CLUSTER_CAP, SECTOR_CAP, getProfileCaps } from '@/types';
 import { getBatchPrices, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import prisma from './prisma';
 
@@ -12,8 +12,9 @@ interface HealthCheckPosition {
   entryPrice: number;
   shares: number;
   currentStop: number;
+  stopLoss: number;
   status: string;
-  stock: { ticker: string; sleeve: string; currency: string | null };
+  stock: { ticker: string; sleeve: string; currency: string | null; cluster?: string | null; sector?: string | null };
   stopHistory: { oldStop: number; newStop: number }[];
 }
 
@@ -71,7 +72,7 @@ export async function runHealthCheck(userId: string): Promise<HealthCheckReport>
   results.push(checkOpenRiskCap(user.positions, user.equity, user.riskProfile as RiskProfileType, livePrices, gbpPrices));
 
   // ---- C3: Valid Position Sizes ----
-  results.push(checkPositionSizes(user.positions, user.equity));
+  results.push(checkPositionSizes(user.positions, user.equity, user.riskProfile as RiskProfileType));
 
   // ---- D: Stop Monotonicity ----
   results.push(await checkStopMonotonicity(user.positions));
@@ -86,10 +87,10 @@ export async function runHealthCheck(userId: string): Promise<HealthCheckReport>
   results.push(checkSleeveLimits(user.positions, user.equity));
 
   // ---- G2: Cluster Concentration ----
-  results.push(checkClusterConcentration(user.positions, user.equity));
+  results.push(checkClusterConcentration(user.positions, user.equity, user.riskProfile as RiskProfileType));
 
   // ---- G3: Sector Concentration ----
-  results.push(checkSectorConcentration(user.positions, user.equity));
+  results.push(checkSectorConcentration(user.positions, user.equity, user.riskProfile as RiskProfileType));
 
   // ---- H1: Heartbeat Recent ----
   results.push(await checkHeartbeat());
@@ -209,7 +210,9 @@ function checkOpenRiskCap(
   gbpPrices: Record<string, number>
 ): HealthCheckResult {
   const profile = RISK_PROFILES[riskProfile];
-  const totalRisk = positions.reduce((sum: number, p: HealthCheckPosition) => {
+  // HEDGE positions excluded from open risk per CLAUDE.md
+  const nonHedge = positions.filter((p) => p.stock?.sleeve !== 'HEDGE');
+  const totalRisk = nonHedge.reduce((sum: number, p: HealthCheckPosition) => {
     const ticker = p.stock?.ticker as string | undefined;
     const rawPrice = ticker ? (livePrices[ticker] || p.entryPrice) : p.entryPrice;
     const gbpPrice = ticker ? (gbpPrices[ticker] ?? rawPrice) : rawPrice;
@@ -229,7 +232,7 @@ function checkOpenRiskCap(
   return { id: 'C2', label: 'Open Risk Within Cap', category: 'Risk', status: 'GREEN', message: `Open risk: ${riskPercent.toFixed(1)}% / ${profile.maxOpenRisk}%` };
 }
 
-function checkPositionSizes(positions: HealthCheckPosition[], equity: number): HealthCheckResult {
+function checkPositionSizes(positions: HealthCheckPosition[], equity: number, riskProfile: RiskProfileType): HealthCheckResult {
   if (positions.length === 0) {
     return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'No open positions' };
   }
@@ -237,11 +240,13 @@ function checkPositionSizes(positions: HealthCheckPosition[], equity: number): H
   if (positions.length < 2) {
     return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'Too few positions for size check' };
   }
+  const caps = getProfileCaps(riskProfile);
   const totalValue = positions.reduce((sum: number, p: HealthCheckPosition) => sum + (p.entryPrice * p.shares), 0);
   const oversized = positions.filter((p: HealthCheckPosition) => {
     const posValue = p.entryPrice * p.shares;
     const pct = totalValue > 0 ? posValue / totalValue : 0;
-    const cap = p.stock?.sleeve === 'HIGH_RISK' ? 0.12 : p.stock?.sleeve === 'HEDGE' ? 0.20 : 0.16;
+    const sleeve = p.stock?.sleeve || 'CORE';
+    const cap = caps.positionSizeCaps[sleeve] ?? 0.16;
     return pct > cap;
   });
 
@@ -252,7 +257,13 @@ function checkPositionSizes(positions: HealthCheckPosition[], equity: number): H
 }
 
 async function checkStopMonotonicity(positions: HealthCheckPosition[]): Promise<HealthCheckResult> {
+  // Check that currentStop has never decreased below initial stopLoss
   for (const p of positions) {
+    // Primary check: currentStop must be >= initial stop (stopLoss field)
+    if (p.currentStop < p.stopLoss) {
+      return { id: 'D', label: 'Stop Monotonicity', category: 'Logic', status: 'RED', message: `Stop decreased for ${p.stock?.ticker}: current $${p.currentStop.toFixed(2)} < initial $${p.stopLoss.toFixed(2)}` };
+    }
+    // Secondary check: verify last history record didn't decrease
     if (p.stopHistory && p.stopHistory.length > 0) {
       const lastHistory = p.stopHistory[0];
       if (lastHistory.newStop < lastHistory.oldStop) {
@@ -312,7 +323,7 @@ function checkSleeveLimits(positions: HealthCheckPosition[], _equity: number): H
   return { id: 'G1', label: 'Sleeve Limits', category: 'Allocation', status: 'GREEN', message: 'Sleeve allocations within limits' };
 }
 
-function checkClusterConcentration(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
+function checkClusterConcentration(positions: HealthCheckPosition[], _equity: number, riskProfile: RiskProfileType): HealthCheckResult {
   if (positions.length === 0) {
     return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'No open positions' };
   }
@@ -322,34 +333,34 @@ function checkClusterConcentration(positions: HealthCheckPosition[], _equity: nu
     return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'No portfolio value' };
   }
 
-  // Group by cluster (from stock relation if available, would need schema addition)
-  // For now, use a reasonable heuristic: check if any single stock > cluster cap
-  const stockValues: Record<string, number> = {};
+  const caps = getProfileCaps(riskProfile);
+  // Group by actual cluster name from stock relation
+  const clusterValues: Record<string, number> = {};
   for (const p of positions) {
-    const ticker = p.stock?.ticker || 'UNKNOWN';
-    stockValues[ticker] = (stockValues[ticker] || 0) + (p.entryPrice * p.shares);
+    const cluster = p.stock?.cluster || 'General';
+    clusterValues[cluster] = (clusterValues[cluster] || 0) + (p.entryPrice * p.shares);
   }
 
-  // With fewer than 2 distinct tickers, concentration is expected
-  if (Object.keys(stockValues).length < 2) {
-    return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'Too few positions for cluster check' };
+  // With fewer than 2 distinct clusters, concentration is expected
+  if (Object.keys(clusterValues).length < 2) {
+    return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: 'Too few clusters for concentration check' };
   }
 
   const breaches: string[] = [];
-  for (const [ticker, value] of Object.entries(stockValues)) {
+  for (const [cluster, value] of Object.entries(clusterValues)) {
     const pct = value / totalValue;
-    if (pct > CLUSTER_CAP) {
-      breaches.push(`${ticker}: ${(pct * 100).toFixed(0)}% > ${(CLUSTER_CAP * 100).toFixed(0)}%`);
+    if (pct > caps.clusterCap) {
+      breaches.push(`${cluster}: ${(pct * 100).toFixed(0)}% > ${(caps.clusterCap * 100).toFixed(0)}%`);
     }
   }
 
   if (breaches.length > 0) {
     return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'YELLOW', message: `Concentration warning: ${breaches.join(', ')}` };
   }
-  return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: `Cluster concentrations within ${(CLUSTER_CAP * 100).toFixed(0)}% cap` };
+  return { id: 'G2', label: 'Cluster Concentration', category: 'Allocation', status: 'GREEN', message: `Cluster concentrations within ${(caps.clusterCap * 100).toFixed(0)}% cap` };
 }
 
-function checkSectorConcentration(positions: HealthCheckPosition[], _equity: number): HealthCheckResult {
+function checkSectorConcentration(positions: HealthCheckPosition[], _equity: number, riskProfile: RiskProfileType): HealthCheckResult {
   if (positions.length === 0) {
     return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'No open positions' };
   }
@@ -359,30 +370,31 @@ function checkSectorConcentration(positions: HealthCheckPosition[], _equity: num
     return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'No portfolio value' };
   }
 
-  // Approximate sector from sleeve grouping
-  const sleeveValues: Record<string, number> = {};
+  const caps = getProfileCaps(riskProfile);
+  // Group by actual sector from stock relation
+  const sectorValues: Record<string, number> = {};
   for (const p of positions) {
-    const sleeve = p.stock?.sleeve || 'CORE';
-    sleeveValues[sleeve] = (sleeveValues[sleeve] || 0) + (p.entryPrice * p.shares);
+    const sector = p.stock?.sector || 'Unknown';
+    sectorValues[sector] = (sectorValues[sector] || 0) + (p.entryPrice * p.shares);
   }
 
   // With fewer than 2 distinct sectors, concentration is expected
-  if (Object.keys(sleeveValues).length < 2) {
+  if (Object.keys(sectorValues).length < 2) {
     return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: 'Too few sectors for concentration check' };
   }
 
   const breaches: string[] = [];
-  for (const [sleeve, value] of Object.entries(sleeveValues)) {
+  for (const [sector, value] of Object.entries(sectorValues)) {
     const pct = value / totalValue;
-    if (pct > SECTOR_CAP) {
-      breaches.push(`${sleeve}: ${(pct * 100).toFixed(0)}% > ${(SECTOR_CAP * 100).toFixed(0)}%`);
+    if (pct > caps.sectorCap) {
+      breaches.push(`${sector}: ${(pct * 100).toFixed(0)}% > ${(caps.sectorCap * 100).toFixed(0)}%`);
     }
   }
 
   if (breaches.length > 0) {
     return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'YELLOW', message: `Sector warning: ${breaches.join(', ')}` };
   }
-  return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: `Sector concentrations within ${(SECTOR_CAP * 100).toFixed(0)}% cap` };
+  return { id: 'G3', label: 'Sector Concentration', category: 'Allocation', status: 'GREEN', message: `Sector concentrations within ${(caps.sectorCap * 100).toFixed(0)}% cap` };
 }
 
 async function checkHeartbeat(): Promise<HealthCheckResult> {
@@ -429,8 +441,9 @@ function checkDatabaseIntegrity(): HealthCheckResult {
 async function checkCronActive(): Promise<HealthCheckResult> {
   try {
     // Check if the nightly heartbeat ran in the last 25 hours
+    // Nightly cron writes status: 'SUCCESS' on completion
     const heartbeat = await prisma.heartbeat.findFirst({
-      where: { status: 'nightly_complete' },
+      where: { status: 'SUCCESS' },
       orderBy: { timestamp: 'desc' },
     });
 

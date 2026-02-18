@@ -26,11 +26,13 @@ export interface SuperClusterBreachResult {
 }
 
 /**
- * Minimum number of distinct super-clusters required before enforcement.
- * With only 1-2 positions the single super-cluster will naturally be 100%
+ * Minimum number of positions required before enforcement.
+ * With only 1 position the single super-cluster will naturally be 100%
  * which is expected, not a real concentration breach.
+ * Uses position count (not group count) so 4 positions in one
+ * super-cluster still triggers breach detection.
  */
-const MIN_SUPER_CLUSTERS_FOR_CAP = 2;
+const MIN_POSITIONS_FOR_CAP = 2;
 
 /**
  * Check super-cluster concentration limits.
@@ -57,14 +59,14 @@ export function checkSuperClusterCaps(
     scGroups.set(sc, group);
   }
 
-  // With fewer than MIN_SUPER_CLUSTERS_FOR_CAP distinct super-clusters,
+  // With fewer than MIN_POSITIONS_FOR_CAP positions,
   // concentration is expected — report percentages but never flag a breach.
-  const tooFewGroups = scGroups.size < MIN_SUPER_CLUSTERS_FOR_CAP;
+  const tooFewPositions = positions.length < MIN_POSITIONS_FOR_CAP;
 
   for (const [sc, group] of Array.from(scGroups)) {
     const pct = group.value / totalPortfolioValue;
     const wouldBreach = pct > SUPER_CLUSTER_CAP;
-    const breached = wouldBreach && !tooFewGroups;
+    const breached = wouldBreach && !tooFewPositions;
     results.push({
       superCluster: sc,
       currentPct: pct * 100,

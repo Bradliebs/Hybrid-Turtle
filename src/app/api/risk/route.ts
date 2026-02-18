@@ -5,7 +5,7 @@ import { getBatchPrices, normalizeBatchPricesToGBP, normalizePriceToGBP } from '
 import { calculateRMultiple } from '@/lib/position-sizer';
 import { buildInitialRiskFields, computeOpenRiskGBP } from '@/lib/risk-fields';
 import { getRiskBudget } from '@/lib/risk-gates';
-import { getWeeklyEquityChangePercent, recordEquitySnapshot } from '@/lib/equity-snapshot';
+import { getWeeklyEquityChangePercent } from '@/lib/equity-snapshot';
 import type { RiskProfileType, Sleeve } from '@/types';
 import { apiError } from '@/lib/api-response';
 
@@ -93,7 +93,8 @@ export async function GET(request: NextRequest) {
       user.riskProfile as RiskProfileType
     );
 
-    await recordEquitySnapshot(userId, user.equity, budget.usedRiskPercent);
+    // Equity snapshots are recorded by nightly automation (rate-limited to 6h).
+    // Removed from GET endpoint to avoid unnecessary DB queries on every page load/poll.
     const efficiencyData = await getWeeklyEquityChangePercent(userId);
     const maxOpenRiskUsedPercent = efficiencyData.maxOpenRiskUsedPercent ?? budget.usedRiskPercent;
     const riskEfficiency = efficiencyData.weeklyChangePercent != null && maxOpenRiskUsedPercent > 0

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { calculateRMultiple, calculateGainPercent, calculateGainDollars } from '@/lib/position-sizer';
-import { getBatchPrices, getMarketRegime, normalizeBatchPricesToGBP } from '@/lib/market-data';
+import { getBatchPrices, getMarketRegime, normalizeBatchPricesToGBP, getQuickPrice, getFXRate } from '@/lib/market-data';
 import { buildInitialRiskFields } from '@/lib/risk-fields';
+import { validateRiskGates } from '@/lib/risk-gates';
 import { apiError } from '@/lib/api-response';
 import { getCurrentWeeklyPhase } from '@/types';
+import type { Sleeve } from '@/types';
 import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
 
@@ -218,91 +220,171 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { riskProfile: true },
+      select: { riskProfile: true, equity: true },
     });
 
-    const position = await prisma.position.create({
-      data: {
-        userId,
-        stockId,
-        entryPrice,
-        entryDate: entryDate ? new Date(entryDate) : new Date(),
-        shares,
-        stopLoss,
-        initialRisk,
-        currentStop: stopLoss,
-        entry_price: entryPrice,
-        initial_stop: stopLoss,
-        initial_R: initialRisk,
-        atr_at_entry: atrAtEntry,
-        profile_used: user?.riskProfile,
-        entry_type: entryType || 'BREAKOUT',
-        protectionLevel: 'INITIAL',
-        source: 'manual',
-        notes,
-      },
+    const riskProfile = (user?.riskProfile || 'BALANCED') as import('@/types').RiskProfileType;
+    const equity = user?.equity || 0;
+
+    // ── RISK GATE ENFORCEMENT — all 6 gates must pass ──
+    // Fetch existing open positions and build gate input
+    const existingPositions = await prisma.position.findMany({
+      where: { userId, status: 'OPEN' },
       include: { stock: true },
     });
 
-    // Best-effort trade logging (never blocks entry creation)
-    try {
-      const ticker = position.stock.ticker;
-      const stockCurrencies: Record<string, string | null> = {
-        [ticker]: position.stock.currency,
+    // Build positions array with GBP-normalised values for gate checks
+    const existingTickers = existingPositions.map((p) => p.stock.ticker);
+    const existingPrices = existingTickers.length > 0 ? await getBatchPrices(existingTickers) : {};
+    const existingCurrencies: Record<string, string | null> = {};
+    for (const p of existingPositions) {
+      existingCurrencies[p.stock.ticker] = p.stock.currency;
+    }
+    const existingGbpPrices = existingTickers.length > 0
+      ? await normalizeBatchPricesToGBP(existingPrices, existingCurrencies)
+      : {};
+
+    const positionsForGates = existingPositions.map((p) => {
+      const rawPrice = existingPrices[p.stock.ticker] || p.entryPrice;
+      const gbpPrice = existingGbpPrices[p.stock.ticker] ?? rawPrice;
+      const fxRatio = rawPrice > 0 ? gbpPrice / rawPrice : 1;
+      const entryPriceGbp = p.entryPrice * fxRatio;
+      const currentStopGbp = p.currentStop * fxRatio;
+      const currentPriceGbp = gbpPrice;
+      return {
+        id: p.id,
+        ticker: p.stock.ticker,
+        sleeve: (p.stock.sleeve || 'CORE') as Sleeve,
+        sector: p.stock.sector || 'Unknown',
+        cluster: p.stock.cluster || 'General',
+        value: entryPriceGbp * p.shares,
+        riskDollars: Math.max(0, (currentPriceGbp - currentStopGbp) * p.shares),
+        shares: p.shares,
+        entryPrice: entryPriceGbp,
+        currentStop: currentStopGbp,
+        currentPrice: currentPriceGbp,
       };
+    });
 
-      const gbpPrices = await normalizeBatchPricesToGBP({ [ticker]: entryPrice }, stockCurrencies);
-      const entryPriceGbp = gbpPrices[ticker] ?? entryPrice;
-      const fxToGbp = entryPrice > 0 ? entryPriceGbp / entryPrice : 1;
-      const actualFill = position.entryPrice;
-      const effectivePlannedEntry = plannedEntry ?? null;
+    // Look up the stock being entered for sleeve/sector/cluster info
+    const newStock = await prisma.stock.findUnique({ where: { id: stockId } });
+    if (!newStock) {
+      return apiError(404, 'STOCK_NOT_FOUND', 'Stock not found');
+    }
 
-      await prisma.tradeLog.create({
+    // FX-convert the new position values to GBP
+    const newCurrency = (newStock.currency || 'USD').toUpperCase();
+    const isNewUk = newStock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(newStock.ticker);
+    let newFxToGbp: number;
+    if (isNewUk || newCurrency === 'GBX' || newCurrency === 'GBp') {
+      newFxToGbp = 0.01;
+    } else if (newCurrency === 'GBP') {
+      newFxToGbp = 1;
+    } else {
+      newFxToGbp = await getFXRate(newCurrency, 'GBP');
+    }
+    const newEntryGbp = entryPrice * newFxToGbp;
+    const newStopGbp = stopLoss * newFxToGbp;
+    const newValue = newEntryGbp * shares;
+    const newRiskDollars = Math.max(0, (newEntryGbp - newStopGbp) * shares);
+
+    const riskGateResults = validateRiskGates(
+      {
+        sleeve: (newStock.sleeve || 'CORE') as Sleeve,
+        sector: newStock.sector || 'Unknown',
+        cluster: newStock.cluster || 'General',
+        value: newValue,
+        riskDollars: newRiskDollars,
+      },
+      positionsForGates,
+      equity,
+      riskProfile
+    );
+
+    const failedGates = riskGateResults.filter((g) => !g.passed);
+    if (failedGates.length > 0) {
+      const gateDetails = failedGates.map((g) => `${g.gate}: ${g.message}`).join('; ');
+      return apiError(400, 'RISK_GATES_FAILED', `Position blocked by risk gates: ${gateDetails}`);
+    }
+
+    // Pre-compute FX data outside transaction to avoid holding it open
+    const ticker = newStock.ticker;
+    const fxToGbp = newFxToGbp; // already computed above for risk gates
+    const effectivePlannedEntry = plannedEntry ?? null;
+
+    // Atomic: position create + trade log in one transaction
+    const position = await prisma.$transaction(async (tx) => {
+      const pos = await tx.position.create({
         data: {
           userId,
-          positionId: position.id,
-          ticker,
-          tradeDate: new Date(),
-          tradeType: 'ENTRY',
-          decision: 'TAKEN',
-          entryPrice: actualFill,
-          initialStop: position.initial_stop ?? position.stopLoss,
-          initialR: position.initial_R ?? (actualFill - position.stopLoss),
-          shares: position.shares,
-          positionSizeGbp: position.shares * actualFill * fxToGbp,
-          atrAtEntry: position.atr_at_entry ?? atrAtEntry ?? null,
-          adxAtEntry: adxAtEntry ?? null,
-          scanStatus: scanStatus ?? null,
-          bqsScore: bqsScore ?? null,
-          fwsScore: fwsScore ?? null,
-          ncsScore: ncsScore ?? null,
-          dualScoreAction: dualScoreAction ?? null,
-          rankScore: rankScore ?? null,
-          regime,
-          plannedEntry: effectivePlannedEntry,
-          actualFill,
-          slippagePct:
-            effectivePlannedEntry && actualFill
-              ? ((actualFill - effectivePlannedEntry) / effectivePlannedEntry) * 100
-              : null,
-          fillTime: new Date(),
-          antiChaseTriggered: antiChaseTriggered ?? false,
-          breadthRestricted: breadthRestricted ?? false,
-          whipsawBlocked: whipsawBlocked ?? false,
-          climaxDetected: climaxDetected ?? false,
-        },
-      });
-    } catch (logError) {
-      const prismaCode = (logError as { code?: string })?.code;
-      if (prismaCode === 'P2002') {
-        console.warn('TradeLog duplicate skipped for position entry', {
-          userId,
           stockId,
+          entryPrice,
+          entryDate: entryDate ? new Date(entryDate) : new Date(),
+          shares,
+          stopLoss,
+          initialRisk,
+          currentStop: stopLoss,
+          entry_price: entryPrice,
+          initial_stop: stopLoss,
+          initial_R: initialRisk,
+          atr_at_entry: atrAtEntry,
+          profile_used: user?.riskProfile,
+          entry_type: entryType || 'BREAKOUT',
+          protectionLevel: 'INITIAL',
+          source: 'manual',
+          notes,
+        },
+        include: { stock: true },
+      });
+
+      // Best-effort trade logging inside transaction (caught errors don't abort)
+      try {
+        await tx.tradeLog.create({
+          data: {
+            userId,
+            positionId: pos.id,
+            ticker,
+            tradeDate: new Date(),
+            tradeType: 'ENTRY',
+            decision: 'TAKEN',
+            entryPrice,
+            initialStop: stopLoss,
+            initialR: initialRisk,
+            shares,
+            positionSizeGbp: shares * entryPrice * fxToGbp,
+            atrAtEntry: atrAtEntry ?? null,
+            adxAtEntry: adxAtEntry ?? null,
+            scanStatus: scanStatus ?? null,
+            bqsScore: bqsScore ?? null,
+            fwsScore: fwsScore ?? null,
+            ncsScore: ncsScore ?? null,
+            dualScoreAction: dualScoreAction ?? null,
+            rankScore: rankScore ?? null,
+            regime,
+            plannedEntry: effectivePlannedEntry,
+            actualFill: entryPrice,
+            slippagePct:
+              effectivePlannedEntry && entryPrice
+                ? ((entryPrice - effectivePlannedEntry) / effectivePlannedEntry) * 100
+                : null,
+            fillTime: new Date(),
+            antiChaseTriggered: antiChaseTriggered ?? false,
+            breadthRestricted: breadthRestricted ?? false,
+            whipsawBlocked: whipsawBlocked ?? false,
+            climaxDetected: climaxDetected ?? false,
+          },
         });
-      } else {
-        console.warn('TradeLog create failed (non-blocking)', logError);
+      } catch (logError) {
+        const prismaCode = (logError as { code?: string })?.code;
+        if (prismaCode === 'P2002') {
+          console.warn('TradeLog duplicate skipped for position entry', { userId, stockId });
+        } else {
+          console.warn('TradeLog create failed (non-blocking)', logError);
+        }
       }
-    }
+
+      return pos;
+    });
 
     return NextResponse.json(position, { status: 201 });
   } catch (error) {
@@ -311,17 +393,23 @@ export async function POST(request: NextRequest) {
   }
 }
 
+const closePositionSchema = z.object({
+  positionId: z.string().trim().min(1),
+  exitPrice: z.coerce.number().positive(),
+  exitReason: z.string().optional(),
+});
+
 /**
  * PATCH — Close / exit a position
- * Body: { positionId, exitPrice }
+ * Body: { positionId, exitPrice, exitReason? }
  */
 export async function PATCH(request: NextRequest) {
   try {
-    const { positionId, exitPrice, exitReason } = await request.json();
-
-    if (!positionId || exitPrice === undefined) {
-      return apiError(400, 'INVALID_REQUEST', 'positionId and exitPrice are required');
+    const parsed = await parseJsonBody(request, closePositionSchema);
+    if (!parsed.ok) {
+      return parsed.response;
     }
+    const { positionId, exitPrice, exitReason } = parsed.data;
 
     const position = await prisma.position.findUnique({
       where: { id: positionId },
@@ -340,59 +428,73 @@ export async function PATCH(request: NextRequest) {
         ? 'STOP_HIT'
         : (exitReason || 'MANUAL');
 
-    const updated = await prisma.position.update({
-      where: { id: positionId },
-      data: {
-        status: 'CLOSED',
-        exitPrice,
-        exitReason: resolvedExitReason,
-        exitDate: new Date(),
-      },
-      include: { stock: true },
+    // Pre-compute FX data outside transaction to avoid holding it open
+    const stockForClose = await prisma.stock.findFirst({
+      where: { positions: { some: { id: positionId } } },
     });
+    const closeTicker = stockForClose?.ticker ?? '';
+    const closeCurrency = (stockForClose?.currency || 'USD').toUpperCase();
+    const isCloseUk = closeTicker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(closeTicker);
+    let closeFxToGbp: number;
+    if (isCloseUk || closeCurrency === 'GBX' || closeCurrency === 'GBp') {
+      closeFxToGbp = 0.01;
+    } else if (closeCurrency === 'GBP') {
+      closeFxToGbp = 1;
+    } else {
+      closeFxToGbp = await getFXRate(closeCurrency, 'GBP');
+    }
 
-    // Best-effort trade logging (never blocks close)
-    try {
-      const ticker = updated.stock.ticker;
-      const stockCurrencies: Record<string, string | null> = {
-        [ticker]: updated.stock.currency,
-      };
-      const gbpPrices = await normalizeBatchPricesToGBP({ [ticker]: exitPrice }, stockCurrencies);
-      const exitPriceGbp = gbpPrices[ticker] ?? exitPrice;
-      const fxToGbp = exitPrice > 0 ? exitPriceGbp / exitPrice : 1;
-      const daysHeld = Math.floor((updated.exitDate!.getTime() - updated.entryDate.getTime()) / 86400000);
-      const initialR = updated.initial_R ?? updated.initialRisk ?? null;
-      const finalRMultiple = initialR ? (exitPrice - updated.entryPrice) / initialR : null;
-      const tradeType = resolvedExitReason === 'STOP_HIT' ? 'STOP_HIT' : 'EXIT';
-
-      await prisma.tradeLog.create({
+    // Atomic: position close + trade log in one transaction
+    const updated = await prisma.$transaction(async (tx) => {
+      const upd = await tx.position.update({
+        where: { id: positionId },
         data: {
-          userId: updated.userId,
-          positionId: updated.id,
-          ticker,
-          tradeDate: new Date(),
-          tradeType,
-          decision: 'TAKEN',
-          entryPrice: updated.entry_price ?? updated.entryPrice,
-          initialStop: updated.initial_stop ?? updated.stopLoss,
-          initialR,
-          shares: updated.shares,
+          status: 'CLOSED',
           exitPrice,
           exitReason: resolvedExitReason,
-          finalRMultiple,
-          gainLossGbp: (exitPrice - updated.entryPrice) * updated.shares * fxToGbp,
-          daysHeld,
-          atrAtEntry: updated.atr_at_entry,
+          exitDate: new Date(),
         },
+        include: { stock: true },
       });
-    } catch (logError) {
-      const prismaCode = (logError as { code?: string })?.code;
-      if (prismaCode === 'P2002') {
-        console.warn('TradeLog duplicate skipped for position close', { positionId });
-      } else {
-        console.warn('TradeLog create failed on close (non-blocking)', logError);
+
+      // Best-effort trade logging inside transaction (caught errors don't abort)
+      try {
+        const daysHeld = Math.floor((upd.exitDate!.getTime() - upd.entryDate.getTime()) / 86400000);
+        const initialR = upd.initial_R ?? upd.initialRisk ?? null;
+        const finalRMultiple = initialR ? (exitPrice - upd.entryPrice) / initialR : null;
+        const tradeType = resolvedExitReason === 'STOP_HIT' ? 'STOP_HIT' : 'EXIT';
+
+        await tx.tradeLog.create({
+          data: {
+            userId: upd.userId,
+            positionId: upd.id,
+            ticker: upd.stock.ticker,
+            tradeDate: new Date(),
+            tradeType,
+            decision: 'TAKEN',
+            entryPrice: upd.entry_price ?? upd.entryPrice,
+            initialStop: upd.initial_stop ?? upd.stopLoss,
+            initialR,
+            shares: upd.shares,
+            exitPrice,
+            exitReason: resolvedExitReason,
+            finalRMultiple,
+            gainLossGbp: (exitPrice - upd.entryPrice) * upd.shares * closeFxToGbp,
+            daysHeld,
+            atrAtEntry: upd.atr_at_entry,
+          },
+        });
+      } catch (logError) {
+        const prismaCode = (logError as { code?: string })?.code;
+        if (prismaCode === 'P2002') {
+          console.warn('TradeLog duplicate skipped for position close', { positionId });
+        } else {
+          console.warn('TradeLog create failed on close (non-blocking)', logError);
+        }
       }
-    }
+
+      return upd;
+    });
 
     return NextResponse.json({ success: true, position: updated });
   } catch (error) {

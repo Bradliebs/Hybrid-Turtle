@@ -119,8 +119,9 @@ export function checkRegimeStability(
   // Sort most recent first
   const sorted = [...regimeHistory].sort((a, b) => b.date.getTime() - a.date.getTime());
 
-  let consecutiveDays = 1;
-  for (let i = 1; i < sorted.length; i++) {
+  // Verify most recent history record matches current regime before counting
+  let consecutiveDays = 0;
+  for (let i = 0; i < sorted.length; i++) {
     if (sorted[i].regime === currentRegime) {
       consecutiveDays++;
     } else {

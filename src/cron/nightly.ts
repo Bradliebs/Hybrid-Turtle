@@ -46,16 +46,27 @@ async function runNightlyProcess() {
   try {
     // Step 0: Pre-cache historical data for all active tickers
     console.log('  [0/9] Pre-caching historical data for all active tickers...');
-    const preCacheResult = await preCacheHistoricalData();
-    console.log(`        ${preCacheResult.success}/${preCacheResult.total} tickers cached in ${(preCacheResult.durationMs / 1000).toFixed(1)}s`);
-    if (preCacheResult.failed.length > 0) {
-      console.warn(`        Failed: ${preCacheResult.failed.join(', ')}`);
+    try {
+      const preCacheResult = await preCacheHistoricalData();
+      console.log(`        ${preCacheResult.success}/${preCacheResult.total} tickers cached in ${(preCacheResult.durationMs / 1000).toFixed(1)}s`);
+      if (preCacheResult.failed.length > 0) {
+        console.warn(`        Failed: ${preCacheResult.failed.join(', ')}`);
+      }
+    } catch (error) {
+      console.error('  [0] Pre-cache failed:', (error as Error).message);
     }
 
-    // Step 1: Run health check
+    // Step 1: Run health check (isolated — failure doesn't block other steps)
     console.log('  [1/9] Running health check...');
-    const healthReport = await runHealthCheck(userId);
-    console.log(`        Health: ${healthReport.overall}`);
+    let healthReport: { overall: string; checks: Record<string, string>; results: unknown[]; timestamp: Date } = {
+      overall: 'YELLOW', checks: {}, results: [], timestamp: new Date(),
+    };
+    try {
+      healthReport = await runHealthCheck(userId);
+      console.log(`        Health: ${healthReport.overall}`);
+    } catch (error) {
+      console.error('  [1] Health check failed:', (error as Error).message);
+    }
 
     // Step 2: Get open positions + fetch live prices
     console.log('  [2/9] Fetching positions and live prices...');
@@ -75,48 +86,52 @@ async function runNightlyProcess() {
       : {};
     console.log(`        ${positions.length} positions, ${Object.keys(livePrices).length} prices fetched`);
 
-    // Step 3: Generate stop recommendations
+    // Step 3: Generate stop recommendations (isolated)
     console.log('  [3/9] Generating stop recommendations...');
     const livePriceMap = new Map(Object.entries(livePrices));
-
-    // Fetch daily bars in parallel batches — use 'full' so trailing stop (step 3b) gets cache hits
-    const atrMap = new Map<string, number>();
-    const PRICE_BATCH = 10;
-    for (let i = 0; i < openTickers.length; i += PRICE_BATCH) {
-      const batch = openTickers.slice(i, i + PRICE_BATCH);
-      const results = await Promise.allSettled(
-        batch.map(async (ticker) => {
-          const bars = await getDailyPrices(ticker, 'full');
-          if (bars.length >= 15) {
-            atrMap.set(ticker, calculateATR(bars, 14));
-          }
-        })
-      );
-      if (i + PRICE_BATCH < openTickers.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    }
-
-    const stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);
-
     const stopChanges: NightlyStopChange[] = [];
-    for (const rec of stopRecs) {
-      const pos = positions.find((p) => p.id === rec.positionId);
-      const isUK = rec.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(rec.ticker);
-      const cur = isUK ? 'GBX' : (pos?.stock.currency || 'USD').toUpperCase();
-      try {
-        await updateStopLoss(rec.positionId, rec.newStop, rec.reason, rec.newLevel);
-        stopChanges.push({
-          ticker: rec.ticker,
-          oldStop: rec.currentStop,
-          newStop: rec.newStop,
-          level: rec.newLevel,
-          reason: rec.reason,
-          currency: cur,
-        });
-      } catch {
-        // Monotonic violation or other error — skip silently
+    const atrMap = new Map<string, number>();
+    let stopRecs: Awaited<ReturnType<typeof generateStopRecommendations>> = [];
+    try {
+      // Fetch daily bars in parallel batches — use 'full' so trailing stop (step 3b) gets cache hits
+      const PRICE_BATCH = 10;
+      for (let i = 0; i < openTickers.length; i += PRICE_BATCH) {
+        const batch = openTickers.slice(i, i + PRICE_BATCH);
+        await Promise.allSettled(
+          batch.map(async (ticker) => {
+            const bars = await getDailyPrices(ticker, 'full');
+            if (bars.length >= 15) {
+              atrMap.set(ticker, calculateATR(bars, 14));
+            }
+          })
+        );
+        if (i + PRICE_BATCH < openTickers.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
       }
+
+      stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);
+
+      for (const rec of stopRecs) {
+        const pos = positions.find((p) => p.id === rec.positionId);
+        const isUK = rec.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(rec.ticker);
+        const cur = isUK ? 'GBX' : (pos?.stock.currency || 'USD').toUpperCase();
+        try {
+          await updateStopLoss(rec.positionId, rec.newStop, rec.reason, rec.newLevel);
+          stopChanges.push({
+            ticker: rec.ticker,
+            oldStop: rec.currentStop,
+            newStop: rec.newStop,
+            level: rec.newLevel,
+            reason: rec.reason,
+            currency: cur,
+          });
+        } catch {
+          // Monotonic violation or other error — skip silently
+        }
+      }
+    } catch (error) {
+      console.error('  [3] R-based stop recommendations failed:', (error as Error).message);
     }
 
     // Step 3b: Trailing ATR stops
@@ -429,7 +444,10 @@ async function runNightlyProcess() {
     console.log('  [7/9] Syncing snapshot data...');
     const positionDetails: NightlyPositionDetail[] = positions.map((p) => {
       const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
-      const pnl = (currentPrice - p.entryPrice) * p.shares;
+      const gbpPrice = gbpPrices[p.stock.ticker] ?? currentPrice;
+      const fxRatio = currentPrice > 0 ? gbpPrice / currentPrice : 1;
+      // Use GBP-normalised prices for cross-currency PnL aggregation
+      const pnlValue = (gbpPrice - p.entryPrice * fxRatio) * p.shares;
       const pnlPercent = p.entryPrice > 0 ? ((currentPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
       const rMultiple = p.initialRisk > 0 ? (currentPrice - p.entryPrice) / p.initialRisk : 0;
       const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
@@ -443,7 +461,7 @@ async function runNightlyProcess() {
         currentStop: p.currentStop,
         protectionLevel: p.protectionLevel,
         rMultiple,
-        pnl,
+        pnl: pnlValue,
         pnlPercent,
         currency,
       };
@@ -517,9 +535,11 @@ async function runNightlyProcess() {
       }
     }
 
-    // Step 8: Send Telegram summary
+    // Step 8: Send Telegram summary (isolated — failure doesn't block heartbeat)
     console.log('  [8/9] Sending Telegram summary...');
-    const telegramSent = await sendNightlySummary({
+    let telegramSent = false;
+    try {
+      telegramSent = await sendNightlySummary({
       date: new Date().toISOString().split('T')[0],
       healthStatus: healthReport.overall,
       regime: snapshotSync.synced ? 'SYNCED' : 'UNKNOWN',
@@ -527,7 +547,12 @@ async function runNightlyProcess() {
       stopsUpdated: stopRecs.length,
       readyCandidates: readyToBuy.length,
       alerts,
-      portfolioValue: positions.reduce((sum, p) => sum + p.entryPrice * p.shares, 0),
+      // Portfolio value in GBP for multi-currency consistency
+      portfolioValue: positions.reduce((sum, p) => {
+        const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
+        const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
+        return sum + gbpPrice * p.shares;
+      }, 0),
       dailyChange: 0,
       dailyChangePercent: 0,
       equity,
@@ -547,6 +572,9 @@ async function runNightlyProcess() {
       breadthAlert,
       momentumAlert,
     });
+    } catch (error) {
+      console.error('  [8] Telegram send failed:', (error as Error).message);
+    }
     console.log(`        Telegram: ${telegramSent ? 'SENT' : 'NOT SENT (check credentials)'}`);
 
     // Step 9: Write heartbeat

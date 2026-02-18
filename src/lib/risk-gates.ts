@@ -73,9 +73,11 @@ export function validateRiskGates(
     limit: profile.maxPositions,
   });
 
-  // Gate 3: Sleeve limits
-  const totalInvestedValue = existingPositions.reduce((sum, p) => sum + p.value, 0) + newPosition.value;
-  const denom = Math.max(equity, totalInvestedValue);
+  // Gate 3: Sleeve limits (exclude HEDGE from denominator for consistency with Gates 1-2)
+  const nonHedgeInvested = existingPositions
+    .filter((p) => p.sleeve !== 'HEDGE')
+    .reduce((sum, p) => sum + p.value, 0) + newPosition.value;
+  const denom = Math.max(equity, nonHedgeInvested);
   const sleeveValue = existingPositions
     .filter((p) => p.sleeve === newPosition.sleeve)
     .reduce((sum, p) => sum + p.value, 0) + newPosition.value;

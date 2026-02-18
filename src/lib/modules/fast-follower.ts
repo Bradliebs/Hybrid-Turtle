@@ -8,7 +8,7 @@
 
 import 'server-only';
 import type { FastFollowerSignal } from '@/types';
-import { getDailyPrices, calculate20DayHigh } from '../market-data';
+import { getDailyPrices, getPriorNDayHigh } from '../market-data';
 
 const MAX_DAYS_SINCE_EXIT = 10;
 const VOLUME_THRESHOLD = 2.0;
@@ -25,14 +25,20 @@ interface ClosedPositionForFF {
  *   1. Exited via stop-hit within last 10 days
  *   2. Price has reclaimed 20-day high
  *   3. Volume > 2× average
+ *   4. Not blocked by whipsaw guard (Module 11)
+ *
+ * @param blockedTickers — tickers currently blocked by whipsaw guard
  */
 export async function scanFastFollowers(
-  closedPositions: ClosedPositionForFF[]
+  closedPositions: ClosedPositionForFF[],
+  blockedTickers?: Set<string>
 ): Promise<FastFollowerSignal[]> {
   const now = new Date();
 
   const recentStopOuts = closedPositions.filter(p => {
     if (p.exitReason !== 'STOP_HIT') return false;
+    // Whipsaw guard takes precedence — blocked tickers cannot re-enter
+    if (blockedTickers?.has(p.ticker)) return false;
     const exitDate = p.exitDate instanceof Date ? p.exitDate : new Date(p.exitDate);
     const daysSince = Math.floor((now.getTime() - exitDate.getTime()) / (1000 * 60 * 60 * 24));
     return daysSince <= MAX_DAYS_SINCE_EXIT;
@@ -46,7 +52,8 @@ export async function scanFastFollowers(
       if (bars.length < 20) return null;
 
       const price = bars[0].close;
-      const twentyDayHigh = calculate20DayHigh(bars);
+      // Exclude today's bar so "reclaimed 20-day high" isn't trivially true on breakout days
+      const twentyDayHigh = getPriorNDayHigh(bars, 20);
       const volume = bars[0].volume;
       const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
 

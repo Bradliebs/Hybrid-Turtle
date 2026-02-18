@@ -273,7 +273,8 @@ export function calculateADX(
   period: number = 14
 ): { adx: number; plusDI: number; minusDI: number } {
   // Need at least 2×period bars to seed DM smoothing + ADX smoothing
-  if (data.length < period * 2 + 1) return { adx: 20, plusDI: 25, minusDI: 20 };
+  // Insufficient data — return zeros so callers reject the ticker (adx < 20 filter)
+  if (data.length < period * 2 + 1) return { adx: 0, plusDI: 0, minusDI: 0 };
 
   // Data is sorted newest-first — compute DM/TR walking from oldest to newest
   const len = data.length;
@@ -397,8 +398,9 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
     // SPY fetch failed; use default
   }
 
+  // Exclude today's bar from average so spike isn't diluted in denominator
   const volumeRatio = dailyData[0]?.volume && dailyData.length > 20
-    ? dailyData[0].volume / (dailyData.slice(0, 20).reduce((s, d) => s + d.volume, 0) / 20)
+    ? dailyData[0].volume / (dailyData.slice(1, 21).reduce((s, d) => s + d.volume, 0) / 20)
     : 1;
 
   return {
@@ -659,19 +661,91 @@ export async function getBatchQuotes(tickers: string[]): Promise<Map<string, Sto
   return results;
 }
 
-// ── Market Regime from SPY vs 200 MA ──
+// ── Market Regime from SPY + VWRL with CHOP band & 3-day stability ──
+// Implements:
+//   Module 10: ±2% CHOP band around 200MA forces SIDEWAYS
+//   Module 19: Dual benchmark — both SPY and VWRL must be BULLISH
+//   Module 9:  3 consecutive days same regime required for BULLISH confirmation
+const CHOP_BAND_PCT = 0.02;
+
+/**
+ * Determine per-benchmark regime with ±2% CHOP band enforcement.
+ * If price is within ±2% of MA200, regime is forced to SIDEWAYS.
+ */
+function singleBenchmarkRegime(price: number, ma200: number): 'BULLISH' | 'SIDEWAYS' | 'BEARISH' {
+  const band = ma200 * CHOP_BAND_PCT;
+  const inChop = Math.abs(price - ma200) <= band;
+  if (inChop) return 'SIDEWAYS';
+  return price > ma200 ? 'BULLISH' : 'BEARISH';
+}
+
+/**
+ * Compute raw regime for a single day's data (SPY + VWRL dual benchmark).
+ * Both must be BULLISH for combined BULLISH; either BEARISH → combined BEARISH.
+ */
+function computeDayRegime(
+  spyClose: number, spyMa200: number,
+  vwrlClose: number, vwrlMa200: number
+): 'BULLISH' | 'SIDEWAYS' | 'BEARISH' {
+  const spyRegime = singleBenchmarkRegime(spyClose, spyMa200);
+  const vwrlRegime = singleBenchmarkRegime(vwrlClose, vwrlMa200);
+  if (spyRegime === 'BULLISH' && vwrlRegime === 'BULLISH') return 'BULLISH';
+  if (spyRegime === 'BEARISH' || vwrlRegime === 'BEARISH') return 'BEARISH';
+  return 'SIDEWAYS';
+}
+
 export async function getMarketRegime(): Promise<'BULLISH' | 'SIDEWAYS' | 'BEARISH'> {
   try {
-    const spyData = await getDailyPrices('SPY', 'full');
+    // Fetch full history for both benchmarks in parallel
+    const [spyData, vwrlData] = await Promise.all([
+      getDailyPrices('SPY', 'full'),
+      getDailyPrices('VWRL.L', 'full'),
+    ]);
+
     if (spyData.length < 200) return 'SIDEWAYS';
+    // If VWRL data is unavailable, fall back to SPY-only with CHOP band
+    const hasVwrl = vwrlData.length >= 200;
 
-    const spyPrice = spyData[0].close;
-    const closes = spyData.map((d) => d.close);
-    const spyMa200 = calculateMA(closes, 200);
-    const spyMa50 = calculateMA(closes, 50);
+    const spyCloses = spyData.map((d) => d.close);
+    const spyMa200 = calculateMA(spyCloses, 200);
 
-    if (spyPrice > spyMa200 && spyMa50 > spyMa200) return 'BULLISH';
-    if (spyPrice < spyMa200 && spyMa50 < spyMa200) return 'BEARISH';
+    let vwrlMa200 = 0;
+    if (hasVwrl) {
+      const vwrlCloses = vwrlData.map((d) => d.close);
+      vwrlMa200 = calculateMA(vwrlCloses, 200);
+    }
+
+    // --- 3-day stability check ---
+    // Compute regime for each of the last 3 trading days.
+    // All 3 must agree for BULLISH confirmation; otherwise fall back to SIDEWAYS.
+    const STABILITY_DAYS = 3;
+    const regimes: ('BULLISH' | 'SIDEWAYS' | 'BEARISH')[] = [];
+
+    for (let day = 0; day < STABILITY_DAYS; day++) {
+      if (day >= spyData.length) break;
+      const spyClose = spyData[day].close;
+
+      if (hasVwrl && day < vwrlData.length) {
+        const vwrlClose = vwrlData[day].close;
+        regimes.push(computeDayRegime(spyClose, spyMa200, vwrlClose, vwrlMa200));
+      } else {
+        // SPY-only with CHOP band fallback
+        regimes.push(singleBenchmarkRegime(spyClose, spyMa200));
+      }
+    }
+
+    // Today's raw regime
+    const todayRegime = regimes[0] ?? 'SIDEWAYS';
+
+    // Stability: all 3 days must show the same regime
+    if (regimes.length >= STABILITY_DAYS) {
+      const allSame = regimes.every((r) => r === todayRegime);
+      if (allSame) return todayRegime;
+      // Not stable — force SIDEWAYS (spec: "needs 3 for confirmation")
+      return 'SIDEWAYS';
+    }
+
+    // Fewer than 3 days of data — conservative fallback
     return 'SIDEWAYS';
   } catch {
     return 'SIDEWAYS';

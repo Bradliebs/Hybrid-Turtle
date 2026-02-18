@@ -138,26 +138,26 @@ export async function updateStopLoss(
     : 0;
   const newLevel = level ?? getProtectionLevel(rMultiple);
 
-  // Record stop history
-  await prisma.stopHistory.create({
-    data: {
-      positionId,
-      oldStop: position.currentStop,
-      newStop,
-      level: newLevel,
-      reason,
-    },
-  });
-
-  // Update position
-  await prisma.position.update({
-    where: { id: positionId },
-    data: {
-      currentStop: newStop,
-      stopLoss: newStop,
-      protectionLevel: newLevel,
-    },
-  });
+  // Atomic: both writes must succeed or neither does
+  await prisma.$transaction([
+    prisma.stopHistory.create({
+      data: {
+        positionId,
+        oldStop: position.currentStop,
+        newStop,
+        level: newLevel,
+        reason,
+      },
+    }),
+    prisma.position.update({
+      where: { id: positionId },
+      data: {
+        currentStop: newStop,
+        stopLoss: newStop,
+        protectionLevel: newLevel,
+      },
+    }),
+  ]);
 }
 
 /**

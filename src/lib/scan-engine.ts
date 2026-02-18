@@ -183,9 +183,13 @@ export async function runFullScan(
   const fxCache = new Map<string, number>();
   async function getFxToGbp(currency: string | null, ticker: string): Promise<number> {
     const curr = (currency || 'USD').toUpperCase();
-    const isUk = ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(ticker);
-    if (isUk || curr === 'GBX' || curr === 'GBp') return 0.01;
+    // Explicit currency takes priority over .L suffix heuristic
+    // (some LSE-listed ETFs are priced in USD, not GBX)
+    if (curr === 'GBX' || curr === 'GBp') return 0.01;
     if (curr === 'GBP') return 1;
+    // Fallback: if no explicit currency and .L suffix, assume GBX
+    const isUk = ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(ticker);
+    if (isUk && (!currency || currency === '')) return 0.01;
     const cached = fxCache.get(curr);
     if (cached != null) return cached;
     const rate = await getFXRate(curr, 'GBP');

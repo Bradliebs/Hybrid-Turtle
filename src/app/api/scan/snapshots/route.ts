@@ -221,9 +221,11 @@ export async function DELETE(request: NextRequest) {
     if (!id) {
       return apiError(400, 'INVALID_REQUEST', 'Snapshot id is required');
     }
-    // Delete tickers first (cascade), then snapshot
-    await prisma.snapshotTicker.deleteMany({ where: { snapshotId: id } });
-    await prisma.snapshot.delete({ where: { id } });
+    // Atomic cascade: delete tickers + snapshot together
+    await prisma.$transaction([
+      prisma.snapshotTicker.deleteMany({ where: { snapshotId: id } }),
+      prisma.snapshot.delete({ where: { id } }),
+    ]);
     return NextResponse.json({ message: 'Snapshot deleted' });
   } catch (error) {
     console.error('[Snapshot Delete] Error:', error);

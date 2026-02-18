@@ -114,26 +114,26 @@ async function syncStops() {
         else if (rMultiple >= 1.5) protectionLevel = 'BREAKEVEN';
       }
 
-      // Record stop history
-      await prisma.stopHistory.create({
-        data: {
-          positionId: matched.id,
-          oldStop,
-          newStop,
-          level: protectionLevel,
-          reason: `CSV import: trailing ATR stop from external system (${newStop.toFixed(2)})`,
-        },
-      });
-
-      // Update the position
-      await prisma.position.update({
-        where: { id: matched.id },
-        data: {
-          currentStop: newStop,
-          stopLoss: newStop,
-          protectionLevel,
-        },
-      });
+      // Atomic: both writes must succeed or neither does
+      await prisma.$transaction([
+        prisma.stopHistory.create({
+          data: {
+            positionId: matched.id,
+            oldStop,
+            newStop,
+            level: protectionLevel,
+            reason: `CSV import: trailing ATR stop from external system (${newStop.toFixed(2)})`,
+          },
+        }),
+        prisma.position.update({
+          where: { id: matched.id },
+          data: {
+            currentStop: newStop,
+            stopLoss: newStop,
+            protectionLevel,
+          },
+        }),
+      ]);
 
       console.log(`  ✓ ${matched.stock.ticker}: ${oldStop.toFixed(2)} → ${newStop.toFixed(2)} (${protectionLevel})`);
       updated++;

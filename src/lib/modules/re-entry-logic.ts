@@ -9,7 +9,7 @@
 
 import 'server-only';
 import type { ReEntrySignal } from '@/types';
-import { getDailyPrices, calculate20DayHigh } from '../market-data';
+import { getDailyPrices, getPriorNDayHigh } from '../market-data';
 
 const COOLDOWN_DAYS = 5;
 const MIN_EXIT_R = 0.5; // Must have exited at > 0.5R profit
@@ -54,7 +54,8 @@ export async function scanReEntrySignals(
       if (bars.length < 20) return null;
 
       const price = bars[0].close;
-      const twentyDayHigh = calculate20DayHigh(bars);
+      // Exclude today's bar so "reclaimed 20-day high" isn't trivially true on breakout days
+      const twentyDayHigh = getPriorNDayHigh(bars, 20);
       const reclaimedTwentyDayHigh = price >= twentyDayHigh;
 
       const isEligible = cooldownComplete && reclaimedTwentyDayHigh;

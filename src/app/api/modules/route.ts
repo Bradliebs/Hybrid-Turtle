@@ -145,8 +145,12 @@ export async function GET(request: NextRequest) {
         entryPrice: p.entryPrice,
         entryDate: p.entryDate,
         currentPrice: p.currentPrice,
+        currentStop: p.currentStop,
         initialRisk: p.initialRisk,
         shares: p.shares,
+        // Currency from the original position's stock record
+        currency: openPositions.find(op => op.id === p.id)?.stock.currency || 'USD',
+        sleeve: p.sleeve,
       }))
     );
 
@@ -224,7 +228,7 @@ export async function GET(request: NextRequest) {
       getDailyPrices('SPY', 'full'),
       // 4: VWRL full (for dual regime)
       getDailyPrices('VWRL.L', 'full'),
-      // 5: Fast followers
+      // 5: Fast followers — exclude tickers blocked by whipsaw guard
       scanFastFollowers(
         closedPositions
           .filter(p => p.exitReason === 'STOP_HIT')
@@ -232,7 +236,8 @@ export async function GET(request: NextRequest) {
             ticker: p.stock.ticker,
             exitDate: p.exitDate || new Date(),
             exitReason: p.exitReason,
-          }))
+          })),
+        new Set(whipsawBlocks.filter(w => w.blocked).map(w => w.ticker))
       ),
       // 6: Re-entry signals
       scanReEntrySignals(
@@ -463,7 +468,9 @@ export async function GET(request: NextRequest) {
         const atrResult = atrResults[i];
         const atr = atrResult.status === 'fulfilled' ? atrResult.value : null;
         const isUK = p.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.ticker);
-        const priceCurrency = isUK ? 'GBX' : 'USD';
+        // Use actual stock currency — not just UK/USD binary
+        const stockRecord = openPositions.find(op => op.id === p.id);
+        const priceCurrency = isUK ? 'GBX' : (stockRecord?.stock.currency || 'USD').toUpperCase();
         const currentAdds = addsMap.get(p.id) ?? 0;
         const pyramidCheck = canPyramid(
           p.currentPrice,

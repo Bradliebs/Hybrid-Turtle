@@ -1,0 +1,358 @@
+import { describe, expect, it } from 'vitest';
+import {
+  clamp,
+  safeNum,
+  safeBool,
+  computeBQS,
+  computeFWS,
+  computePenalties,
+  computeNCS,
+  actionNote,
+  scoreRow,
+  normaliseRow,
+  type SnapshotRow,
+} from './dual-score';
+
+// ── Helper: minimal valid SnapshotRow ────────────────────────
+
+function makeRow(overrides: Partial<SnapshotRow> = {}): SnapshotRow {
+  return {
+    ticker: 'TEST',
+    name: 'Test Stock',
+    sleeve: 'CORE',
+    status: 'READY',
+    close: 100,
+    atr_14: 2,
+    atr_pct: 2.0,
+    adx_14: 30,
+    plus_di: 25,
+    minus_di: 15,
+    vol_ratio: 1.0,
+    market_regime: 'BULLISH',
+    market_regime_stable: true,
+    distance_to_20d_high_pct: 1.0,
+    entry_trigger: 102,
+    stop_level: 96,
+    chasing_20_last5: false,
+    chasing_55_last5: false,
+    atr_spiking: false,
+    atr_collapsing: false,
+    rs_vs_benchmark_pct: 5,
+    ...overrides,
+  };
+}
+
+// ── Utility tests ────────────────────────────────────────────
+
+describe('clamp', () => {
+  it('clamps within range', () => {
+    expect(clamp(50)).toBe(50);
+    expect(clamp(-5)).toBe(0);
+    expect(clamp(150)).toBe(100);
+  });
+
+  it('returns lo for NaN/Infinity', () => {
+    expect(clamp(NaN)).toBe(0);
+    expect(clamp(Infinity)).toBe(0);
+  });
+
+  it('supports custom range', () => {
+    expect(clamp(5, 10, 20)).toBe(10);
+    expect(clamp(25, 10, 20)).toBe(20);
+  });
+});
+
+describe('safeNum', () => {
+  it('returns number for valid inputs', () => {
+    expect(safeNum(42)).toBe(42);
+    expect(safeNum('3.14')).toBe(3.14);
+  });
+
+  it('returns fallback for null/undefined/NaN', () => {
+    expect(safeNum(null)).toBe(0);
+    expect(safeNum(undefined)).toBe(0);
+    expect(safeNum('abc', 99)).toBe(99);
+  });
+});
+
+describe('safeBool', () => {
+  it('handles boolean values', () => {
+    expect(safeBool(true)).toBe(true);
+    expect(safeBool(false)).toBe(false);
+  });
+
+  it('handles string values', () => {
+    expect(safeBool('true')).toBe(true);
+    expect(safeBool('yes')).toBe(true);
+    expect(safeBool('1')).toBe(true);
+    expect(safeBool('false')).toBe(false);
+    expect(safeBool('no')).toBe(false);
+  });
+
+  it('returns fallback for null/undefined', () => {
+    expect(safeBool(null)).toBe(false);
+    expect(safeBool(undefined, true)).toBe(true);
+  });
+});
+
+// ── BQS tests ────────────────────────────────────────────────
+
+describe('computeBQS', () => {
+  it('returns BQS 0-100 for typical READY stock', () => {
+    const row = makeRow();
+    const bqs = computeBQS(row);
+    expect(bqs.BQS).toBeGreaterThan(0);
+    expect(bqs.BQS).toBeLessThanOrEqual(100);
+  });
+
+  it('trend strength increases with ADX', () => {
+    const low = computeBQS(makeRow({ adx_14: 15 }));
+    const high = computeBQS(makeRow({ adx_14: 40 }));
+    expect(high.bqs_trend).toBeGreaterThan(low.bqs_trend);
+  });
+
+  it('direction dominance increases with DI spread', () => {
+    const narrow = computeBQS(makeRow({ plus_di: 18, minus_di: 15 }));
+    const wide = computeBQS(makeRow({ plus_di: 35, minus_di: 10 }));
+    expect(wide.bqs_direction).toBeGreaterThan(narrow.bqs_direction);
+  });
+
+  it('proximity score higher when closer to 20d high', () => {
+    const far = computeBQS(makeRow({ distance_to_20d_high_pct: 5.0 }));
+    const close = computeBQS(makeRow({ distance_to_20d_high_pct: 0.5 }));
+    expect(close.bqs_proximity).toBeGreaterThan(far.bqs_proximity);
+  });
+
+  it('tailwind highest in stable BULLISH regime', () => {
+    const bullish = computeBQS(makeRow({ market_regime: 'BULLISH', market_regime_stable: true }));
+    const bearish = computeBQS(makeRow({ market_regime: 'BEARISH', market_regime_stable: true }));
+    expect(bullish.bqs_tailwind).toBeGreaterThan(bearish.bqs_tailwind);
+  });
+
+  it('volume bonus triggers above 1.2x ratio', () => {
+    const noBonus = computeBQS(makeRow({ vol_ratio: 1.0 }));
+    const bonus = computeBQS(makeRow({ vol_ratio: 1.8 }));
+    expect(noBonus.bqs_vol_bonus).toBe(0);
+    expect(bonus.bqs_vol_bonus).toBeGreaterThan(0);
+  });
+
+  it('volatility health peaks in 1-4% ATR range', () => {
+    const optimal = computeBQS(makeRow({ atr_pct: 2.5 }));
+    const tooHigh = computeBQS(makeRow({ atr_pct: 7.0 }));
+    const tooLow = computeBQS(makeRow({ atr_pct: 0.3 }));
+    expect(optimal.bqs_volatility).toBeGreaterThan(tooHigh.bqs_volatility);
+    expect(optimal.bqs_volatility).toBeGreaterThan(tooLow.bqs_volatility);
+  });
+});
+
+// ── FWS tests ────────────────────────────────────────────────
+
+describe('computeFWS', () => {
+  it('returns FWS 0-100', () => {
+    const fws = computeFWS(makeRow());
+    expect(fws.FWS).toBeGreaterThanOrEqual(0);
+    expect(fws.FWS).toBeLessThanOrEqual(100);
+  });
+
+  it('low volume ratio increases volume risk', () => {
+    const healthy = computeFWS(makeRow({ vol_ratio: 1.5 }));
+    const weak = computeFWS(makeRow({ vol_ratio: 0.4 }));
+    expect(weak.fws_volume).toBeGreaterThan(healthy.fws_volume);
+  });
+
+  it('chasing flags increase extension risk', () => {
+    const clean = computeFWS(makeRow({ chasing_20_last5: false, chasing_55_last5: false }));
+    const oneChase = computeFWS(makeRow({ chasing_20_last5: true, chasing_55_last5: false }));
+    const bothChase = computeFWS(makeRow({ chasing_20_last5: true, chasing_55_last5: true }));
+    expect(oneChase.fws_extension).toBeGreaterThan(clean.fws_extension);
+    expect(bothChase.fws_extension).toBeGreaterThan(oneChase.fws_extension);
+  });
+
+  it('ATR spiking triggers vol shock risk', () => {
+    const calm = computeFWS(makeRow({ atr_spiking: false }));
+    const spiking = computeFWS(makeRow({ atr_spiking: true }));
+    expect(spiking.fws_vol_shock).toBe(20);
+    expect(calm.fws_vol_shock).toBe(0);
+  });
+
+  it('unstable regime adds regime instability risk', () => {
+    const stable = computeFWS(makeRow({ market_regime_stable: true }));
+    const unstable = computeFWS(makeRow({ market_regime_stable: false }));
+    expect(unstable.fws_regime_instability).toBe(10);
+    expect(stable.fws_regime_instability).toBe(0);
+  });
+
+  it('marginal trend penalises low ADX', () => {
+    const strong = computeFWS(makeRow({ adx_14: 35 }));
+    const marginal = computeFWS(makeRow({ adx_14: 18 }));
+    expect(marginal.fws_marginal_trend).toBeGreaterThan(strong.fws_marginal_trend);
+  });
+});
+
+// ── Penalties tests ──────────────────────────────────────────
+
+describe('computePenalties', () => {
+  it('earnings within 1 day gets maximum penalty', () => {
+    const p = computePenalties(makeRow({ days_to_earnings: 1 }));
+    expect(p.EarningsPenalty).toBe(20);
+  });
+
+  it('earnings within 5 days gets moderate penalty', () => {
+    const p = computePenalties(makeRow({ days_to_earnings: 4 }));
+    expect(p.EarningsPenalty).toBe(10);
+  });
+
+  it('no earnings data = no penalty', () => {
+    const p = computePenalties(makeRow({ days_to_earnings: null }));
+    expect(p.EarningsPenalty).toBe(0);
+  });
+
+  it('cluster exposure near cap triggers penalty', () => {
+    const p = computePenalties(makeRow({
+      cluster_exposure_pct: 22,
+      max_cluster_pct: 25,
+    }));
+    expect(p.ClusterPenalty).toBeGreaterThan(0);
+  });
+
+  it('cluster exposure well below cap = no penalty', () => {
+    const p = computePenalties(makeRow({
+      cluster_exposure_pct: 10,
+      max_cluster_pct: 25,
+    }));
+    expect(p.ClusterPenalty).toBe(0);
+  });
+});
+
+// ── NCS tests ────────────────────────────────────────────────
+
+describe('computeNCS', () => {
+  it('formula: NCS = clamp(BQS - 0.8*FWS + 10 - penalties)', () => {
+    const ncs = computeNCS(70, 20, { EarningsPenalty: 0, ClusterPenalty: 0, SuperClusterPenalty: 0 });
+    // BaseNCS = clamp(70 - 16 + 10) = 64
+    expect(ncs.BaseNCS).toBe(64);
+    expect(ncs.NCS).toBe(64);
+  });
+
+  it('penalties reduce NCS below BaseNCS', () => {
+    const ncs = computeNCS(80, 10, { EarningsPenalty: 15, ClusterPenalty: 5, SuperClusterPenalty: 0 });
+    // BaseNCS = clamp(80 - 8 + 10) = 82
+    // NCS = clamp(82 - 15 - 5 - 0) = 62
+    expect(ncs.BaseNCS).toBe(82);
+    expect(ncs.NCS).toBe(62);
+  });
+
+  it('NCS never goes below 0', () => {
+    const ncs = computeNCS(10, 90, { EarningsPenalty: 20, ClusterPenalty: 20, SuperClusterPenalty: 20 });
+    expect(ncs.NCS).toBe(0);
+  });
+});
+
+// ── actionNote tests ─────────────────────────────────────────
+
+describe('actionNote', () => {
+  it('Auto-Yes when NCS>=70 and FWS<=30', () => {
+    expect(actionNote(25, 75, 0)).toContain('Auto-Yes');
+  });
+
+  it('Auto-No when FWS>65', () => {
+    expect(actionNote(70, 50, 0)).toContain('Auto-No');
+  });
+
+  it('Conditional otherwise', () => {
+    expect(actionNote(40, 55, 0)).toContain('Conditional');
+  });
+
+  it('includes earnings warning when penalty > 0', () => {
+    const note = actionNote(25, 75, 12);
+    expect(note).toContain('Earnings headwind');
+  });
+});
+
+// ── scoreRow integration ─────────────────────────────────────
+
+describe('scoreRow', () => {
+  it('produces all required fields', () => {
+    const scored = scoreRow(makeRow());
+    expect(scored.BQS).toBeGreaterThan(0);
+    expect(scored.FWS).toBeGreaterThanOrEqual(0);
+    expect(scored.NCS).toBeGreaterThanOrEqual(0);
+    expect(scored.ActionNote).toBeDefined();
+    expect(scored.di_spread).toBe(10); // 25 - 15
+  });
+
+  it('high-quality stock gets high NCS', () => {
+    const scored = scoreRow(makeRow({
+      adx_14: 35,
+      plus_di: 30,
+      minus_di: 10,
+      atr_pct: 2.5,
+      vol_ratio: 1.5,
+      distance_to_20d_high_pct: 0.5,
+      market_regime: 'BULLISH',
+      market_regime_stable: true,
+      rs_vs_benchmark_pct: 10,
+    }));
+    expect(scored.NCS).toBeGreaterThan(50);
+  });
+
+  it('fragile stock gets low NCS and Auto-No', () => {
+    const scored = scoreRow(makeRow({
+      adx_14: 18,
+      vol_ratio: 0.3,
+      chasing_20_last5: true,
+      chasing_55_last5: true,
+      atr_spiking: true,
+      market_regime_stable: false,
+    }));
+    expect(scored.FWS).toBeGreaterThan(50);
+    expect(scored.ActionNote).toContain('Auto-No');
+  });
+});
+
+// ── normaliseRow tests ───────────────────────────────────────
+
+describe('normaliseRow', () => {
+  it('maps column aliases', () => {
+    const row = normaliseRow({
+      ticker: 'AAPL',
+      instrument_name: 'Apple Inc',
+      adx: 30,
+      rs_vs_benchmark: 5,
+    });
+    expect(row.name).toBe('Apple Inc');
+    expect(row.adx_14).toBe(30);
+    expect(row.rs_vs_benchmark_pct).toBe(5);
+  });
+
+  it('fills defaults for missing fields', () => {
+    const row = normaliseRow({ ticker: 'TEST' });
+    expect(row.close).toBe(0);
+    expect(row.market_regime).toBe('NEUTRAL');
+    expect(row.market_regime_stable).toBe(true);
+    expect(row.chasing_20_last5).toBe(false);
+  });
+
+  it('coerces booleans from strings', () => {
+    const row = normaliseRow({
+      ticker: 'TEST',
+      atr_spiking: 'true',
+      chasing_20_last5: '1',
+    });
+    expect(row.atr_spiking).toBe(true);
+    expect(row.chasing_20_last5).toBe(true);
+  });
+
+  it('auto-converts small decimal rs_vs_benchmark_pct to percent', () => {
+    const row = normaliseRow({
+      ticker: 'TEST',
+      rs_vs_benchmark_pct: 0.03,
+    });
+    expect(row.rs_vs_benchmark_pct).toBe(3);
+  });
+
+  it('uses ticker as name fallback', () => {
+    const row = normaliseRow({ ticker: 'AAPL', name: '' });
+    expect(row.name).toBe('AAPL');
+  });
+});

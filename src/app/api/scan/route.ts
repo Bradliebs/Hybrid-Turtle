@@ -231,6 +231,12 @@ export async function GET() {
 
     const passedFilters = candidates.filter((c) => c.passesAllFilters);
 
+    // Look up actual user profile/equity so DB fallback uses real values
+    const scanUser = await prisma.user.findUnique({
+      where: { id: latestScan.userId },
+      select: { riskProfile: true, equity: true },
+    });
+
     const dbResult = {
       regime: latestScan.regime,
       candidates,
@@ -243,8 +249,8 @@ export async function GET() {
       passedAntiChase: passedFilters.filter((c) => c.passesAntiChase === true).length,
       cachedAt: latestScan.runDate.toISOString(),
       userId: latestScan.userId,
-      riskProfile: 'BALANCED',
-      equity: 0,
+      riskProfile: scanUser?.riskProfile || 'BALANCED',
+      equity: scanUser?.equity || 0,
       hasCache: true,
       source: 'database',
     };

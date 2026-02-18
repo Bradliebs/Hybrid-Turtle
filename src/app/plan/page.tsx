@@ -70,6 +70,8 @@ interface CrossRefTicker {
   scanRiskDollars?: number;
   scanRankScore?: number;
   scanPassesFilters?: boolean;
+  scanPassesRiskGates?: boolean;
+  scanPassesAntiChase?: boolean;
   agreementScore?: number;
   dualNCS?: number;
   dualBQS?: number;

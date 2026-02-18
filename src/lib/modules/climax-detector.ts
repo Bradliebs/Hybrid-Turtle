@@ -78,7 +78,8 @@ export async function scanClimaxSignals(
         const closes = bars.slice(0, 20).map(b => b.close);
         const ma20 = calculateMA(closes, 20);
         const volume = bars[0].volume;
-        const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
+        // Exclude today's bar from avg — use prior 20 bars so spike isn't diluted
+        const avgVolume20 = bars.slice(1, 21).reduce((s, b) => s + b.volume, 0) / 20;
 
         const signal = checkClimaxTop(pos.ticker, pos.id, price, ma20, volume, avgVolume20, mode);
         return signal.isClimax ? signal : null;

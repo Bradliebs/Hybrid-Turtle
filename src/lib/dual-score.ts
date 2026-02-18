@@ -134,7 +134,7 @@ function marketTailwind(row: SnapshotRow): number {
   const regime = (row.market_regime || 'NEUTRAL').toUpperCase();
   const stable = safeBool(row.market_regime_stable, true);
   if (regime === 'BULLISH') return stable ? 15 : 9;
-  if (regime === 'NEUTRAL') return 6;
+  if (regime === 'SIDEWAYS' || regime === 'NEUTRAL') return 6;
   if (regime === 'BEARISH') return 1.5;
   return 6;
 }

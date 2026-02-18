@@ -144,11 +144,14 @@ export async function syncSnapshot(
   const equity = defaultUser?.equity || 10000;
 
   // Calculate cluster/super-cluster risk exposure from open positions
+  // HEDGE positions excluded from open risk per CLAUDE.md
   const clusterRisk = new Map<string, number>();
   const superClusterRisk = new Map<string, number>();
   let totalRisk = 0;
 
   for (const pos of openPositions) {
+    // Skip HEDGE — excluded from risk calculations
+    if ((pos.stock as { sleeve?: string }).sleeve === 'HEDGE') continue;
     const rawRisk = Math.max(0, (pos.entryPrice - pos.currentStop) * pos.shares);
     // Approximate GBP conversion
     const currency = (pos.stock.currency || 'USD').toUpperCase();
@@ -184,6 +187,8 @@ export async function syncSnapshot(
   // 6. Process each stock in batches
   const failed: string[] = [];
   let done = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const batchData: Record<string, unknown>[] = [];
 
   for (let i = 0; i < stocks.length; i += BATCH_SIZE) {
     const batch = stocks.slice(i, i + BATCH_SIZE);
@@ -234,7 +239,8 @@ export async function syncSnapshot(
           // ── Relative strength ──
           const rsPct = await rsVsBenchmark(closes, spyCloses);
 
-          // ── Status classification ──
+          // ── Status classification (aligned with scan-engine spec) ──
+          // READY: ≤2% to 20d high, WATCH: ≤3%, FAR: >3%
           let status: string;
           const priceAboveMa200 = ma200 > 0 && close > ma200;
           const bullishDI = plusDI > minusDI;
@@ -243,7 +249,7 @@ export async function syncSnapshot(
             status = 'IGNORE';
           } else if (distTo20 <= 2) {
             status = 'READY';
-          } else if (distTo20 <= 5) {
+          } else if (distTo20 <= 3) {
             status = 'WATCH';
           } else {
             status = 'FAR';
@@ -324,13 +330,11 @@ export async function syncSnapshot(
       })
     );
 
-    // Write successful results to DB
+    // Collect successful results for batch write at end
     for (const result of results) {
       if (result.status === 'fulfilled' && result.value) {
-        await prisma.snapshotTicker.create({ data: result.value });
+        batchData.push(result.value);
         done++;
-      } else if (result.status === 'rejected') {
-        // already pushed to failed in the catch
       }
     }
 
@@ -350,11 +354,16 @@ export async function syncSnapshot(
     }
   }
 
-  // 7. Update snapshot row count
-  await prisma.snapshot.update({
-    where: { id: snapshot.id },
-    data: { rowCount: done },
-  });
+  // 7. Write all collected rows + update snapshot count in a single transaction
+  await prisma.$transaction([
+    ...batchData.map((d) =>
+      prisma.snapshotTicker.create({ data: d as Parameters<typeof prisma.snapshotTicker.create>[0]['data'] })
+    ),
+    prisma.snapshot.update({
+      where: { id: snapshot.id },
+      data: { rowCount: done },
+    }),
+  ]);
 
   return {
     snapshotId: snapshot.id,
