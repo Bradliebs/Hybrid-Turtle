@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/scan/scores/route.ts, /api/scan/cross-ref/route.ts
+ * Consumes: (standalone — no internal imports)
+ * Risk-sensitive: NO
+ * Last modified: 2026-02-19
+ * Notes: Weights are intentional. Do not rebalance without explicit instruction.
+ */
 // ============================================================
 // Dual Score Engine — TypeScript port of scoring.py
 // BQS (Breakout Quality Score), FWS (Fatal Weakness Score),

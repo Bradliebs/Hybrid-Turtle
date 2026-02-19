@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/scan/route.ts
+ * Consumes: market-data.ts, position-sizer.ts, risk-gates.ts, scan-guards.ts, modules/adaptive-atr-buffer.ts, prisma.ts, @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-19
+ * Notes: 7-stage pipeline. Do not add, remove, or reorder stages without explicit instruction.
+ */
 // ============================================================
 // 7-Stage Scan Engine
 // ============================================================

@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { updateStopLoss, generateStopRecommendations, StopLossError } from '@/lib/stop-manager';
+import { parseJsonBody } from '@/lib/request-validation';
 import prisma from '@/lib/prisma';
 import { getBatchPrices } from '@/lib/market-data';
 import { apiError } from '@/lib/api-response';
 
+const updateStopSchema = z.object({
+  positionId: z.string().min(1, 'positionId is required'),
+  newStop: z.number().positive('newStop must be a positive number'),
+  reason: z.string().min(1, 'reason is required'),
+});
+
 export async function PUT(request: NextRequest) {
   try {
-    const { positionId, newStop, reason } = await request.json();
-
-    if (!positionId || newStop === undefined || !reason) {
-      return apiError(400, 'INVALID_REQUEST', 'positionId, newStop, and reason are required');
-    }
+    const parsed = await parseJsonBody(request, updateStopSchema);
+    if (!parsed.ok) return parsed.response;
+    const { positionId, newStop, reason } = parsed.data;
 
     await updateStopLoss(positionId, newStop, reason);
 

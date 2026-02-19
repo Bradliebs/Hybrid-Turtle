@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: scan-engine.ts, nightly.ts, /api/positions/route.ts, /api/risk/route.ts, /api/nightly/route.ts, /api/modules/route.ts, /api/portfolio/summary/route.ts, useRiskProfile.ts
+ * Consumes: @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-19
+ * Notes: Uses floorShares() only — never Math.round/ceil. FX conversion applied before sizing.
+ */
 // ============================================================
 // Position Sizing Calculator
 // ============================================================

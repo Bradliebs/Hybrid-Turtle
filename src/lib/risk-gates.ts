@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: scan-engine.ts, nightly.ts, /api/positions/route.ts, /api/risk/route.ts, /api/nightly/route.ts, /api/modules/route.ts
+ * Consumes: @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-19
+ * Notes: All 6 gates must pass. Never short-circuit, bypass, or add a soft override.
+ */
 // ============================================================
 // Risk Gates — Concentration & Cap Checks
 // ============================================================

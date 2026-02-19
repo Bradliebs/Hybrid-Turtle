@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: nightly.ts, /api/stops/route.ts, /api/stops/sync/route.ts, /api/stops/t212/route.ts, /api/nightly/route.ts, /api/modules/route.ts, /api/positions/hedge/route.ts
+ * Consumes: prisma.ts, market-data.ts, @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-19
+ * Notes: Stops NEVER decrease. Monotonic enforcement is the most important rule in the system.
+ */
 // ============================================================
 // Stop-Loss Manager — Monotonic Enforcement + Trailing ATR
 // ============================================================

@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/modules/route.ts, market-data.ts (via getMarketRegime)
+ * Consumes: @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-19
+ * Notes: Requires 3 consecutive days same regime for BULLISH confirmation. Do not reduce.
+ */
 // ============================================================
 // Market Regime Detector — with CHOP, ±2% Band, Dual Benchmark
 // ============================================================
@@ -6,6 +14,110 @@
 import type { MarketRegime, DualRegimeResult, RegimeStabilityResult } from '@/types';
 
 const CHOP_BAND_PCT = 0.02; // ±2% band around 200MA for CHOP zone
+
+// ── Multi-Signal Regime Detection (SPY-only, pure function) ──
+// Uses a bull/bear scoring model across 5 signals:
+//   SPY vs MA200, ADX trend strength, DI direction, VIX fear, A/D breadth.
+// ±2% CHOP band override: forces SIDEWAYS when price is near MA200.
+
+interface DetectRegimeInput {
+  spyPrice: number;
+  spy200MA: number;
+  spyAdx: number;
+  spyPlusDI: number;
+  spyMinusDI: number;
+  vixLevel: number;
+  advanceDeclineRatio: number;
+}
+
+interface DetectRegimeResult {
+  regime: MarketRegime;
+  confidence: number;
+  inChopBand: boolean;
+  reasons: string[];
+}
+
+/**
+ * Detect market regime from SPY market data using a multi-signal scoring model.
+ * Returns regime, confidence (0–1), CHOP band status, and reason strings.
+ */
+export function detectRegime(input: DetectRegimeInput): DetectRegimeResult {
+  const { spyPrice, spy200MA, spyAdx, spyPlusDI, spyMinusDI, vixLevel, advanceDeclineRatio } = input;
+  const reasons: string[] = [];
+
+  // ±2% CHOP band — overrides everything when price is near MA200
+  const band = spy200MA * CHOP_BAND_PCT;
+  const inChopBand = Math.abs(spyPrice - spy200MA) <= band;
+
+  if (inChopBand) {
+    reasons.push(`CHOP BAND: price ${spyPrice.toFixed(0)} within ±2% of MA200 ${spy200MA.toFixed(0)} — forced SIDEWAYS`);
+    return { regime: 'SIDEWAYS', confidence: 0.5, inChopBand, reasons };
+  }
+
+  // Score bull vs bear signals (each signal awards 1–3 points)
+  let bull = 0;
+  let bear = 0;
+
+  // Signal 1: Price vs MA200 (strong signal, +3)
+  if (spyPrice > spy200MA) {
+    bull += 3;
+    reasons.push(`SPY ${spyPrice.toFixed(0)} above MA200 ${spy200MA.toFixed(0)} (+3 bull)`);
+  } else {
+    bear += 3;
+    reasons.push(`SPY ${spyPrice.toFixed(0)} below MA200 ${spy200MA.toFixed(0)} (+3 bear)`);
+  }
+
+  // Signal 2: ADX trend strength (+1 if trending)
+  if (spyAdx >= 25) {
+    // Strong trend — amplify the directional signal
+    if (spyPlusDI > spyMinusDI) { bull += 1; reasons.push(`ADX ${spyAdx.toFixed(0)} strong trend, +DI leads (+1 bull)`); }
+    else { bear += 1; reasons.push(`ADX ${spyAdx.toFixed(0)} strong trend, −DI leads (+1 bear)`); }
+  }
+
+  // Signal 3: DI direction (+2)
+  if (spyPlusDI > spyMinusDI) {
+    bull += 2;
+    reasons.push(`+DI ${spyPlusDI.toFixed(0)} > −DI ${spyMinusDI.toFixed(0)} (+2 bull)`);
+  } else {
+    bear += 2;
+    reasons.push(`−DI ${spyMinusDI.toFixed(0)} > +DI ${spyPlusDI.toFixed(0)} (+2 bear)`);
+  }
+
+  // Signal 4: VIX fear level (+1)
+  if (vixLevel < 20) {
+    bull += 1;
+    reasons.push(`VIX ${vixLevel.toFixed(0)} low — calm market (+1 bull)`);
+  } else if (vixLevel >= 30) {
+    bear += 1;
+    reasons.push(`VIX ${vixLevel.toFixed(0)} elevated — fear (+1 bear)`);
+  } else {
+    reasons.push(`VIX ${vixLevel.toFixed(0)} neutral`);
+  }
+
+  // Signal 5: Advance/Decline ratio (+1)
+  if (advanceDeclineRatio > 1.2) {
+    bull += 1;
+    reasons.push(`A/D ratio ${advanceDeclineRatio.toFixed(1)} — broad strength (+1 bull)`);
+  } else if (advanceDeclineRatio < 0.8) {
+    bear += 1;
+    reasons.push(`A/D ratio ${advanceDeclineRatio.toFixed(1)} — broad weakness (+1 bear)`);
+  }
+
+  // Classify: need 5+ for directional conviction, otherwise SIDEWAYS
+  const total = bull + bear;
+  let regime: MarketRegime;
+  if (bull >= 5) {
+    regime = 'BULLISH';
+  } else if (bear >= 5) {
+    regime = 'BEARISH';
+  } else {
+    regime = 'SIDEWAYS';
+  }
+
+  const confidence = total > 0 ? Math.max(bull, bear) / total : 0.5;
+
+  return { regime, confidence, inChopBand, reasons };
+}
 
 /**
  * Module 9: Regime Stability — requires 3 consecutive days before labeling
