@@ -10,6 +10,7 @@ import StopUpdateQueue from '@/components/plan/StopUpdateQueue';
 import PositionSizerWidget from '@/components/plan/PositionSizerWidget';
 import SwapSuggestionsWidget from '@/components/plan/SwapSuggestionsWidget';
 import LaggardAlertsWidget from '@/components/plan/LaggardAlertsWidget';
+import EarlyBirdWidget from '@/components/plan/EarlyBirdWidget';
 import { useStore } from '@/store/useStore';
 import { apiRequest } from '@/lib/api-client';
 import { ClipboardList, Calendar, Loader2 } from 'lucide-react';
@@ -328,6 +329,7 @@ export default function PlanPage() {
                 riskBudget={riskSummary?.budget}
                 hasReadyCandidates={hasReadyCandidates}
               />
+              <EarlyBirdWidget />
               <SwapSuggestionsWidget />
               <LaggardAlertsWidget />
             </div>
