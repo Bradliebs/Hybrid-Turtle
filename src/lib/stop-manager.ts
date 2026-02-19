@@ -27,6 +27,24 @@ export function getProtectionLevel(rMultiple: number): ProtectionLevel {
 }
 
 /**
+ * Infer protection level from where the stop IS positioned relative to entry.
+ * Used when a caller doesn't supply an explicit level (e.g. trailing ATR updates).
+ * Thresholds are midpoints between the actual stop formulas:
+ *   INITIAL  → stop < entry + 0.25 × initialRisk  (below entry or at original stop)
+ *   BREAKEVEN→ stop in [0.25R, 0.75R) above entry
+ *   LOCK_08R → stop in [0.25R, 0.75R) above entry  — note: LOCK_08R actual stop = entry + 0.5R
+ *   LOCK_1R_TRAIL → stop ≥ entry + 0.75 × initialRisk
+ */
+export function inferLevelFromStop(newStop: number, entryPrice: number, initialRisk: number): ProtectionLevel {
+  if (initialRisk <= 0) return 'INITIAL';
+  const stopR = (newStop - entryPrice) / initialRisk;
+  if (stopR >= 0.75) return 'LOCK_1R_TRAIL';
+  if (stopR >= 0.25) return 'LOCK_08R';
+  if (stopR >= -0.1) return 'BREAKEVEN'; // at or very near entry
+  return 'INITIAL';
+}
+
+/**
  * Calculate the recommended stop price for a given protection level
  * For LOCK_1R_TRAIL: max(Entry + 1R, Close − 2×ATR)
  */
@@ -133,10 +151,10 @@ export async function updateStopLoss(
   // No-op if same
   if (newStop === position.currentStop) return;
 
-  const rMultiple = position.initialRisk > 0
-    ? (newStop - position.entryPrice) / position.initialRisk
-    : 0;
-  const newLevel = level ?? getProtectionLevel(rMultiple);
+  // Infer level from stop position (not price R-multiple) if caller doesn't pass one.
+  // getProtectionLevel() takes the current price R-multiple, which we don't have here —
+  // using the stop value directly gives a correct label (e.g. trailing ATR stops).
+  const newLevel = level ?? inferLevelFromStop(newStop, position.entryPrice, position.initialRisk);
 
   // Atomic: both writes must succeed or neither does
   await prisma.$transaction([

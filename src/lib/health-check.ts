@@ -72,13 +72,13 @@ export async function runHealthCheck(userId: string): Promise<HealthCheckReport>
   results.push(checkOpenRiskCap(user.positions, user.equity, user.riskProfile as RiskProfileType, livePrices, gbpPrices));
 
   // ---- C3: Valid Position Sizes ----
-  results.push(checkPositionSizes(user.positions, user.equity, user.riskProfile as RiskProfileType));
+  results.push(checkPositionSizes(user.positions, user.equity, user.riskProfile as RiskProfileType, livePrices, gbpPrices));
 
   // ---- D: Stop Monotonicity ----
   results.push(await checkStopMonotonicity(user.positions));
 
   // ---- E: State File Currency ----
-  results.push(checkStateCurrency());
+  results.push(await checkStateCurrency(userId));
 
   // ---- F: Config Coherence ----
   results.push(checkConfigCoherence(user.riskProfile as RiskProfileType));
@@ -232,7 +232,13 @@ function checkOpenRiskCap(
   return { id: 'C2', label: 'Open Risk Within Cap', category: 'Risk', status: 'GREEN', message: `Open risk: ${riskPercent.toFixed(1)}% / ${profile.maxOpenRisk}%` };
 }
 
-function checkPositionSizes(positions: HealthCheckPosition[], equity: number, riskProfile: RiskProfileType): HealthCheckResult {
+function checkPositionSizes(
+  positions: HealthCheckPosition[],
+  equity: number,
+  riskProfile: RiskProfileType,
+  livePrices?: Record<string, number>,
+  gbpPrices?: Record<string, number>
+): HealthCheckResult {
   if (positions.length === 0) {
     return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'No open positions' };
   }
@@ -241,9 +247,16 @@ function checkPositionSizes(positions: HealthCheckPosition[], equity: number, ri
     return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'Too few positions for size check' };
   }
   const caps = getProfileCaps(riskProfile);
-  const totalValue = positions.reduce((sum: number, p: HealthCheckPosition) => sum + (p.entryPrice * p.shares), 0);
+  // Use mark-to-market prices (GBP-normalised where available) rather than stale entry prices
+  const totalValue = positions.reduce((sum: number, p: HealthCheckPosition) => {
+    const ticker = p.stock?.ticker;
+    const markPrice = ticker ? (gbpPrices?.[ticker] ?? livePrices?.[ticker] ?? p.entryPrice) : p.entryPrice;
+    return sum + markPrice * p.shares;
+  }, 0);
   const oversized = positions.filter((p: HealthCheckPosition) => {
-    const posValue = p.entryPrice * p.shares;
+    const ticker = p.stock?.ticker;
+    const markPrice = ticker ? (gbpPrices?.[ticker] ?? livePrices?.[ticker] ?? p.entryPrice) : p.entryPrice;
+    const posValue = markPrice * p.shares;
     const pct = totalValue > 0 ? posValue / totalValue : 0;
     const sleeve = p.stock?.sleeve || 'CORE';
     const cap = caps.positionSizeCaps[sleeve] ?? 0.16;
@@ -251,9 +264,9 @@ function checkPositionSizes(positions: HealthCheckPosition[], equity: number, ri
   });
 
   if (oversized.length > 0) {
-    return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'YELLOW', message: `${oversized.length} position(s) exceed size limits` };
+    return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'YELLOW', message: `${oversized.length} position(s) exceed size limits (mark-to-market)` };
   }
-  return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'All positions within size limits' };
+  return { id: 'C3', label: 'Valid Position Sizes', category: 'Risk', status: 'GREEN', message: 'All positions within size limits (mark-to-market)' };
 }
 
 async function checkStopMonotonicity(positions: HealthCheckPosition[]): Promise<HealthCheckResult> {
@@ -274,8 +287,27 @@ async function checkStopMonotonicity(positions: HealthCheckPosition[]): Promise<
   return { id: 'D', label: 'Stop Monotonicity', category: 'Logic', status: 'GREEN', message: 'All stops monotonically increasing' };
 }
 
-function checkStateCurrency(): HealthCheckResult {
-  return { id: 'E', label: 'State File Currency', category: 'Logic', status: 'GREEN', message: 'Portfolio state is current' };
+async function checkStateCurrency(userId: string): Promise<HealthCheckResult> {
+  try {
+    const snapshot = await prisma.equitySnapshot.findFirst({
+      where: { userId },
+      orderBy: { capturedAt: 'desc' },
+    });
+    if (!snapshot) {
+      return { id: 'E', label: 'State File Currency', category: 'Logic', status: 'YELLOW', message: 'No equity snapshot recorded — run nightly to capture state' };
+    }
+    const daysSince = (Date.now() - snapshot.capturedAt.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince > 7) {
+      return { id: 'E', label: 'State File Currency', category: 'Logic', status: 'RED', message: `Equity state is ${daysSince.toFixed(1)} days old — run nightly to refresh` };
+    }
+    if (daysSince > 2) {
+      return { id: 'E', label: 'State File Currency', category: 'Logic', status: 'YELLOW', message: `Equity state is ${daysSince.toFixed(1)} days old` };
+    }
+    const hoursAgo = daysSince * 24;
+    return { id: 'E', label: 'State File Currency', category: 'Logic', status: 'GREEN', message: `Equity state current (${Math.floor(hoursAgo)}h ago)` };
+  } catch {
+    return { id: 'E', label: 'State File Currency', category: 'Logic', status: 'YELLOW', message: 'Unable to verify equity snapshot state' };
+  }
 }
 
 function checkConfigCoherence(riskProfile: RiskProfileType): HealthCheckResult {

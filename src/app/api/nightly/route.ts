@@ -71,8 +71,26 @@ export async function POST(request: NextRequest) {
       : {};
 
     // Step 3: Generate R-based stop recommendations
+    // Pre-fetch ATRs for open positions so LOCK_1R_TRAIL trailing stops
+    // use the same ATR-adjusted formula as the bat-file nightly path.
     const livePriceMap = new Map(Object.entries(livePrices));
-    const stopRecs = await generateStopRecommendations(userId, livePriceMap);
+    const atrMap = new Map<string, number>();
+    const PRICE_BATCH = 10;
+    for (let i = 0; i < openTickers.length; i += PRICE_BATCH) {
+      const batch = openTickers.slice(i, i + PRICE_BATCH);
+      await Promise.allSettled(
+        batch.map(async (ticker) => {
+          const bars = await getDailyPrices(ticker, 'full');
+          if (bars.length >= 15) {
+            atrMap.set(ticker, calculateATR(bars, 14));
+          }
+        })
+      );
+      if (i + PRICE_BATCH < openTickers.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    const stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);
 
     // Collect R-based stop changes for Telegram
     const stopChanges: NightlyStopChange[] = stopRecs.map((rec) => {

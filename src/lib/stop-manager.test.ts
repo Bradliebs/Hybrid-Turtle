@@ -4,6 +4,7 @@ import {
   calculateProtectionStop,
   calculateStopRecommendation,
   getProtectionLevel,
+  inferLevelFromStop,
 } from './stop-manager';
 import * as marketData from './market-data';
 import type { ProtectionLevel } from '@/types';
@@ -134,6 +135,54 @@ describe('stop-manager formulas', () => {
     expect(getProtectionLevel(buggyR)).toBe('LOCK_08R');
     // These must be different — proving the bug existed
     expect(getProtectionLevel(correctR)).not.toBe(getProtectionLevel(buggyR));
+  });
+});
+
+// ── inferLevelFromStop — level inference from stop position ──
+// Covers the fix for the updateStopLoss level-inference bug (was using price R-multiple
+// derived from the stop value, which produces wrong labels for trailing ATR updates).
+
+describe('inferLevelFromStop', () => {
+  // entry=100, initialRisk=10 for all cases
+  const E = 100, R = 10;
+
+  it('returns INITIAL when stop is below entry (original stop region)', () => {
+    expect(inferLevelFromStop(90, E, R)).toBe('INITIAL');  // entry - 1R
+    expect(inferLevelFromStop(97, E, R)).toBe('INITIAL');  // entry - 0.3R
+  });
+
+  it('returns BREAKEVEN when stop is at or just above entry', () => {
+    expect(inferLevelFromStop(100, E, R)).toBe('BREAKEVEN'); // stop = entry exactly
+    expect(inferLevelFromStop(102, E, R)).toBe('BREAKEVEN'); // entry + 0.2R
+  });
+
+  it('returns LOCK_08R when stop is near entry + 0.5R', () => {
+    expect(inferLevelFromStop(105, E, R)).toBe('LOCK_08R'); // entry + 0.5R exact
+    expect(inferLevelFromStop(107, E, R)).toBe('LOCK_08R'); // entry + 0.7R
+  });
+
+  it('returns LOCK_1R_TRAIL when stop is at or above entry + 0.75R', () => {
+    expect(inferLevelFromStop(107.4, E, R)).toBe('LOCK_08R');      // 0.74R — just below boundary
+    expect(inferLevelFromStop(107.5, E, R)).toBe('LOCK_1R_TRAIL'); // 0.75R — boundary is inclusive (>=)
+    expect(inferLevelFromStop(107.6, E, R)).toBe('LOCK_1R_TRAIL'); // just above 0.75R
+    expect(inferLevelFromStop(110, E, R)).toBe('LOCK_1R_TRAIL');   // entry + 1R
+    expect(inferLevelFromStop(120, E, R)).toBe('LOCK_1R_TRAIL');   // trailing far above entry
+  });
+
+  it('returns INITIAL when initialRisk is 0 (guard)', () => {
+    expect(inferLevelFromStop(100, 100, 0)).toBe('INITIAL');
+  });
+
+  it('correctly labels a trailing ATR stop that old code would have mis-labelled', () => {
+    // A trailing ATR stop at entry + 0.6R (e.g. stop=106, entry=100, risk=10)
+    // Old code: (newStop - entryPrice) / initialRisk = 0.6 → getProtectionLevel(0.6) → INITIAL ❌
+    // New code: inferLevelFromStop(106, 100, 10): stopR = 0.6 → between 0.25 and 0.75 → LOCK_08R ✅
+    const trailingStop2 = 106;
+    const oldBuggyLevel = getProtectionLevel((trailingStop2 - E) / R); // 0.6 → INITIAL ❌
+    const newCorrectLevel = inferLevelFromStop(trailingStop2, E, R);    // 0.6R → LOCK_08R ✅
+    expect(oldBuggyLevel).toBe('INITIAL');
+    expect(newCorrectLevel).toBe('LOCK_08R');
+    expect(oldBuggyLevel).not.toBe(newCorrectLevel); // proves the fix matters
   });
 });
 

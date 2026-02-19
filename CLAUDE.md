@@ -71,8 +71,8 @@ Do not add, remove, or reorder stages without being asked explicitly.
 **BQS (Breakout Quality Score, 0–100)** — Higher is better
 - Trend strength, direction dominance, volatility health, proximity to breakout, market tailwind, relative strength, volume
 
-**FWS (Fatal Weakness Score, 0–100)** — Higher is WORSE
-- Volume risk, extension/chasing risk, marginal trend, vol shock, regime instability
+**FWS (Fatal Weakness Score, 0–95 achievable, clamped to 100)** — Higher is WORSE
+- Volume risk (max 30) + extension/chasing risk (max 25) + marginal trend (max 10) + vol shock (max 20) + regime instability (max 10) = 95 max achievable in practice
 
 **NCS (Net Composite Score)** = BQS − (0.8 × FWS) + 10, minus earnings/cluster penalties
 

@@ -70,13 +70,17 @@ export function checkBreadthSafety(
 ): BreadthSafetyResult {
   const isRestricted = breadthPct < BREADTH_THRESHOLD;
 
+  // Use the lower of the profile's max and the hardcoded cap.
+  // This prevents over-restricting AGGRESSIVE (max 3) or under-restricting CONSERVATIVE (max 8).
+  const restrictedMax = Math.min(currentMaxPositions, RESTRICTED_MAX_POSITIONS);
+
   return {
     breadthPct,
     threshold: BREADTH_THRESHOLD,
-    maxPositionsOverride: isRestricted ? RESTRICTED_MAX_POSITIONS : null,
+    maxPositionsOverride: isRestricted ? restrictedMax : null,
     isRestricted,
     reason: isRestricted
-      ? `SAFETY VALVE: Only ${breadthPct.toFixed(0)}% above 50DMA (< ${BREADTH_THRESHOLD}%) — max positions reduced to ${RESTRICTED_MAX_POSITIONS}`
+      ? `SAFETY VALVE: Only ${breadthPct.toFixed(0)}% above 50DMA (< ${BREADTH_THRESHOLD}%) — max positions reduced to ${restrictedMax}`
       : `Breadth healthy: ${breadthPct.toFixed(0)}% above 50DMA — normal position limits`,
   };
 }
