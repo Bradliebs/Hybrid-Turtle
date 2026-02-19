@@ -31,6 +31,7 @@ export default function PositionSizer() {
         riskProfile: riskProfile as RiskProfileType,
         entryPrice: entry,
         stopPrice: stop,
+        allowFractional: true, // Trading 212 supports fractional shares
       });
 
       setResult(sizing);
@@ -93,7 +94,9 @@ export default function PositionSizer() {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-navy-800 p-3 rounded-lg">
               <div className="text-xs text-muted-foreground">Shares to Buy</div>
-              <div className="text-2xl font-bold font-mono text-primary-400">{result.shares}</div>
+              <div className="text-2xl font-bold font-mono text-primary-400">
+                {Number.isInteger(result.shares) ? result.shares : result.shares.toFixed(2)}
+              </div>
             </div>
             <div className="bg-navy-800 p-3 rounded-lg">
               <div className="text-xs text-muted-foreground">Total Cost</div>

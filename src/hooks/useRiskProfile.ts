@@ -27,6 +27,7 @@ export function useRiskProfile() {
       riskProfile: riskProfile as RiskProfileType,
       entryPrice,
       stopPrice,
+      allowFractional: true, // Trading 212 supports fractional shares
     });
   }, [equity, riskProfile]);
 

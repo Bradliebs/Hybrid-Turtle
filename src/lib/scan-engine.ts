@@ -272,6 +272,7 @@ export async function runFullScan(
               stopPrice,
               sleeve: stock.sleeve,
               fxToGbp,
+              allowFractional: true, // Trading 212 supports fractional shares
             });
             shares = sizing.shares;
             riskDollars = sizing.riskDollars;
@@ -347,6 +348,7 @@ export async function runFullScan(
                   stopPrice,
                   sleeve: stock.sleeve,
                   fxToGbp,
+                  allowFractional: true, // Trading 212 supports fractional shares
                 });
                 shares = sizing.shares;
                 riskDollars = sizing.riskDollars;

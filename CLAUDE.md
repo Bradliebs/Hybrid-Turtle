@@ -36,7 +36,7 @@ The Monday trading block and Tuesday execution window are **behavioural guardrai
 | File | What It Does | Critical Rule |
 |------|-------------|---------------|
 | `stop-manager.ts` | Monotonic stop protection | **Stops NEVER decrease. Ever. This is the most important rule in the system.** |
-| `position-sizer.ts` | Share calculation | Always use `Math.floor()`. Never `Math.round()` or `Math.ceil()`. FX conversion applied before sizing. |
+| `position-sizer.ts` | Share calculation | Use `floorShares()` (never `Math.round()` or `Math.ceil()`). Integer brokers floor to whole shares; T212 uses `allowFractional: true` to floor to 0.01 shares. FX conversion applied before sizing. |
 | `risk-gates.ts` | 6 hard gates | All 6 must pass. Never short-circuit, bypass, or add a soft override. |
 | `regime-detector.ts` | Market environment | Requires 3 consecutive days same regime for BULLISH confirmation. Do not reduce this. |
 | `dual-score.ts` | BQS / FWS / NCS scoring | Weights are intentional. Do not rebalance without explicit instruction. |
@@ -199,13 +199,16 @@ Runs via `nightly-task.bat` / Task Scheduler. Runs unattended. Failures must be 
 
 ```typescript
 // ✅ DO
-Math.floor(equity * riskPct / rPerShare)   // position sizing
+floorShares(equity * riskPct / rPerShare, allowFractional) // position sizing
+// allowFractional: true for Trading 212 (floors to 0.01 shares)
+// allowFractional: false (default) for integer-share brokers (floors to whole shares)
 await prisma.$transaction([...])            // multi-table writes
 if (!data || data.length < 28) return null  // null guards before indicators
 ticker.endsWith('.L')                       // UK ticker detection
 
 // ❌ DON'T
 Math.round(shares)           // rounding up position sizes
+Math.floor(shares)           // use floorShares() instead
 any                          // TypeScript any type
 // lowering a stop value     // ever, under any circumstance
 prisma.positions.update()    // without checking stop monotonicity first

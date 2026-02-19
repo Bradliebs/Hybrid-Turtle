@@ -2,7 +2,14 @@
 // Position Sizing Calculator
 // ============================================================
 // Formula: Shares = (Equity × Risk%) / (Entry Price - Stop Price)
-// Always rounds DOWN to whole shares.
+//
+// Rounding modes:
+//   Default (allowFractional: false) — floors to whole shares.
+//     Use for integer-share brokers. Never overshoots risk.
+//   Fractional (allowFractional: true) — floors to 0.01 shares.
+//     Use for Trading 212 (ISA/Invest). Recovers ~99% of risk
+//     budget vs ~80% on a small account with whole-share rounding.
+//     Still floors (not rounds), so risk budget is never exceeded.
 
 import type { PositionSizingResult, RiskProfileType } from '@/types';
 import { RISK_PROFILES, POSITION_SIZE_CAPS, getProfileCaps, type Sleeve } from '@/types';
@@ -15,10 +22,22 @@ export interface PositionSizeInput {
   sleeve?: Sleeve; // For position size cap enforcement
   customRiskPercent?: number; // Override for manual adjustment
   fxToGbp?: number; // FX conversion rate to GBP (default 1.0)
+  allowFractional?: boolean; // true = Trading 212 fractional shares (floor to 0.01)
+}
+
+/**
+ * Floor share count to permitted precision.
+ * Integer brokers: floor to whole number (default, safe for all brokers).
+ * Fractional brokers (T212): floor to 0.01 shares — recovers budget wasted
+ * by whole-share rounding, which is significant on small accounts.
+ */
+function floorShares(shares: number, fractional: boolean): number {
+  if (!fractional) return Math.floor(shares);
+  return Math.floor(shares * 100) / 100;
 }
 
 export function calculatePositionSize(input: PositionSizeInput): PositionSizingResult {
-  const { equity, riskProfile, entryPrice, stopPrice, sleeve, customRiskPercent, fxToGbp = 1.0 } = input;
+  const { equity, riskProfile, entryPrice, stopPrice, sleeve, customRiskPercent, fxToGbp = 1.0, allowFractional = false } = input;
 
   // Validate inputs
   if (equity <= 0) {
@@ -48,8 +67,8 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
     riskCash = Math.max(riskCash, profile.risk_cash_floor);
   }
 
-  // Calculate shares — always round DOWN to whole shares
-  let shares = Math.floor(riskCash / riskPerShare);
+  // Calculate shares — floor to permitted precision (whole or 0.01 for fractional brokers)
+  let shares = floorShares(riskCash / riskPerShare, allowFractional);
 
   // Enforce position size cap: totalCost ≤ cap% × equity (profile-aware)
   if (shares > 0 && sleeve) {
@@ -58,7 +77,7 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
     const maxCost = equity * cap;
     const totalCostInGbp = shares * entryPrice * fxToGbp;
     if (totalCostInGbp > maxCost) {
-      shares = Math.floor(maxCost / (entryPrice * fxToGbp));
+      shares = floorShares(maxCost / (entryPrice * fxToGbp), allowFractional);
     }
   }
 
@@ -66,7 +85,7 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
   const perPositionMaxLossPct = profile.per_position_max_loss_pct ?? riskPercent;
   const perPositionMaxLossAmount = equity * (perPositionMaxLossPct / 100);
   if (shares > 0 && (riskPerShare * shares) > perPositionMaxLossAmount) {
-    shares = Math.floor(perPositionMaxLossAmount / riskPerShare);
+    shares = floorShares(perPositionMaxLossAmount / riskPerShare, allowFractional);
   }
 
   if (shares <= 0) {
