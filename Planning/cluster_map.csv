@@ -265,16 +265,7 @@ V,Financials
 WM,Industrials
 WMT,Retail
 MSCI,Financials
-AIAI.L,AI_Robotics
-VUSA.L,ETF_Broad_Market
-SGLN.L,Commodities
-SSLN.L,Commodities
-AIAI.L,AI_Robotics
-VUSA.L,ETF_Broad_Market
-SGLN.L,Commodities
-SSLN.L,Commodities
 SGLN,Commodities
-SSLN.L,Commodities
 REMX,Materials
 PICK,Materials
 CMOD,Commodities
@@ -289,7 +280,6 @@ LLOY.L,Financials
 CPG.L,Consumer_Goods
 CMOD.L,Commodities
 COMF.L,Commodities
-IWQU.L,ETF_Factor
 
 # New additions Jan 2026
 NOW,Technology
@@ -390,7 +380,6 @@ MNDI.L,Materials
 PSON.L,Industrials
 SDR.L,Financials
 III.L,Technology
-ASML,Semiconductors
 LVMH.PA,Consumer_Discretionary
 AIR.PA,Industrials
 BNP.PA,Financials
@@ -476,3 +465,34 @@ SSE.L,Utilities
 SU.PA,Industrials
 TTE.PA,Energy
 WSML.L,ETF_Small_Cap
+
+# Missing ETF_core tickers (Feb 2026)
+MTUM,ETF_Factor
+IIND.L,ETF_Thematic
+XDWD.L,ETF_Broad_Market
+HMWO.L,ETF_Broad_Market
+
+# Missing stock_core_200 tickers (Feb 2026)
+ARM,Semiconductors
+BX,Financials
+KKR,Financials
+IBKR,Financials
+HWM,Industrials
+DELL,Technology
+COIN,Crypto
+TSCO.L,Retail
+FERG.L,Industrials
+ABF.L,Consumer_Staples
+
+# Missing stock_high_risk tickers (Feb 2026)
+RGTI,Quantum_Computing
+QUBT,Quantum_Computing
+SMTC,Semiconductors
+RDW,Defense_Aerospace
+NVAX,Pharma_Biotech
+EDIT,Pharma_Biotech
+RIOT,Crypto
+CLSK,Crypto
+PLUG,Energy_Storage
+CHPT,Electric_Vehicles
+BLNK,Electric_Vehicles
