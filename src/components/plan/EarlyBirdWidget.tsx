@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
-import { Bird, Loader2, AlertTriangle, TrendingUp, Volume2 } from 'lucide-react';
+import { Bird, Loader2, AlertTriangle, TrendingUp, Volume2, Download } from 'lucide-react';
 
 interface EarlyBirdSignal {
   ticker: string;
@@ -22,24 +22,58 @@ interface EarlyBirdResponse {
   signals: EarlyBirdSignal[];
   message: string;
   scannedCount: number;
+  cachedAt?: string;
 }
 
 export default function EarlyBirdWidget() {
   const [data, setData] = useState<EarlyBirdResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialLoaded, setInitialLoaded] = useState(false);
 
+  // Load cached results on mount (no Yahoo calls)
+  const loadCached = async () => {
+    try {
+      const result = await apiRequest<EarlyBirdResponse>('/api/modules/early-bird');
+      if (result.cachedAt) setData(result);
+    } catch { /* no cache yet — ignore */ }
+  };
+
+  if (!initialLoaded) {
+    setInitialLoaded(true);
+    loadCached();
+  }
+
+  // Run Scan always forces a fresh scan
   const runScan = async () => {
     setLoading(true);
     setError(null);
     try {
-      const result = await apiRequest<EarlyBirdResponse>('/api/modules/early-bird');
+      const result = await apiRequest<EarlyBirdResponse>('/api/modules/early-bird?refresh=true');
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Scan failed');
     } finally {
       setLoading(false);
     }
+  };
+
+  const downloadCsv = () => {
+    if (!data || data.signals.length === 0) return;
+    const headers = ['Ticker','Name','Price','55d High','Range %','Volume Ratio','Regime','Reason'];
+    const rows = data.signals.map(s => [
+      s.ticker, s.name, s.price, s.fiftyFiveDayHigh,
+      s.rangePctile.toFixed(1), s.volumeRatio.toFixed(2),
+      s.regime, s.reason,
+    ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `early-bird-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -49,25 +83,39 @@ export default function EarlyBirdWidget() {
           <Bird className="w-4 h-4 text-amber-400" />
           Early Bird Entry
         </h3>
-        <button
-          onClick={runScan}
-          disabled={loading}
-          className={cn(
-            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
-            loading
-              ? 'bg-navy-700 text-muted-foreground cursor-not-allowed'
-              : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30'
+        <div className="flex items-center gap-2">
+          {data && data.signals.length > 0 && (
+            <button
+              onClick={downloadCsv}
+              className="inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium text-muted-foreground hover:text-foreground bg-navy-700 hover:bg-navy-600 border border-navy-600 transition-colors"
+              title="Download Early Bird results as CSV"
+            >
+              <Download className="w-3 h-3" />
+              CSV
+            </button>
           )}
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Scanning...
-            </>
-          ) : (
-            'Run Scan'
-          )}
-        </button>
+          <button
+            onClick={runScan}
+            disabled={loading}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors',
+              loading
+                ? 'bg-navy-700 text-muted-foreground cursor-not-allowed'
+                : 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30'
+            )}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Scanning...
+              </>
+            ) : data ? (
+              'Rescan'
+            ) : (
+              'Run Scan'
+            )}
+          </button>
+        </div>
       </div>
 
       <p className="text-[10px] text-muted-foreground mb-3">
@@ -90,6 +138,9 @@ export default function EarlyBirdWidget() {
               data.regime === 'BULLISH' ? 'text-emerald-400' : data.regime === 'BEARISH' ? 'text-red-400' : 'text-amber-400'
             )}>{data.regime}</span>
             {data.scannedCount > 0 && <span> · {data.scannedCount} tickers scanned</span>}
+            {data.cachedAt && (
+              <span> · Scanned {new Date(data.cachedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+            )}
           </div>
 
           {data.signals.length === 0 ? (

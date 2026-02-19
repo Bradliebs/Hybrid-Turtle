@@ -126,7 +126,7 @@ HEDGE positions excluded from open risk and position counting.
 
 | # | Module | File/Location | Touches Risk? |
 |---|--------|--------------|--------------|
-| 2 | Early Bird | /api/modules | Yes — alternative entry logic |
+| 2 | Early Bird | /api/modules/early-bird | Yes — alternative entry logic, on-demand scan from Plan page |
 | 3 | Laggard Purge | laggard-detector.ts | No — flags only |
 | 5/14 | Climax Detector | /api/modules | No — suggestions only |
 | 7 | Heatmap Swap | /api/modules | Yes — cluster caps |
@@ -255,7 +255,7 @@ prisma.positions.update()    // without checking stop monotonicity first
 |------|---------|
 | `/dashboard` | Health, regime, heartbeat, modules, Fear & Greed |
 | `/scan` | 7-stage scan results — READY/WATCH/FAR |
-| `/plan` | Weekly execution board + pre-trade checklist |
+| `/plan` | Weekly execution board + pre-trade checklist + Early Bird scan + CSV export |
 | `/portfolio` | Position management, stop updates, R-multiple tracking |
 | `/risk` | Risk budget meter, stop panel, trailing stop recommendations |
 | `/settings` | Equity, risk profile, Trading 212, Telegram config |
@@ -263,5 +263,5 @@ prisma.positions.update()    // without checking stop monotonicity first
 
 ---
 
-*Last updated: February 2026*
+*Last updated: 19 February 2026*
 *Account size: ~£429 + £50/week | Profile: SMALL_ACCOUNT | Broker: Trading 212*
