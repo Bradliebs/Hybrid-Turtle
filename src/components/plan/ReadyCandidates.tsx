@@ -2,7 +2,7 @@
 
 import StatusBadge from '@/components/shared/StatusBadge';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
-import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap, Info, X } from 'lucide-react';
+import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap, Info, X, Download } from 'lucide-react';
 import { useState } from 'react';
 
 interface Candidate {
@@ -41,6 +41,29 @@ const matchTypeBadge: Record<string, { label: string; color: string; icon: typeo
   CONFLICT: { label: 'CONFLICT', color: 'text-amber-400 bg-amber-500/15 border-amber-500/30', icon: AlertTriangle },
 };
 
+function downloadCsv(rows: Candidate[]) {
+  const headers = ['Ticker','Name','Sleeve','Status','Price','Entry Trigger','Stop','Distance %','Match Type','Agreement %','BQS','FWS','NCS','Dual Action','Shares','Risk £'];
+  const csvRows = rows.map(c => [
+    c.ticker, c.name, c.sleeve, c.status,
+    c.price, c.entryTrigger, c.stopPrice, c.distancePercent.toFixed(2),
+    c.matchType ?? '', c.agreementScore ?? '',
+    c.dualBQS != null ? c.dualBQS.toFixed(0) : '',
+    c.dualFWS != null ? c.dualFWS.toFixed(0) : '',
+    c.dualNCS != null ? c.dualNCS.toFixed(0) : '',
+    c.dualAction ?? '',
+    c.shares ?? '', c.riskDollars ?? '',
+  ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+
+  const csv = [headers.join(','), ...csvRows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ready-candidates-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ReadyCandidates({ candidates, heldTickers = new Set() }: ReadyCandidatesProps) {
   const [showScoreHelp, setShowScoreHelp] = useState(false);
   const ready = candidates.filter(c => c.status === 'READY');
@@ -69,9 +92,21 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
           <Target className="w-4 h-4 text-profit" />
           Ready Candidates
         </h3>
-        <span className="text-xs text-muted-foreground">
-          {ready.length} ready{bothCount > 0 ? ` (${bothCount} confirmed)` : ''}{triggerMetCount > 0 ? ` · ${triggerMetCount} triggered` : ''}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {ready.length} ready{bothCount > 0 ? ` (${bothCount} confirmed)` : ''}{triggerMetCount > 0 ? ` · ${triggerMetCount} triggered` : ''}
+          </span>
+          {ready.length > 0 && (
+            <button
+              onClick={() => downloadCsv(sortedReady)}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-muted-foreground hover:text-foreground bg-navy-700 hover:bg-navy-600 border border-navy-600 transition-colors"
+              title="Download ready candidates as CSV"
+            >
+              <Download className="w-3 h-3" />
+              CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Source indicator */}
