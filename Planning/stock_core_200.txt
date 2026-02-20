@@ -289,3 +289,135 @@ APP
 RH
 
 IWQU.L
+
+# ========== SEMICONDUCTORS (Feb 2026 additions) ==========
+ONTO
+MPWR
+SWKS
+ACLS
+FORM
+ALGM
+SLAB
+CEVA
+HPE
+
+# ========== INSURANCE (Feb 2026 additions) ==========
+PRU
+MET
+AFL
+ALL
+HIG
+CINF
+EG
+RNR
+RYAN
+ERIE
+
+# ========== PHARMA / BIOTECH (Feb 2026 additions) ==========
+BMY
+PFE
+BIIB
+ALNY
+INCY
+EXEL
+ACAD
+ROIV
+PRCT
+PTCT
+
+# ========== DEFENCE / GOV SERVICES (Feb 2026 additions) ==========
+KTOS
+BWXT
+DRS
+CACI
+SAIC
+TDY
+HEI
+
+# ========== INDUSTRIALS (Feb 2026 additions) ==========
+ESAB
+GTLS
+IDEX
+
+# ========== US ENERGY — E&P & MIDSTREAM (Feb 2026 additions) ==========
+OXY
+FANG
+HAL
+BKR
+KMI
+WMB
+LNG
+TRGP
+CTRA
+PR
+
+# ========== CONSUMER DISCRETIONARY (Feb 2026 additions) ==========
+DG
+DLTR
+FIVE
+WSM
+CHWY
+YETI
+BROS
+TSCO
+WYNN
+
+# ========== UK MID-CAPS (Feb 2026) ==========
+JET2.L
+HIK.L
+MNDI.L
+ITV.L
+MKS.L
+AUTO.L
+DPLM.L
+SDR.L
+WPP.L
+PSON.L
+
+# ========== EUROPEAN (Feb 2026 additions) ==========
+BNP.PA
+DBK
+DSV.CO
+NESTE.HE
+IFX
+STM
+KER.PA
+HLAG
+UCG
+AD.AS
+
+# ========== GLOBAL EMERGING / GROWTH (Feb 2026) ==========
+GRAB
+SEA
+PDD
+JD
+LI
+VALE
+ITUB
+WDS
+BRFS
+BIDU
+
+# ========== REITS & INFRASTRUCTURE (Feb 2026 additions) ==========
+IRM
+INVH
+EXR
+ARE
+HST
+COLD
+GLPI
+SBA
+STAG
+KIM
+
+# ========== SOFTWARE / SAAS (Feb 2026 additions) ==========
+GTLB
+BILL
+ZI
+BRZE
+PCTY
+PAYC
+CIEN
+NCNO
+ALTR
+AMBA

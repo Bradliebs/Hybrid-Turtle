@@ -51,6 +51,12 @@ const YAHOO_TICKER_MAP: Record<string, string> = {
   ROG: 'ROG.SW',
   // Denmark / Copenhagen
   NVO: 'NOVO-B.CO',
+  // Germany / XETRA additions (Feb 2026)
+  DBK: 'DBK.DE',
+  IFX: 'IFX.DE',
+  HLAG: 'HLAG.DE',
+  // Italy / Milan additions (Feb 2026)
+  UCG: 'UCG.MI',
 };
 
 async function main() {

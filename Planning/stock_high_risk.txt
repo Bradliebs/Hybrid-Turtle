@@ -49,3 +49,9 @@ CLSK
 PLUG
 CHPT
 BLNK
+
+# ========== HIGH RISK / TURNAROUND (Feb 2026) ==========
+# WOLF: Wolfspeed — Chapter 11 bankruptcy filed Feb 2026. Watch only.
+WOLF
+# PTON: Peloton — business model under structural pressure.
+PTON
