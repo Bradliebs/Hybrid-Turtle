@@ -22,10 +22,16 @@ let _earlyBirdCache: EarlyBirdCache | null = null;
 
 export async function GET(request: NextRequest) {
   const refresh = request.nextUrl.searchParams.get('refresh') === 'true';
+  const cacheOnly = request.nextUrl.searchParams.get('cacheOnly') === 'true';
 
   // Return cached result unless refresh requested
   if (!refresh && _earlyBirdCache) {
     return NextResponse.json(_earlyBirdCache.json);
+  }
+
+  // cacheOnly mode: return 204 if no server cache (avoids triggering a full scan)
+  if (cacheOnly && !_earlyBirdCache) {
+    return new NextResponse(null, { status: 204 });
   }
 
   try {

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import { Bird, Loader2, AlertTriangle, TrendingUp, Volume2, Download } from 'lucide-react';
+
+const EB_STORAGE_KEY = 'earlyBird_cache';
 
 interface EarlyBirdSignal {
   ticker: string;
@@ -25,24 +27,61 @@ interface EarlyBirdResponse {
   cachedAt?: string;
 }
 
+/** Save Early Bird results to localStorage so they survive HMR / server restarts */
+function saveToLocal(result: EarlyBirdResponse): void {
+  try {
+    localStorage.setItem(EB_STORAGE_KEY, JSON.stringify(result));
+  } catch { /* storage full or unavailable — non-critical */ }
+}
+
+/** Load Early Bird results from localStorage fallback */
+function loadFromLocal(): EarlyBirdResponse | null {
+  try {
+    const raw = localStorage.getItem(EB_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as EarlyBirdResponse;
+    // Only use if it has a cachedAt timestamp
+    return parsed.cachedAt ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function EarlyBirdWidget() {
   const [data, setData] = useState<EarlyBirdResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [initialLoaded, setInitialLoaded] = useState(false);
 
-  // Load cached results on mount (no Yahoo calls)
-  const loadCached = async () => {
-    try {
-      const result = await apiRequest<EarlyBirdResponse>('/api/modules/early-bird');
-      if (result.cachedAt) setData(result);
-    } catch { /* no cache yet — ignore */ }
-  };
+  // Load cached results on mount — try server cache first, fall back to localStorage
+  useEffect(() => {
+    let cancelled = false;
 
-  if (!initialLoaded) {
-    setInitialLoaded(true);
+    async function loadCached() {
+      try {
+        // cacheOnly=true → server returns cached data or 204 (no scan triggered)
+        const res = await fetch('/api/modules/early-bird?cacheOnly=true');
+        if (res.ok) {
+          const result: EarlyBirdResponse = await res.json();
+          if (!cancelled && result.cachedAt) {
+            setData(result);
+            saveToLocal(result);
+            return;
+          }
+        }
+      } catch {
+        // Server cache unavailable — fall through to localStorage
+      }
+
+      // Fallback: restore from localStorage
+      if (!cancelled) {
+        const local = loadFromLocal();
+        if (local) setData(local);
+      }
+    }
+
     loadCached();
-  }
+    return () => { cancelled = true; };
+  }, []);
 
   // Run Scan always forces a fresh scan
   const runScan = async () => {
@@ -51,6 +90,7 @@ export default function EarlyBirdWidget() {
     try {
       const result = await apiRequest<EarlyBirdResponse>('/api/modules/early-bird?refresh=true');
       setData(result);
+      saveToLocal(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Scan failed');
     } finally {
