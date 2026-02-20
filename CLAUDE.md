@@ -89,7 +89,7 @@ Do not add, remove, or reorder stages without being asked explicitly.
 |---------|-----------|--------------|--------------|
 | CONSERVATIVE | 0.75% | 8 | 7.0% |
 | BALANCED | 0.95% | 5 | 5.5% |
-| SMALL_ACCOUNT | 2.00% | 4 | 10.0% |
+| **SMALL_ACCOUNT** | **2.00%** | **4** | **10.0%** | ← ACTIVE |
 | AGGRESSIVE | 3.00% | 3 | 12.0% |
 
 **Active profile is SMALL_ACCOUNT.** Max 4 positions. This is not a bug.
@@ -143,6 +143,8 @@ HEDGE positions excluded from open risk and position counting.
 | 18 | Data Validator | /api/modules | Indirect — data quality gate |
 | 20 | Re-Entry Logic | /api/modules | Yes — re-entry conditions |
 
+> Module numbers are intentionally non-sequential — gaps (1, 4, 6, 19, 21) are reserved or not yet built. The table is complete as-is.
+
 ---
 
 ## Known Gotchas — Read Before Writing Any Data or Calculation Code
@@ -166,7 +168,7 @@ HEDGE positions excluded from open risk and position counting.
 - `dev.db` is local only — no cloud sync, no concurrent access assumptions
 
 ### Position Sizing
-- Always `Math.floor()` on share count — never round up
+- Always use `floorShares()` on share count — never `Math.round()` or `Math.ceil()`, never raw `Math.floor()`
 - FX conversion (GBP↔USD↔EUR) must be applied **before** the sizing formula, not after
 - Risk% is per-profile — never hardcode a percentage
 
@@ -263,5 +265,5 @@ prisma.positions.update()    // without checking stop monotonicity first
 
 ---
 
-*Last updated: 19 February 2026*
+*Last updated: 20 February 2026*
 *Account size: ~£429 + £50/week | Profile: SMALL_ACCOUNT | Broker: Trading 212*
