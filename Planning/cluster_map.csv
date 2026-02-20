@@ -596,3 +596,123 @@ CIEN,Technology
 NCNO,Technology
 ALTR,Technology
 AMBA,Semiconductors
+# ========== Batch 2 additions (Feb 2026) ==========
+
+# Large Cap US Tech
+IBM,Technology
+CSCO,Technology
+ACN,Technology
+ADSK,Technology
+SNPS,Technology
+ANSS,Technology
+NTAP,Technology
+PSTG,Technology
+ESTC,Technology
+DOMO,Technology
+
+# Financials / Exchanges
+FIS,Financials
+FISV,Financials
+GPN,Financials
+NDAQ,Financials
+CBOE,Financials
+WEX,Financials
+LPLA,Financials
+RJF,Financials
+SSNC,Financials
+SEIC,Financials
+
+# Healthcare / MedTech
+MDT,Healthcare
+ABT,Healthcare
+BAX,Healthcare
+BDX,Healthcare
+HOLX,Healthcare
+PODD,Healthcare
+MMSI,Healthcare
+NVCR,Healthcare
+ATRC,Healthcare
+INVA,Healthcare
+
+# Pharma / Biotech
+RPRX,Pharma_Biotech
+JAZZ,Pharma_Biotech
+UTHR,Pharma_Biotech
+LEGN,Pharma_Biotech
+ARWR,Pharma_Biotech
+IONS,Pharma_Biotech
+FOLD,Pharma_Biotech
+IMVT,Pharma_Biotech
+ACVA,Pharma_Biotech
+PTGX,Pharma_Biotech
+
+# Industrials / Automation
+ROP,Industrials
+TRMB,Industrials
+KEYS,Industrials
+FTV,Industrials
+AME,Industrials
+LFUS,Industrials
+ITRI,Industrials
+NOVT,Industrials
+FELE,Industrials
+XPEL,Industrials
+
+# Energy Transition / Clean
+NEP,Energy_Clean
+BEP,Energy_Clean
+BEPC,Energy_Clean
+HASI,Energy_Clean
+SHLS,Energy_Clean
+SEDG,Energy_Clean
+NOVA,Energy_Clean
+FTCI,Energy_Clean
+STEM,Energy_Clean
+
+# Consumer Staples / Food
+GIS,Consumer_Staples
+K,Consumer_Staples
+CPB,Consumer_Staples
+MKC,Consumer_Staples
+SJM,Consumer_Staples
+MDLZ,Consumer_Staples
+HSY,Consumer_Staples
+CAG,Consumer_Staples
+CHD,Consumer_Staples
+HRL,Consumer_Staples
+
+# UK Mid / Small Caps
+BBOX.L,REITs
+LAND.L,REITs
+SGRO.L,REITs
+BLND.L,REITs
+NXT.L,Retail
+SBRY.L,Consumer_Staples
+OCDO.L,Technology
+AHT.L,Industrials
+CATT.L,Industrials
+WISE.L,Financials
+
+# European Mid Caps
+IMCD.AS,Industrials
+BESI.AS,Semiconductors
+COLO-B.CO,Consumer_Staples
+GMAB.CO,Pharma_Biotech
+EVO.ST,Technology
+SINCH.ST,Technology
+ERF,Energy
+TKWY.AS,Technology
+DSFIR.AS,Industrials
+ASRNL.AS,Insurance
+
+# REITs / Property
+ELS,REITs
+UDR,REITs
+CPT,REITs
+NNN,REITs
+BXP,REITs
+IIPR,REITs
+SAFE,REITs
+UNIT,REITs
+ROIC,REITs
+ALEX,REITs

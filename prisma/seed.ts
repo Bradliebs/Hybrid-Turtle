@@ -196,8 +196,8 @@ async function main() {
   // We need to try both
   function findInMap(map: Record<string, string>, ticker: string): string | null {
     if (map[ticker]) return map[ticker];
-    // Try with common suffixes
-    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC'];
+    // Try with common suffixes (UK, Swiss, German, French, Italian, Spanish, Dutch, Danish, Swedish, Finnish)
+    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC', '.AS', '.CO', '.ST', '.HE'];
     for (const suffix of suffixes) {
       if (map[ticker + suffix]) return map[ticker + suffix];
     }
@@ -206,7 +206,8 @@ async function main() {
 
   function findRegion(ticker: string): { region: string; currency: string } | null {
     if (regionMap[ticker]) return regionMap[ticker];
-    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC'];
+    // Try with common suffixes (UK, Swiss, German, French, Italian, Spanish, Dutch, Danish, Swedish, Finnish)
+    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC', '.AS', '.CO', '.ST', '.HE'];
     for (const suffix of suffixes) {
       if (regionMap[ticker + suffix]) return regionMap[ticker + suffix];
     }
