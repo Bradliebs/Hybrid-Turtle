@@ -1,5 +1,5 @@
 # Stock Core Universe - Quality Large Caps
-# Updated: Jan 2026
+# Updated: Feb 2026
 
 # ========== MEGA CAP TECH ==========
 AAPL
@@ -19,6 +19,7 @@ ADBE
 INTU
 CRM
 ORCL
+ARM
 
 # ========== FINANCIALS ==========
 JPM
@@ -36,6 +37,9 @@ CME
 ICE
 BLK
 AXP
+BX
+KKR
+IBKR
 
 # ========== HEALTHCARE ==========
 LLY
@@ -60,6 +64,8 @@ NOC
 LMT
 GE
 ETN
+PWR
+HWM
 
 # ========== SEMICONDUCTORS ==========
 MU
@@ -118,6 +124,7 @@ CEG
 VST
 GEV
 ANET
+DELL
 
 # ========== MATERIALS ==========
 NUE
@@ -156,6 +163,7 @@ SOFI
 HOOD
 MRNA
 RBLX
+COIN
 
 # ========== UK LARGE CAPS ==========
 ULVR
@@ -176,6 +184,11 @@ CPG.L
 RR.L
 GLEN.L
 BATS.L
+TSCO.L
+IMB.L
+III.L
+FERG.L
+ABF.L
 
 # ========== EUROPEAN QUALITY ==========
 NESN.SW
@@ -188,10 +201,12 @@ SU
 OR
 MC
 TTE
+AIR.PA
 
 # ========== COMMODITIES ==========
 MP
 MT
+
 # ========== SEMICONDUCTORS (additions) ==========
 LRCX
 TXN

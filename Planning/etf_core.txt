@@ -22,6 +22,7 @@ SQQQ
 SH
 SPXS
 VXX
+
 # ========== BOND ETFs ==========
 TLT
 IGLT.L
@@ -31,3 +32,9 @@ XLE
 XLF
 XLV
 XLK
+
+# ========== MOMENTUM & FACTOR ETFs ==========
+MTUM
+IIND.L
+XDWD.L
+HMWO.L

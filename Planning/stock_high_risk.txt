@@ -25,3 +25,27 @@ BBAI
 RZLV
 APLD
 CRWV
+
+# ========== QUANTUM COMPUTING (additions) ==========
+RGTI
+QUBT
+
+# ========== AI / DATA CENTRE INFRASTRUCTURE ==========
+NBIS
+SMTC
+
+# ========== SPACE ==========
+RDW
+
+# ========== BIOTECH SPECULATIVE ==========
+NVAX
+EDIT
+
+# ========== CRYPTO-ADJACENT ==========
+RIOT
+CLSK
+
+# ========== ENERGY TRANSITION ==========
+PLUG
+CHPT
+BLNK
