@@ -42,6 +42,13 @@ interface RiskBudgetSummary {
 
 import type { ScanCandidate } from '@/types';
 
+/** Show yahoo ticker suffix when it differs from display ticker (e.g. TTE → TTE.PA) */
+function YahooSuffix({ candidate }: { candidate: { ticker: string; yahooTicker?: string } }) {
+  const yt = candidate.yahooTicker;
+  if (!yt || yt === candidate.ticker) return null;
+  return <span className="text-muted-foreground text-[10px] font-normal ml-1">({yt})</span>;
+}
+
 export default function ScanPage() {
   const [activeStage, setActiveStage] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
@@ -339,7 +346,7 @@ export default function ScanPage() {
                               key={c.ticker}
                               className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 text-sm font-bold border border-emerald-500/30"
                             >
-                              {c.ticker}
+                              {c.ticker}<YahooSuffix candidate={c} />
                             </span>
                           ))}
                         </div>
@@ -445,7 +452,7 @@ export default function ScanPage() {
                                 <td>
                                   <div className="flex items-center gap-2">
                                     <span className={cn('font-semibold', isTriggered ? 'text-emerald-400' : 'text-primary-400')}>
-                                      {c.ticker}
+                                      {c.ticker}<YahooSuffix candidate={c} />
                                     </span>
                                     {isTriggered && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
@@ -501,7 +508,7 @@ export default function ScanPage() {
                               key={c.ticker}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-navy-800 text-xs"
                             >
-                              <span className="text-muted-foreground font-semibold">{c.ticker}</span>
+                              <span className="text-muted-foreground font-semibold">{c.ticker}<YahooSuffix candidate={c} /></span>
                               <span className="text-loss font-mono">{c.distancePercent?.toFixed(1)}%</span>
                             </span>
                           ))}
@@ -567,7 +574,7 @@ export default function ScanPage() {
                       return (
                         <div key={c.ticker} className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg">
                           {icon}
-                          <span className="text-primary-400 font-semibold w-16">{c.ticker}</span>
+                          <span className="text-primary-400 font-semibold w-16">{c.ticker}<YahooSuffix candidate={c} /></span>
                           <span className="text-sm text-muted-foreground flex-1">
                             {message}
                           </span>
@@ -606,7 +613,7 @@ export default function ScanPage() {
                       ) : (
                         <AlertTriangle className="w-4 h-4 text-warning" />
                       )}
-                      <span className="text-primary-400 font-semibold">{c.ticker}</span>
+                      <span className="text-primary-400 font-semibold">{c.ticker}<YahooSuffix candidate={c} /></span>
                       <span className="text-sm text-muted-foreground">— {c.guard?.reason ?? 'Unknown'}</span>
                     </div>
                   ))}

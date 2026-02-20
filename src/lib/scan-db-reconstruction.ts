@@ -5,6 +5,7 @@ import { countTruthyPassFlags, normalizePersistedPassFlag } from '@/lib/scan-pas
 export interface ScanResultRowForReconstruction {
   stock: {
     ticker: string;
+    yahooTicker?: string | null;
     name: string;
     sleeve: string;
     sector: string | null;
@@ -41,6 +42,7 @@ export function reconstructCandidateFromDbRow(
   return {
     id: r.stock.ticker,
     ticker: r.stock.ticker,
+    yahooTicker: r.stock.yahooTicker || undefined,
     name: r.stock.name,
     sleeve: r.stock.sleeve as ScanCandidate['sleeve'],
     sector: r.stock.sector || 'Unknown',

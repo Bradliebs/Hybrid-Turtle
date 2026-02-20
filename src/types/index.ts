@@ -303,6 +303,7 @@ export interface TechnicalData {
 export interface ScanCandidate {
   id: string;
   ticker: string;
+  yahooTicker?: string;  // Exchange-qualified symbol for online lookup (e.g. TTE.PA, GSK.L)
   name: string;
   sleeve: Sleeve;
   sector: string;

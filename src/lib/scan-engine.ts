@@ -28,7 +28,7 @@ import prisma from './prisma';
 
 // ---- Stage 1: Universe ----
 export async function getUniverse(): Promise<
-  { ticker: string; name: string; sleeve: Sleeve; sector: string; cluster: string; currency: string | null }[]
+  { ticker: string; yahooTicker: string | null; name: string; sleeve: Sleeve; sector: string; cluster: string; currency: string | null }[]
 > {
   const stocks = await prisma.stock.findMany({
     where: { active: true },
@@ -36,6 +36,7 @@ export async function getUniverse(): Promise<
   });
   return stocks.map((s) => ({
     ticker: s.ticker,
+    yahooTicker: s.yahooTicker ?? null,
     name: s.name,
     sleeve: s.sleeve as Sleeve,
     sector: s.sector || 'Unknown',
@@ -394,6 +395,7 @@ export async function runFullScan(
         return {
           id: stock.ticker,
           ticker: stock.ticker,
+          yahooTicker: stock.yahooTicker || undefined,
           name: stock.name,
           sleeve: stock.sleeve,
           sector: stock.sector,

@@ -197,6 +197,7 @@ async function getScanDataWithFallback(): Promise<CachedScanResult | null> {
 // ── Cross-reference types ───────────────────────────────────
 interface CrossRefTicker {
   ticker: string;
+  yahooTicker?: string;
   name: string;
   sleeve: string;
   // 7-Stage Scan data
@@ -312,6 +313,7 @@ export async function GET() {
 
       crossRef.push({
         ticker,
+        yahooTicker: scan?.yahooTicker || undefined,
         name: scan?.name || dual?.name || ticker,
         sleeve: scan?.sleeve || dual?.sleeve || '',
         // 7-Stage scan data

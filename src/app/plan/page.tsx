@@ -37,6 +37,7 @@ interface PositionApiResponse {
 /** Shape of a candidate for the ReadyCandidates widget */
 interface ReadyCandidate {
   ticker: string;
+  yahooTicker?: string;
   name: string;
   sleeve: string;
   status: string;
@@ -59,6 +60,7 @@ interface ReadyCandidate {
 /** Shape of a cross-ref ticker from /api/scan/cross-ref */
 interface CrossRefTicker {
   ticker: string;
+  yahooTicker?: string;
   name: string;
   sleeve: string;
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'CONFLICT' | 'BOTH_REJECT';
@@ -188,6 +190,7 @@ export default function PlanPage() {
             .filter((t) => t.scanStatus === 'READY' || t.scanStatus === 'WATCH' || t.matchType === 'DUAL_ONLY')
             .map((t) => ({
               ticker: t.ticker,
+              yahooTicker: t.yahooTicker,
               name: t.name,
               sleeve: t.sleeve,
               status: t.scanStatus || ((t.dualNCS ?? 0) >= 70 ? 'READY' : 'WATCH'),

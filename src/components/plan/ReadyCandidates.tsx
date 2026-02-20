@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 interface Candidate {
   ticker: string;
+  yahooTicker?: string;
   name: string;
   sleeve: string;
   status: string;
@@ -161,7 +162,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-profit font-bold">{c.ticker}</span>
+                    <span className="text-profit font-bold">{c.ticker}{c.yahooTicker && c.yahooTicker !== c.ticker && <span className="text-muted-foreground text-[10px] font-normal ml-1">({c.yahooTicker})</span>}</span>
                     <StatusBadge status={c.status} />
                     {isHeld && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border text-primary-400 bg-primary-500/15 border-primary-500/30">

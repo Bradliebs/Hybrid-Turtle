@@ -7,6 +7,7 @@ import { Zap } from 'lucide-react';
 
 interface Candidate {
   ticker: string;
+  yahooTicker?: string;
   name: string;
   sleeve: string;
   status: string;
@@ -90,6 +91,9 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
                       )}>
                         {c.ticker}
                       </span>
+                      {c.yahooTicker && c.yahooTicker !== c.ticker && (
+                        <span className="text-muted-foreground text-[10px] ml-1">({c.yahooTicker})</span>
+                      )}
                       <div className="text-xs text-muted-foreground">{c.name}</div>
                     </div>
                     {isTriggered && (

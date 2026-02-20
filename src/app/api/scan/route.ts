@@ -168,6 +168,7 @@ export async function GET() {
       return {
         id: r.stock.ticker,
         ticker: r.stock.ticker,
+        yahooTicker: r.stock.yahooTicker || undefined,
         name: r.stock.name,
         sleeve: r.stock.sleeve,
         sector: r.stock.sector || 'Unknown',
