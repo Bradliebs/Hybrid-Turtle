@@ -101,6 +101,7 @@ interface RiskSummaryData {
 }
 
 interface PositionData {
+  id: string;
   ticker: string;
   name: string;
   sleeve: string;
@@ -117,62 +118,9 @@ interface PositionData {
   stock?: { ticker: string; name: string; sleeve: string };
 }
 
-interface StopUpdate {
-  ticker: string;
-  currentStop: number;
-  recommendedStop: number;
-  protectionLevel: string;
-  rMultiple: number;
-  currentPrice: number;
-  direction: 'up' | 'hold';
-  reason: string;
-  priceCurrency?: string;
-}
-
-function computeStopUpdates(positions: PositionData[]): StopUpdate[] {
-  return positions.map((p) => {
-    const r = p.rMultiple;
-    let recommendedStop = p.currentStop;
-    let protectionLevel = p.protectionLevel || 'INITIAL';
-    let direction: 'up' | 'hold' = 'hold';
-    let reason = '';
-
-    if (r >= 3) {
-      // Trail at 1R profit locked
-      recommendedStop = p.entryPrice + p.initialRisk;
-      protectionLevel = 'LOCK_1R_TRAIL';
-      reason = `+${r.toFixed(1)}R → Trail to lock 1R profit`;
-    } else if (r >= 1.5) {
-      // Move to breakeven
-      recommendedStop = p.entryPrice;
-      protectionLevel = 'BREAKEVEN';
-      reason = `+${r.toFixed(1)}R → Move to breakeven`;
-    } else {
-      reason = `Under 1.5R — keep current stop`;
-    }
-
-    if (recommendedStop > p.currentStop) {
-      direction = 'up';
-    }
-
-    return {
-      ticker: p.ticker,
-      currentStop: p.currentStop,
-      recommendedStop,
-      protectionLevel,
-      rMultiple: r,
-      currentPrice: p.currentPrice,
-      direction,
-      reason,
-      priceCurrency: p.priceCurrency,
-    };
-  });
-}
-
 export default function PlanPage() {
   const { weeklyPhase, marketRegime } = useStore();
   const [positions, setPositions] = useState<PositionData[]>([]);
-  const [stopUpdates, setStopUpdates] = useState<StopUpdate[]>([]);
   const [scanCandidates, setScanCandidates] = useState<ReadyCandidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [healthReport, setHealthReport] = useState<HealthReportData | null>(null);
@@ -184,6 +132,7 @@ export default function PlanPage() {
         `/api/positions?userId=${DEFAULT_USER_ID}&source=trading212&status=OPEN`
       );
       const mapped: PositionData[] = data.map((p) => ({
+        id: p.id,
         ticker: p.stock?.ticker || 'N/A',
         name: p.stock?.name || '',
         sleeve: p.stock?.sleeve || 'CORE',
@@ -200,7 +149,6 @@ export default function PlanPage() {
       }));
 
       setPositions(mapped);
-      setStopUpdates(computeStopUpdates(mapped));
     } catch (err) {
       console.error('Failed to fetch positions:', err);
     } finally {
@@ -313,7 +261,7 @@ export default function PlanPage() {
             {/* Left Column */}
             <div className="space-y-6">
               <PhaseTimeline />
-              <StopUpdateQueue updates={stopUpdates} />
+              <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} />
             </div>
 
             {/* Middle Column */}

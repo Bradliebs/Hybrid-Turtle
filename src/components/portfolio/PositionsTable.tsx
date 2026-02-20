@@ -58,6 +58,10 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   const [t212CurrentStop, setT212CurrentStop] = useState<number | null>(null);
   const [t212Loading, setT212Loading] = useState(false);
 
+  // One-click recommended stop apply state
+  const [recApplying, setRecApplying] = useState(false);
+  const [recApplyError, setRecApplyError] = useState<string | null>(null);
+
   // T212 bulk sync state
   const [bulkSyncing, setBulkSyncing] = useState(false);
   const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; total: number } | null>(null);
@@ -300,11 +304,23 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                         <button
                           onClick={async () => {
                             setStopModal(pos);
-                            setStopInput(pos.currentStop.toFixed(2));
+                            // Pre-fill with the recommended stop if the ladder has an upgrade,
+                            // otherwise fall back to the current stop.
+                            const _entry = pos.entryPrice;
+                            const _R = pos.initialRisk;
+                            const _r = pos.rMultiple;
+                            const _cur = pos.currentStop;
+                            let _recommended = _cur;
+                            if (_r >= 3.0 && _entry + 1.0 * _R > _cur) _recommended = _entry + 1.0 * _R;
+                            else if (_r >= 2.5 && _entry + 0.5 * _R > _cur) _recommended = _entry + 0.5 * _R;
+                            else if (_r >= 1.5 && _entry > _cur) _recommended = _entry;
+                            setStopInput(_recommended.toFixed(2));
                             setStopError(null);
                             setT212PushStatus('idle');
                             setT212PushMessage(null);
                             setT212CurrentStop(null);
+                            setRecApplying(false);
+                            setRecApplyError(null);
                             // Fetch T212 stop status in background
                             setT212Loading(true);
                             try {
@@ -521,10 +537,60 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                       </table>
                     </div>
                     {recommended ? (
-                      <p className="text-xs text-profit flex items-center gap-1">
-                        <TrendingUp className="w-3 h-3" />
-                        Recommended: move stop to <strong>{formatPrice(recommended.stopPrice, stopModal.priceCurrency)}</strong> ({recommended.level})
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-xs text-profit flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3" />
+                          Recommended: move stop to{' '}
+                          <strong>{formatPrice(recommended.stopPrice, stopModal.priceCurrency)}</strong>
+                          {' '}({recommended.level})
+                        </p>
+                        <button
+                          disabled={recApplying || stopSubmitting}
+                          onClick={async () => {
+                            if (!onUpdateStop) return;
+                            setRecApplying(true);
+                            setRecApplyError(null);
+                            setT212PushStatus('idle');
+                            setT212PushMessage(null);
+                            const reason = `Stop ladder upgrade \u2192 ${recommended.level}: ${formatPrice(stopModal.currentStop, stopModal.priceCurrency)} \u2192 ${formatPrice(recommended.stopPrice, stopModal.priceCurrency)}`;
+                            const ok = await onUpdateStop(stopModal.id, recommended.stopPrice, reason);
+                            if (!ok) {
+                              setRecApplyError('Failed to apply — check monotonic rule');
+                              setRecApplying(false);
+                              return;
+                            }
+                            if (pushToT212) {
+                              setT212PushStatus('pushing');
+                              try {
+                                const t212Data = await apiRequest<{ message?: string }>('/api/stops/t212', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ positionId: stopModal.id, stopPrice: recommended.stopPrice }),
+                                });
+                                setT212PushStatus('success');
+                                setT212PushMessage(t212Data.message || 'Stop placed on Trading 212');
+                              } catch {
+                                setT212PushStatus('error');
+                                setT212PushMessage('T212 push failed — update manually in the app');
+                              }
+                            }
+                            setRecApplying(false);
+                            setTimeout(() => setStopModal(null), pushToT212 ? 2000 : 0);
+                          }}
+                          className="w-full py-2 text-sm rounded-lg bg-profit/20 text-profit font-semibold hover:bg-profit/30 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          {recApplying ? (
+                            <><Loader2 className="w-4 h-4 animate-spin" /> Applying…</>
+                          ) : (
+                            <><TrendingUp className="w-4 h-4" /> Apply Recommended: {formatPrice(recommended.stopPrice, stopModal.priceCurrency)}</>
+                          )}
+                        </button>
+                        {recApplyError && (
+                          <p className="text-xs text-loss flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3" /> {recApplyError}
+                          </p>
+                        )}
+                      </div>
                     ) : rMul < 1.5 ? (
                       <p className="text-xs text-muted-foreground">
                         No upgrade yet — profit needs to reach +1.5R ({formatR(1.5)}) for breakeven. Currently at {formatR(rMul)}.
@@ -641,7 +707,36 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
 
               {/* Input */}
               <div>
-                <label className="block text-sm text-muted-foreground mb-1">New Stop Price</label>
+                {(() => {
+                  // Compute the recommended stop for this position (same ladder as onClick pre-fill)
+                  const _r = stopModal.rMultiple;
+                  const _entry = stopModal.entryPrice;
+                  const _R = stopModal.initialRisk;
+                  const _cur = stopModal.currentStop;
+                  let _rec: number | null = null;
+                  if (_r >= 3.0 && _entry + 1.0 * _R > _cur) _rec = _entry + 1.0 * _R;
+                  else if (_r >= 2.5 && _entry + 0.5 * _R > _cur) _rec = _entry + 0.5 * _R;
+                  else if (_r >= 1.5 && _entry > _cur) _rec = _entry;
+                  const inputMatchesRec = _rec !== null &&
+                    parseFloat(stopInput) === parseFloat(_rec.toFixed(2));
+                  return (
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                      New Stop Price
+                      {_rec !== null && (
+                        <span className={cn(
+                          'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                          inputMatchesRec
+                            ? 'bg-profit/20 text-profit'
+                            : 'bg-navy-700 text-muted-foreground'
+                        )}>
+                          {inputMatchesRec
+                            ? '✓ recommended'
+                            : `recommended: ${formatPrice(_rec, stopModal.priceCurrency)}`}
+                        </span>
+                      )}
+                    </label>
+                  );
+                })()}
                 <input
                   type="number"
                   step="0.01"

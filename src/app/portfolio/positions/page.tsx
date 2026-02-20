@@ -5,6 +5,7 @@ import Navbar from '@/components/shared/Navbar';
 import KPIBanner from '@/components/portfolio/KPIBanner';
 import PositionsTable from '@/components/portfolio/PositionsTable';
 import T212SyncPanel from '@/components/portfolio/T212SyncPanel';
+import StopUpdateQueue from '@/components/plan/StopUpdateQueue';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
@@ -233,6 +234,9 @@ export default function PositionsPage() {
 
         {/* Trading 212 Sync Panel */}
         <T212SyncPanel onSyncComplete={handleSyncComplete} />
+
+        {/* Stop-Loss Recommendations — fetches live from /api/stops */}
+        <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} />
 
         {/* Loading state */}
         {loading ? (

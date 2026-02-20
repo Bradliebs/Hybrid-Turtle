@@ -166,7 +166,7 @@ async function runNightlyProcess() {
     const alerts: string[] = [];
     if (healthReport.overall === 'RED') alerts.push('Health check is RED — review issues before trading');
     if (healthReport.overall === 'YELLOW') alerts.push('Health check has warnings');
-    if (stopRecs.length > 0) alerts.push(`${stopRecs.length} R-based stop-loss updates recommended`);
+    if (stopChanges.length > 0) alerts.push(`${stopChanges.length} R-based stop-loss updates auto-applied`);
     if (trailingStopChanges.length > 0) alerts.push(`${trailingStopChanges.length} trailing ATR stops auto-applied`);
 
     let laggardAlerts: NightlyLaggardAlert[] = [];
