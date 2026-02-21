@@ -444,6 +444,7 @@ ACAD
 ROIV
 PRCT
 PTCT
+TLX
 
 # ========== DEFENCE / GOV SERVICES (Feb 2026 additions) ==========
 KTOS
