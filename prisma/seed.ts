@@ -128,9 +128,9 @@ function parseCoreWithSectors(): { ticker: string; sector: string }[] {
 
 // ── Friendly name for a ticker (we don't have a names file, so generate from ticker) ──
 function tickerToName(ticker: string): string {
-  // Remove exchange suffixes for display (.L, .SW, .DE, .PA, .MI, .MC)
+  // Remove exchange suffixes for display (.L, .SW, .DE, .PA, .MI, .MC, .AX, etc.)
   return ticker
-    .replace(/\.(L|SW|DE|PA|MI|MC)$/i, '')
+    .replace(/\.(L|SW|DE|PA|MI|MC|AX|AS|CO|ST|HE)$/i, '')
     .toUpperCase();
 }
 
@@ -197,7 +197,7 @@ async function main() {
   function findInMap(map: Record<string, string>, ticker: string): string | null {
     if (map[ticker]) return map[ticker];
     // Try with common suffixes (UK, Swiss, German, French, Italian, Spanish, Dutch, Danish, Swedish, Finnish)
-    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC', '.AS', '.CO', '.ST', '.HE'];
+    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC', '.AS', '.CO', '.ST', '.HE', '.AX'];
     for (const suffix of suffixes) {
       if (map[ticker + suffix]) return map[ticker + suffix];
     }
@@ -207,7 +207,7 @@ async function main() {
   function findRegion(ticker: string): { region: string; currency: string } | null {
     if (regionMap[ticker]) return regionMap[ticker];
     // Try with common suffixes (UK, Swiss, German, French, Italian, Spanish, Dutch, Danish, Swedish, Finnish)
-    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC', '.AS', '.CO', '.ST', '.HE'];
+    const suffixes = ['.L', '.SW', '.DE', '.PA', '.MI', '.MC', '.AS', '.CO', '.ST', '.HE', '.AX'];
     for (const suffix of suffixes) {
       if (regionMap[ticker + suffix]) return regionMap[ticker + suffix];
     }

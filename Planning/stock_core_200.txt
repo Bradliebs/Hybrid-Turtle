@@ -445,6 +445,7 @@ ROIV
 PRCT
 PTCT
 TLX
+CSL.AX
 
 # ========== DEFENCE / GOV SERVICES (Feb 2026 additions) ==========
 KTOS

@@ -428,6 +428,14 @@ export interface EarlyBirdSignal {
   regime: MarketRegime;
   eligible: boolean;
   reason: string;
+  // Graduation Probability & Risk Efficiency (populated by scanEarlyBirds)
+  adx: number;               // raw ADX value
+  atrPercent: number;         // ATR as % of price
+  ma200Distance: number;      // % above MA200
+  graduationProbability: number; // 0–100 weighted score
+  riskEfficiency: number;     // (entryTrigger - stop) / ATR — lower is better
+  entryTrigger: number;       // 20d high + 0.1×ATR
+  candidateStop: number;      // entryTrigger - 1.5×ATR
 }
 
 // Module 3: Laggard Purge

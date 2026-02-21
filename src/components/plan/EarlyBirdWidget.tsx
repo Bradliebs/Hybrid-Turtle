@@ -1,11 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
-import { Bird, Loader2, AlertTriangle, TrendingUp, Volume2, Download } from 'lucide-react';
+import { Bird, Loader2, AlertTriangle, TrendingUp, Volume2, Download, ArrowUpDown } from 'lucide-react';
 
 const EB_STORAGE_KEY = 'earlyBird_cache';
+
+type SortMode = 'graduation' | 'riskEfficiency' | 'stable' | 'range';
+
+const SORT_LABELS: Record<SortMode, string> = {
+  graduation: 'Most likely to trigger',
+  riskEfficiency: 'Best risk efficiency',
+  stable: 'Most stable (low ATR%)',
+  range: 'Range position',
+};
 
 interface EarlyBirdSignal {
   ticker: string;
@@ -17,6 +26,13 @@ interface EarlyBirdSignal {
   regime: string;
   eligible: boolean;
   reason: string;
+  adx: number;
+  atrPercent: number;
+  ma200Distance: number;
+  graduationProbability: number;
+  riskEfficiency: number;
+  entryTrigger: number;
+  candidateStop: number;
 }
 
 interface EarlyBirdResponse {
@@ -51,6 +67,26 @@ export default function EarlyBirdWidget() {
   const [data, setData] = useState<EarlyBirdResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('graduation');
+
+  // Sorted signals derived from current sort mode
+  const sortedSignals = useMemo(() => {
+    if (!data?.signals.length) return [];
+    const copy = [...data.signals];
+    switch (sortMode) {
+      case 'graduation':
+        return copy.sort((a, b) => b.graduationProbability - a.graduationProbability);
+      case 'riskEfficiency':
+        // Lower is better — ascending sort
+        return copy.sort((a, b) => a.riskEfficiency - b.riskEfficiency);
+      case 'stable':
+        // Lower ATR% is more stable — ascending sort
+        return copy.sort((a, b) => a.atrPercent - b.atrPercent);
+      case 'range':
+      default:
+        return copy.sort((a, b) => b.rangePctile - a.rangePctile);
+    }
+  }, [data?.signals, sortMode]);
 
   // Load cached results on mount — try server cache first, fall back to localStorage
   useEffect(() => {
@@ -100,10 +136,13 @@ export default function EarlyBirdWidget() {
 
   const downloadCsv = () => {
     if (!data || data.signals.length === 0) return;
-    const headers = ['Ticker','Name','Price','55d High','Range %','Volume Ratio','Regime','Reason'];
+    const headers = ['Ticker','Name','Price','55d High','Range %','Volume Ratio','ADX','ATR%','MA200 Dist%','Grad Prob','Risk Eff','Entry Trigger','Stop','Regime','Reason'];
     const rows = data.signals.map(s => [
       s.ticker, s.name, s.price, s.fiftyFiveDayHigh,
       s.rangePctile.toFixed(1), s.volumeRatio.toFixed(2),
+      s.adx.toFixed(1), s.atrPercent.toFixed(2), s.ma200Distance.toFixed(1),
+      s.graduationProbability, s.riskEfficiency.toFixed(2),
+      s.entryTrigger.toFixed(2), s.candidateStop.toFixed(2),
       s.regime, s.reason,
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     const csv = [headers.join(','), ...rows].join('\n');
@@ -133,6 +172,21 @@ export default function EarlyBirdWidget() {
               <Download className="w-3 h-3" />
               CSV
             </button>
+          )}
+          {data && data.signals.length > 1 && (
+            <div className="relative">
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value as SortMode)}
+                className="appearance-none pl-5 pr-2 py-1 rounded text-[10px] font-medium text-muted-foreground bg-navy-700 border border-navy-600 hover:bg-navy-600 transition-colors cursor-pointer"
+                title="Sort early birds"
+              >
+                {Object.entries(SORT_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+              <ArrowUpDown className="w-3 h-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            </div>
           )}
           <button
             onClick={runScan}
@@ -191,7 +245,7 @@ export default function EarlyBirdWidget() {
             </div>
           ) : (
             <div className="space-y-2">
-              {data.signals.map((s) => (
+              {sortedSignals.map((s) => (
                 <div
                   key={s.ticker}
                   className="bg-navy-800 rounded-lg p-3 border border-amber-500/20"
@@ -200,7 +254,7 @@ export default function EarlyBirdWidget() {
                     <span className="text-amber-400 font-bold text-sm">{s.ticker}</span>
                     <span className="text-[10px] text-muted-foreground">{s.name}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-5 gap-2 text-xs">
                     <div>
                       <span className="text-muted-foreground">Price</span>
                       <div className="font-mono text-foreground">{formatCurrency(s.price)}</div>
@@ -217,6 +271,36 @@ export default function EarlyBirdWidget() {
                       </span>
                       <div className="font-mono text-emerald-400">{s.volumeRatio.toFixed(1)}×</div>
                     </div>
+                    {/* Graduation Probability */}
+                    <div>
+                      <span className="text-muted-foreground">Grad%</span>
+                      <div className={cn(
+                        'font-mono font-semibold',
+                        s.graduationProbability >= 70 ? 'text-emerald-400' :
+                        s.graduationProbability >= 45 ? 'text-amber-400' : 'text-red-400'
+                      )}>
+                        {s.graduationProbability}
+                      </div>
+                    </div>
+                    {/* Risk Efficiency — lower is better */}
+                    <div>
+                      <span className="text-muted-foreground">Risk Eff</span>
+                      <div className={cn(
+                        'font-mono font-semibold',
+                        s.riskEfficiency <= 1.5 ? 'text-emerald-400' :
+                        s.riskEfficiency <= 2.0 ? 'text-amber-400' : 'text-red-400'
+                      )}>
+                        {s.riskEfficiency.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Secondary row: ADX, ATR%, MA200 dist, entry/stop */}
+                  <div className="grid grid-cols-5 gap-2 text-[10px] mt-1.5 text-muted-foreground">
+                    <div>ADX <span className="text-foreground font-mono">{s.adx.toFixed(0)}</span></div>
+                    <div>ATR% <span className="text-foreground font-mono">{s.atrPercent.toFixed(1)}</span></div>
+                    <div>MA200 <span className="text-foreground font-mono">+{s.ma200Distance.toFixed(1)}%</span></div>
+                    <div>Trig <span className="text-foreground font-mono">{formatCurrency(s.entryTrigger)}</span></div>
+                    <div>Stop <span className="text-foreground font-mono">{formatCurrency(s.candidateStop)}</span></div>
                   </div>
                   <div className="mt-1.5 text-[10px] text-muted-foreground italic">
                     {s.reason}

@@ -7,7 +7,9 @@
 
 import 'server-only';
 import type { EarlyBirdSignal, MarketRegime } from '@/types';
-import { getDailyPrices } from '../market-data';
+import { ATR_STOP_MULTIPLIER } from '@/types';
+import { getDailyPrices, calculateATR, calculateADX, calculateMA, calculate20DayHigh } from '../market-data';
+import { calculateEntryTrigger } from '../position-sizer';
 
 /**
  * Check if a stock qualifies for Early Bird entry.
@@ -16,6 +18,41 @@ import { getDailyPrices } from '../market-data';
  *   2. Volume > 1.5× the 20-day average
  *   3. Market regime is BULLISH
  */
+/**
+ * Graduation Probability (0–100): weighted composite of how likely
+ * this Early Bird candidate is to trigger a full breakout entry.
+ *
+ * Weights:
+ *   Range position   30%  — how close to breakout (rangePctile)
+ *   Volume surge     20%  — recent volume vs 20d avg
+ *   ADX strength     20%  — trend conviction
+ *   ATR% (inverse)   15%  — lower volatility = more stable
+ *   MA200 distance   15%  — higher above MA200 = stronger trend
+ */
+function calcGraduationProbability(
+  rangePctile: number,
+  volumeRatio: number,
+  adx: number,
+  atrPercent: number,
+  ma200Distance: number
+): number {
+  // Normalise each component to 0–100
+  const rangeScore = Math.min(rangePctile, 100);                       // already 0–100
+  const volScore = Math.min((volumeRatio / 4) * 100, 100);             // 4× = max score
+  const adxScore = Math.min(((adx - 15) / 30) * 100, 100);            // 15–45 range → 0–100
+  const atrInvScore = Math.max(0, 100 - (atrPercent / 6) * 100);      // 0–6% range, lower is better
+  const ma200Score = Math.min((ma200Distance / 20) * 100, 100);        // 0–20% above MA200 → 0–100
+
+  const weighted =
+    rangeScore * 0.30 +
+    volScore * 0.20 +
+    Math.max(0, adxScore) * 0.20 +
+    atrInvScore * 0.15 +
+    Math.max(0, ma200Score) * 0.15;
+
+  return Math.round(Math.max(0, Math.min(100, weighted)));
+}
+
 export function checkEarlyBird(
   ticker: string,
   name: string,
@@ -24,7 +61,13 @@ export function checkEarlyBird(
   fiftyFiveDayLow: number,
   volume: number,
   avgVolume20: number,
-  regime: MarketRegime
+  regime: MarketRegime,
+  adx: number,
+  atrPercent: number,
+  ma200Distance: number,
+  entryTrigger: number,
+  candidateStop: number,
+  atr: number
 ): EarlyBirdSignal {
   const range = fiftyFiveDayHigh - fiftyFiveDayLow;
   const rangePctile = range > 0 ? ((price - fiftyFiveDayLow) / range) * 100 : 0;
@@ -41,6 +84,14 @@ export function checkEarlyBird(
   if (!volumeConfirm) reasons.push(`Volume ratio ${volumeRatio.toFixed(1)}× (need ≥1.5×)`);
   if (!regimeOk) reasons.push(`Regime is ${regime} (need BULLISH)`);
 
+  const graduationProbability = calcGraduationProbability(
+    rangePctile, volumeRatio, adx, atrPercent, ma200Distance
+  );
+
+  // Risk Efficiency = (entryTrigger - stop) / ATR — measures stop width in ATR units
+  // Lower is better: tight stop relative to volatility = cleaner sizing
+  const riskEfficiency = atr > 0 ? (entryTrigger - candidateStop) / atr : 0;
+
   return {
     ticker,
     name,
@@ -53,6 +104,13 @@ export function checkEarlyBird(
     reason: eligible
       ? `EARLY BIRD: Top ${(100 - rangePctile).toFixed(0)}% of 55d range, volume ${volumeRatio.toFixed(1)}×`
       : reasons.join('; '),
+    adx,
+    atrPercent,
+    ma200Distance,
+    graduationProbability,
+    riskEfficiency,
+    entryTrigger,
+    candidateStop,
   };
 }
 
@@ -71,20 +129,36 @@ export async function scanEarlyBirds(
     const batch = tickers.slice(i, i + BATCH_SIZE);
     const results = await Promise.allSettled(
       batch.map(async ({ ticker, name }) => {
-        const bars = await getDailyPrices(ticker, 'compact');
+        // Need 200+ bars for MA200; fall back to compact (55) only if full fetch fails
+        const bars = await getDailyPrices(ticker, 'full');
         if (bars.length < 55) return null;
 
         const price = bars[0].close;
+        const closes = bars.map(b => b.close);
         const last55 = bars.slice(0, 55);
         const fiftyFiveDayHigh = Math.max(...last55.map(b => b.high));
         const fiftyFiveDayLow = Math.min(...last55.map(b => b.low));
         const volume = bars[0].volume;
         const avgVolume20 = bars.slice(0, 20).reduce((s, b) => s + b.volume, 0) / 20;
 
+        // Technical enrichment for Graduation Probability + Risk Efficiency
+        const atr = calculateATR(bars, 14);
+        const atrPercent = price > 0 ? (atr / price) * 100 : 0;
+        const { adx } = bars.length >= 29 ? calculateADX(bars, 14) : { adx: 0 };
+        const ma200 = bars.length >= 200 ? calculateMA(closes, 200) : 0;
+        const ma200Distance = ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0;
+
+        // Entry trigger (20d high + 0.1×ATR) and candidate stop (trigger - 1.5×ATR)
+        const twentyDayHigh = calculate20DayHigh(bars);
+        const entryTrigger = calculateEntryTrigger(twentyDayHigh, atr);
+        const candidateStop = entryTrigger - atr * ATR_STOP_MULTIPLIER;
+
         const signal = checkEarlyBird(
           ticker, name, price,
           fiftyFiveDayHigh, fiftyFiveDayLow,
-          volume, avgVolume20, regime
+          volume, avgVolume20, regime,
+          adx, atrPercent, ma200Distance,
+          entryTrigger, candidateStop, atr
         );
 
         return signal.eligible ? signal : null;
