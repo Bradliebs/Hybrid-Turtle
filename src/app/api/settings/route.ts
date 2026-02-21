@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
       select: {
         riskProfile: true,
         equity: true,
+        marketDataProvider: true,
+        eodhApiKey: true,
       },
     });
 
@@ -24,7 +26,16 @@ export async function GET(request: NextRequest) {
       return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
-    return NextResponse.json(user);
+    // Mask EODHD API key (only show last 4 chars)
+    const maskedKey = user.eodhApiKey
+      ? '****' + user.eodhApiKey.slice(-4)
+      : null;
+
+    return NextResponse.json({
+      ...user,
+      eodhApiKey: maskedKey,
+      eodhApiKeySet: !!user.eodhApiKey,
+    });
   } catch (error) {
     console.error('GET /api/settings error:', error);
     return apiError(500, 'SETTINGS_FETCH_FAILED', 'Failed to fetch settings', (error as Error).message, true);
@@ -34,7 +45,7 @@ export async function GET(request: NextRequest) {
 // PUT /api/settings — save risk profile and equity
 export async function PUT(request: NextRequest) {
   try {
-    const { userId, riskProfile, equity } = await request.json();
+    const { userId, riskProfile, equity, marketDataProvider, eodhApiKey } = await request.json();
     const id = userId || 'default-user';
 
     const validProfiles = ['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT', 'AGGRESSIVE'];
@@ -42,9 +53,20 @@ export async function PUT(request: NextRequest) {
       return apiError(400, 'INVALID_RISK_PROFILE', 'Invalid risk profile');
     }
 
+    // Validate market data provider
+    const validProviders = ['yahoo', 'eodhd'];
+    if (marketDataProvider && !validProviders.includes(marketDataProvider)) {
+      return apiError(400, 'INVALID_PROVIDER', 'Invalid market data provider. Must be yahoo or eodhd.');
+    }
+
     const data: Record<string, unknown> = {};
     if (riskProfile) data.riskProfile = riskProfile;
     if (equity !== undefined && equity > 0) data.equity = equity;
+    if (marketDataProvider) data.marketDataProvider = marketDataProvider;
+    // Only update eodhApiKey if explicitly provided (not the masked version)
+    if (eodhApiKey !== undefined && eodhApiKey !== null && !eodhApiKey.startsWith('****')) {
+      data.eodhApiKey = eodhApiKey || null;
+    }
 
     const user = await prisma.user.update({
       where: { id },
@@ -52,6 +74,7 @@ export async function PUT(request: NextRequest) {
       select: {
         riskProfile: true,
         equity: true,
+        marketDataProvider: true,
       },
     });
 

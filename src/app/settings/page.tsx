@@ -41,9 +41,13 @@ export default function SettingsPage() {
   const [showToken, setShowToken] = useState(false);
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [alphaVantageKey, setAlphaVantageKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Market Data Provider state
+  const [marketDataProvider, setMarketDataProvider] = useState<'yahoo' | 'eodhd'>('yahoo');
+  const [eodhApiKey, setEodhApiKey] = useState('');
+  const [eodhApiKeySet, setEodhApiKeySet] = useState(false);
+  const [showEodhKey, setShowEodhKey] = useState(false);
 
   // Trading 212 state
   const [t212ApiKey, setT212ApiKey] = useState('');
@@ -105,6 +109,24 @@ export default function SettingsPage() {
     fetchStocks();
   }, [fetchStocks]);
 
+  // Load market data provider settings from DB on mount
+  useEffect(() => {
+    async function loadProviderSettings() {
+      try {
+        const data = await apiRequest<{
+          marketDataProvider?: string;
+          eodhApiKey?: string | null;
+          eodhApiKeySet?: boolean;
+        }>(`/api/settings?userId=${DEFAULT_USER_ID}`);
+        if (data.marketDataProvider === 'eodhd') setMarketDataProvider('eodhd');
+        if (data.eodhApiKeySet) setEodhApiKeySet(true);
+      } catch {
+        // Settings load failed — keep defaults (yahoo)
+      }
+    }
+    loadProviderSettings();
+  }, []);
+
   const handleAddStock = async () => {
     if (!addTicker.trim()) return;
     try {
@@ -165,6 +187,9 @@ export default function SettingsPage() {
           userId: DEFAULT_USER_ID,
           riskProfile,
           equity: !isNaN(newEquity) && newEquity > 0 ? newEquity : equity,
+          marketDataProvider,
+          // Only send eodhApiKey if user entered a new one (not the masked placeholder)
+          ...(eodhApiKey && !eodhApiKey.startsWith('****') ? { eodhApiKey } : {}),
         }),
       });
     } catch {
@@ -488,33 +513,113 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Data Sources */}
+        {/* Market Data Provider */}
         <div className="card-surface p-6">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-1">
             <Database className="w-5 h-5 text-primary-400" />
-            Data Sources
+            Market Data Provider
           </h2>
-          <div>
-            <label className="block text-sm text-muted-foreground mb-1">Alpha Vantage API Key</label>
+          <p className="text-xs text-muted-foreground mb-4">
+            Choose your market data source. Yahoo Finance is free and requires no API key.
+            EODHD offers premium data and requires a paid API key.
+          </p>
+
+          {/* Provider toggle */}
+          <div className="mb-4">
+            <label className="block text-sm text-muted-foreground mb-2">Active Provider</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMarketDataProvider('yahoo')}
+                className={cn(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors border',
+                  marketDataProvider === 'yahoo'
+                    ? 'bg-primary/20 border-primary text-primary-400'
+                    : 'border-white/10 text-muted-foreground hover:text-foreground hover:bg-surface-2'
+                )}
+              >
+                Yahoo Finance
+                <span className="block text-[10px] font-normal mt-0.5 opacity-70">Free · No API key</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (!eodhApiKeySet && !eodhApiKey) {
+                    // Can't switch to EODHD without a key
+                    return;
+                  }
+                  setMarketDataProvider('eodhd');
+                }}
+                className={cn(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors border',
+                  marketDataProvider === 'eodhd'
+                    ? 'bg-primary/20 border-primary text-primary-400'
+                    : 'border-white/10 text-muted-foreground hover:text-foreground hover:bg-surface-2',
+                  !eodhApiKeySet && !eodhApiKey && 'opacity-50 cursor-not-allowed'
+                )}
+                title={!eodhApiKeySet && !eodhApiKey ? 'Enter your EODHD API key first' : undefined}
+              >
+                EODHD
+                <span className="block text-[10px] font-normal mt-0.5 opacity-70">Premium · API key required</span>
+              </button>
+            </div>
+          </div>
+
+          {/* EODHD API Key */}
+          <div className="p-4 rounded-lg border border-white/10 bg-surface-2/50">
+            <label className="block text-sm text-muted-foreground mb-1">EODHD API Key</label>
             <div className="relative">
               <input
-                type={showApiKey ? 'text' : 'password'}
-                value={alphaVantageKey}
-                onChange={(e) => setAlphaVantageKey(e.target.value)}
-                placeholder="Enter your API key"
+                type={showEodhKey ? 'text' : 'password'}
+                value={eodhApiKey}
+                onChange={(e) => {
+                  setEodhApiKey(e.target.value);
+                  if (e.target.value) setEodhApiKeySet(true);
+                }}
+                placeholder={eodhApiKeySet ? '••••••••' : 'Enter your EODHD API key'}
                 className="input-field w-full pr-10"
               />
               <button
-                onClick={() => setShowApiKey(!showApiKey)}
+                onClick={() => setShowEodhKey(!showEodhKey)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showEodhKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Get a free API key at alphavantage.co
+              Get an API key at{' '}
+              <a
+                href="https://eodhd.com/financial-apis/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary-400 hover:text-primary-300"
+              >
+                eodhd.com →
+              </a>
+              {eodhApiKeySet && (
+                <span className="ml-2 text-profit">
+                  <Check className="w-3 h-3 inline" /> Key configured
+                </span>
+              )}
             </p>
           </div>
+
+          {/* Status info */}
+          <div className="mt-3 flex items-center gap-2">
+            <div className={cn(
+              'w-2 h-2 rounded-full',
+              marketDataProvider === 'yahoo' ? 'bg-green-400' : 'bg-blue-400'
+            )} />
+            <span className="text-xs text-muted-foreground">
+              Currently using: <span className="text-foreground font-medium">
+                {marketDataProvider === 'yahoo' ? 'Yahoo Finance' : 'EODHD'}
+              </span>
+              {marketDataProvider === 'yahoo' && ' (free, no API key needed)'}
+              {marketDataProvider === 'eodhd' && ' (premium, API key required)'}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Switching providers takes effect after saving. Both providers use the same caching
+            and rate-limiting strategy. You can switch back to Yahoo at any time.
+          </p>
         </div>
 
         {/* Telegram */}

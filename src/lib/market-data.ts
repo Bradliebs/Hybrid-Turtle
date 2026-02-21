@@ -1,17 +1,38 @@
 // ============================================================
-// Market Data Service — Yahoo Finance (yahoo-finance2)
+// Market Data Service — Multi-Provider (Yahoo / EODHD)
 // ============================================================
 //
-// Replaces Alpha Vantage with yahoo-finance2 for:
-// • Live stock quotes (no API key needed)
-// • Historical OHLCV data for technical calculations
-// • Market indices (SPY, QQQ, DIA, IWM)
-// • Batch quotes for scan engine + portfolio
+// DEPENDENCIES
+// Consumed by: scan-engine.ts, nightly.ts, regime-detector.ts,
+//              /api/scan/route.ts, /api/market-data/route.ts
+// Consumes: yahoo-finance2, market-data-eodhd.ts, types/index.ts
+// Risk-sensitive: YES — prices feed position sizing + stop logic
+// Last modified: 2026-02-20
+//
+// Provider routing:
+//   Default: Yahoo Finance (no API key needed)
+//   Optional: EODHD (requires EODHD_API_KEY env var)
+//   Set MARKET_DATA_PROVIDER=eodhd in .env to switch
 // ============================================================
 
 import 'server-only';
 import YahooFinance from 'yahoo-finance2';
 import type { StockQuote, TechnicalData, MarketIndex, FearGreedData } from '@/types';
+import * as eodhd from './market-data-eodhd';
+
+// ── Provider routing ──
+// Checks MARKET_DATA_PROVIDER env var. Default is 'yahoo'.
+export type MarketDataProviderType = 'yahoo' | 'eodhd';
+
+export function getActiveProvider(): MarketDataProviderType {
+  const provider = (process.env.MARKET_DATA_PROVIDER || 'yahoo').toLowerCase();
+  if (provider === 'eodhd') return 'eodhd';
+  return 'yahoo';
+}
+
+function isEodhd(): boolean {
+  return getActiveProvider() === 'eodhd';
+}
 
 // yahoo-finance2 v3 requires instantiation
 const yf = new (YahooFinance as unknown as new (opts: { suppressNotices: string[] }) => YahooFinanceInstance)({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
@@ -154,9 +175,12 @@ export function toYahooTicker(ticker: string, yahooTickerOverride?: string | nul
 }
 
 // ────────────────────────────────────────────────────
-// Stock Quote — live price via yahoo-finance2
+// Stock Quote — live price via active provider
 // ────────────────────────────────────────────────────
 export async function getStockQuote(ticker: string): Promise<StockQuote | null> {
+  // Route to EODHD if configured
+  if (isEodhd()) return eodhd.getStockQuote(ticker);
+
   // Check cache (use original ticker as key)
   const cached = quoteCache.get(ticker);
   if (cached && cached.expiry > Date.now()) return cached.data;
@@ -195,6 +219,9 @@ export async function getDailyPrices(
   ticker: string,
   outputSize: 'compact' | 'full' = 'compact'
 ): Promise<DailyBar[]> {
+  // Route to EODHD if configured
+  if (isEodhd()) return eodhd.getDailyPrices(ticker, outputSize);
+
   const cacheKey = `${ticker}:${outputSize}`;
   const cached = historicalCache.get(cacheKey);
   if (cached && cached.expiry > Date.now()) return cached.data;
@@ -440,6 +467,9 @@ const INDEX_MAP: { name: string; ticker: string }[] = [
 ];
 
 export async function getMarketIndices(): Promise<MarketIndex[]> {
+  // Route to EODHD if configured
+  if (isEodhd()) return eodhd.getMarketIndices();
+
   const indexTickers = INDEX_MAP.map(idx => idx.ticker);
   try {
     const rawResults = await yf.quote(indexTickers) as YahooQuoteResult[];
@@ -464,6 +494,9 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
 
 // ── Fear & Greed — approximation from VIX ──
 export async function getFearGreedIndex(): Promise<FearGreedData> {
+  // Route to EODHD if configured
+  if (isEodhd()) return eodhd.getFearGreedIndex();
+
   try {
     const vix = await yf.quote('^VIX');
     const vixPrice = vix?.regularMarketPrice || 20;
@@ -492,6 +525,9 @@ export async function getFearGreedIndex(): Promise<FearGreedData> {
 // ── Batch Quotes — efficient multi-ticker fetch ──
 // ── FX Rate fetch (e.g. USDGBP=X) ──
 export async function getFXRate(fromCurrency: string, toCurrency: string): Promise<number> {
+  // Route to EODHD if configured
+  if (isEodhd()) return eodhd.getFXRate(fromCurrency, toCurrency);
+
   if (fromCurrency === toCurrency) return 1;
   const pair = `${fromCurrency}${toCurrency}`;
   const cacheKey = pair;
@@ -599,6 +635,9 @@ export async function normalizeBatchPricesToGBP(
 }
 
 export async function getBatchQuotes(tickers: string[]): Promise<Map<string, StockQuote>> {
+  // Route to EODHD if configured
+  if (isEodhd()) return eodhd.getBatchQuotes(tickers);
+
   const results = new Map<string, StockQuote>();
   if (tickers.length === 0) return results;
 
