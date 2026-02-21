@@ -135,9 +135,9 @@ export default function EarlyBirdWidget() {
   };
 
   const downloadCsv = () => {
-    if (!data || data.signals.length === 0) return;
+    if (!sortedSignals.length) return;
     const headers = ['Ticker','Name','Price','55d High','Range %','Volume Ratio','ADX','ATR%','MA200 Dist%','Grad Prob','Risk Eff','Entry Trigger','Stop','Regime','Reason'];
-    const rows = data.signals.map(s => [
+    const rows = sortedSignals.map(s => [
       s.ticker, s.name, s.price, s.fiftyFiveDayHigh,
       s.rangePctile.toFixed(1), s.volumeRatio.toFixed(2),
       s.adx.toFixed(1), s.atrPercent.toFixed(2), s.ma200Distance.toFixed(1),
@@ -163,7 +163,7 @@ export default function EarlyBirdWidget() {
           Early Bird Entry
         </h3>
         <div className="flex items-center gap-2">
-          {data && data.signals.length > 0 && (
+          {sortedSignals.length > 0 && (
             <button
               onClick={downloadCsv}
               className="inline-flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-medium text-muted-foreground hover:text-foreground bg-navy-700 hover:bg-navy-600 border border-navy-600 transition-colors"
@@ -173,7 +173,7 @@ export default function EarlyBirdWidget() {
               CSV
             </button>
           )}
-          {data && data.signals.length > 1 && (
+          {sortedSignals.length > 1 && (
             <div className="relative">
               <select
                 value={sortMode}
