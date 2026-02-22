@@ -3,7 +3,7 @@
  * Consumed by: /api/scan/route.ts
  * Consumes: market-data.ts, position-sizer.ts, risk-gates.ts, scan-guards.ts, modules/adaptive-atr-buffer.ts, prisma.ts, @/types
  * Risk-sensitive: YES
- * Last modified: 2026-02-19
+ * Last modified: 2026-02-22
  * Notes: 7-stage pipeline. Do not add, remove, or reorder stages without explicit instruction.
  */
 // ============================================================
@@ -19,11 +19,12 @@ import type {
   RiskProfileType,
 } from '@/types';
 import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK, ATR_STOP_MULTIPLIER } from '@/types';
-import { getTechnicalData, getMarketRegime, getQuickPrice, getFXRate } from './market-data';
+import { getTechnicalData, getMarketRegime, getQuickPrice, getFXRate, getDailyPrices } from './market-data';
 import { calculateAdaptiveBuffer } from './modules/adaptive-atr-buffer';
 import { calculatePositionSize } from './position-sizer';
 import { validateRiskGates } from './risk-gates';
 import { checkAntiChasingGuard, checkPullbackContinuationEntry } from './scan-guards';
+import { validateTickerData } from './modules/data-validator';
 import prisma from './prisma';
 
 // ---- Stage 1: Universe ----
@@ -217,6 +218,13 @@ export async function runFullScan(
         const technicals = await getTechnicalData(stock.ticker);
         if (!technicals) {
           console.warn(`[Scan] Skipping ${stock.ticker} — insufficient data`);
+          return null;
+        }
+
+        const validationBars = await getDailyPrices(stock.ticker, 'compact');
+        const validation = validateTickerData(stock.ticker, validationBars);
+        if (!validation.isValid) {
+          console.warn(`[Scan] Skipping ${stock.ticker} — data invalid: ${validation.issues.join('; ')}`);
           return null;
         }
 

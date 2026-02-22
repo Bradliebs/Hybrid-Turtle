@@ -151,13 +151,13 @@ const EXISTING_POSITIONS = [
   {
     id: 'pos-1', ticker: 'NVDA', sleeve: 'CORE' as Sleeve,
     sector: 'Technology', cluster: 'Semiconductors',
-    value: 3200, riskDollars: 160, shares: 20,
+    value: 85, riskDollars: 4, shares: 0.6,
     entryPrice: 140, currentStop: 132, currentPrice: 160,
   },
   {
     id: 'pos-2', ticker: 'META', sleeve: 'CORE' as Sleeve,
     sector: 'Technology', cluster: 'Big Tech',
-    value: 2800, riskDollars: 120, shares: 5,
+    value: 85, riskDollars: 4, shares: 0.15,
     entryPrice: 520, currentStop: 496, currentPrice: 560,
   },
 ];
@@ -250,9 +250,32 @@ export function runAuditHarness(): AuditSnapshot {
       ? rankCandidate(fix.sleeve, fix.technicals, status === 'BLOCKED' ? 'FAR' : status)
       : 0;
 
+    // Position sizing (only if filters pass)
+    let sizing: AuditRow['sizing'] = null;
+    if (effectivePass && stopPrice > 0 && stopPrice < entryTrigger) {
+      try {
+        const result = calculatePositionSize({
+          equity: EQUITY,
+          riskProfile: RISK_PROFILE,
+          entryPrice: entryTrigger,
+          stopPrice,
+          sleeve: fix.sleeve,
+          allowFractional: true,
+        });
+        sizing = {
+          shares: result.shares,
+          riskDollars: result.riskDollars,
+          riskPercent: result.riskPercent,
+          totalCost: result.totalCost,
+        };
+      } catch {
+        sizing = null;
+      }
+    }
+
     // Stage 5: Risk gates
-    const newPosValue = fix.price * 10; // assume 10 shares for gate sizing
-    const newPosRisk = (entryTrigger - stopPrice) * 10;
+    const newPosValue = sizing ? sizing.totalCost : 0;
+    const newPosRisk = sizing ? sizing.riskDollars : 0;
     const riskGates = validateRiskGates(
       {
         sleeve: fix.sleeve,
@@ -268,28 +291,6 @@ export function runAuditHarness(): AuditSnapshot {
 
     // Stage 6: Anti-chase (simulate Monday)
     const antiChase = checkAntiChasingGuard(fix.price, entryTrigger, fix.technicals.atr, 1);
-
-    // Position sizing (only if filters pass)
-    let sizing: AuditRow['sizing'] = null;
-    if (effectivePass && stopPrice > 0 && stopPrice < entryTrigger) {
-      try {
-        const result = calculatePositionSize({
-          equity: EQUITY,
-          riskProfile: RISK_PROFILE,
-          entryPrice: entryTrigger,
-          stopPrice,
-          sleeve: fix.sleeve,
-        });
-        sizing = {
-          shares: result.shares,
-          riskDollars: result.riskDollars,
-          riskPercent: result.riskPercent,
-          totalCost: result.totalCost,
-        };
-      } catch {
-        sizing = null;
-      }
-    }
 
     // Stop recommendation (simulate existing position at entry)
     const initialRisk = entryTrigger - stopPrice;

@@ -161,8 +161,23 @@ export class Trading212Client {
         throw new Trading212Error('Access forbidden — check API key permissions', 403);
       }
 
+      // Read the response body for the actual T212 error detail
+      let errorDetail = '';
+      try {
+        const errorBody = await response.text();
+        // T212 often returns JSON with a message/code field
+        try {
+          const parsed = JSON.parse(errorBody);
+          errorDetail = parsed.message || parsed.code || parsed.errorMessage || errorBody;
+        } catch {
+          errorDetail = errorBody;
+        }
+      } catch {
+        errorDetail = response.statusText;
+      }
+
       throw new Trading212Error(
-        `Trading 212 API error: ${response.status} ${response.statusText}`,
+        `Trading 212 API error ${response.status}: ${errorDetail}`,
         response.status
       );
     }

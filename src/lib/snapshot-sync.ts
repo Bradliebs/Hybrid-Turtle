@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: nightly.ts, /api/nightly/route.ts, /api/snapshot/route.ts (if present)
+ * Consumes: market-data.ts, prisma.ts, @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-22
+ * Notes: Snapshot sync should reject stale/invalid data.
+ */
 // ============================================================
 // Snapshot Sync — Builds SnapshotTicker rows from live data
 // ============================================================
@@ -16,6 +24,7 @@ import {
   getMarketRegime,
   getFXRate,
 } from './market-data';
+import { validateTickerData } from './modules/data-validator';
 import type { Sleeve } from '@/types';
 import { ATR_STOP_MULTIPLIER, SNAPSHOT_CLUSTER_WARNING, SNAPSHOT_SUPER_CLUSTER_WARNING } from '@/types';
 
@@ -199,6 +208,11 @@ export async function syncSnapshot(
           const daily = await getDailyPrices(stock.ticker, 'full');
           if (daily.length < 55) {
             throw new Error(`Insufficient data: ${daily.length} bars`);
+          }
+
+          const validation = validateTickerData(stock.ticker, daily);
+          if (!validation.isValid) {
+            throw new Error(`Invalid data: ${validation.issues.join('; ')}`);
           }
 
           const closes = daily.map((d) => d.close);

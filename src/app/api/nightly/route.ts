@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/nightly
+ * Consumes: health-check.ts, stop-manager.ts, telegram.ts, market-data.ts, equity-snapshot.ts, snapshot-sync.ts, laggard-detector.ts, modules/*, risk-gates.ts, position-sizer.ts, prisma.ts, @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-22
+ * Notes: API nightly should continue on partial failures.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { runHealthCheck } from '@/lib/health-check';
@@ -26,6 +34,7 @@ const nightlyBodySchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
+    let hadFailure = false;
     let userId = 'default-user';
     const contentLength = Number(request.headers.get('content-length') ?? '0');
     const hasBody = Number.isFinite(contentLength) && contentLength > 0;
@@ -51,17 +60,37 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Run health check
-    const healthReport = await runHealthCheck(userId);
+    let healthReport: { overall: string; checks: Record<string, string>; results: unknown[]; timestamp: Date } = {
+      overall: 'YELLOW', checks: {}, results: [], timestamp: new Date(),
+    };
+    try {
+      healthReport = await runHealthCheck(userId);
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Health check failed:', (error as Error).message);
+    }
 
     // Step 2: Get open positions
-    const positions = await prisma.position.findMany({
-      where: { userId, status: 'OPEN' },
-      include: { stock: true },
-    });
+    let positions: Awaited<ReturnType<typeof prisma.position.findMany>> = [];
+    try {
+      positions = await prisma.position.findMany({
+        where: { userId, status: 'OPEN' },
+        include: { stock: true },
+      });
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Position fetch failed:', (error as Error).message);
+    }
 
     // Step 2b: Fetch live prices for all open positions
     const openTickers = positions.map((p) => p.stock.ticker);
-    const livePrices = openTickers.length > 0 ? await getBatchPrices(openTickers) : {};
+    let livePrices: Record<string, number> = {};
+    try {
+      livePrices = openTickers.length > 0 ? await getBatchPrices(openTickers) : {};
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Live price fetch failed:', (error as Error).message);
+    }
     const stockCurrencies: Record<string, string | null> = {};
     for (const p of positions) {
       stockCurrencies[p.stock.ticker] = p.stock.currency;
@@ -76,21 +105,32 @@ export async function POST(request: NextRequest) {
     const livePriceMap = new Map(Object.entries(livePrices));
     const atrMap = new Map<string, number>();
     const PRICE_BATCH = 10;
-    for (let i = 0; i < openTickers.length; i += PRICE_BATCH) {
-      const batch = openTickers.slice(i, i + PRICE_BATCH);
-      await Promise.allSettled(
-        batch.map(async (ticker) => {
-          const bars = await getDailyPrices(ticker, 'full');
-          if (bars.length >= 15) {
-            atrMap.set(ticker, calculateATR(bars, 14));
-          }
-        })
-      );
-      if (i + PRICE_BATCH < openTickers.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
+    try {
+      for (let i = 0; i < openTickers.length; i += PRICE_BATCH) {
+        const batch = openTickers.slice(i, i + PRICE_BATCH);
+        await Promise.allSettled(
+          batch.map(async (ticker) => {
+            const bars = await getDailyPrices(ticker, 'full');
+            if (bars.length >= 15) {
+              atrMap.set(ticker, calculateATR(bars, 14));
+            }
+          })
+        );
+        if (i + PRICE_BATCH < openTickers.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] ATR prefetch failed:', (error as Error).message);
     }
-    const stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);
+    let stopRecs: Awaited<ReturnType<typeof generateStopRecommendations>> = [];
+    try {
+      stopRecs = await generateStopRecommendations(userId, livePriceMap, atrMap);
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Stop recommendations failed:', (error as Error).message);
+    }
 
     // Collect R-based stop changes for Telegram
     const stopChanges: NightlyStopChange[] = stopRecs.map((rec) => {
@@ -127,6 +167,7 @@ export async function POST(request: NextRequest) {
         }
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('[Nightly] Trailing stop calculation failed:', (error as Error).message);
     }
 
@@ -180,6 +221,7 @@ export async function POST(request: NextRequest) {
         alerts.push(`${parts.join(' + ')} flagged for review`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('[Nightly] Laggard detection failed:', (error as Error).message);
     }
 
@@ -331,6 +373,7 @@ export async function POST(request: NextRequest) {
         alerts.push(`🚀 Momentum expansion active — ADX ${spyAdx.toFixed(1)}, risk cap raised`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('[Nightly] Module checks failed:', (error as Error).message);
     }
 
@@ -351,6 +394,7 @@ export async function POST(request: NextRequest) {
       openRiskPercent = equity > 0 ? (openRisk / equity) * 100 : 0;
       await recordEquitySnapshot(userId, equity, openRiskPercent);
     } catch {
+      hadFailure = true;
       await recordEquitySnapshot(userId, equity);
     }
 
@@ -409,6 +453,7 @@ export async function POST(request: NextRequest) {
         alerts.push(`📐 ${pyramidAlerts.length} position(s) eligible for pyramid add`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('[Nightly] Pyramid check failed:', (error as Error).message);
     }
 
@@ -445,6 +490,7 @@ export async function POST(request: NextRequest) {
         alerts.push(`Snapshot sync: ${result.rowCount} tickers synced, ${result.failed.length} failed`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('[Nightly] Snapshot sync failed:', (error as Error).message);
       alerts.push('Snapshot sync failed — scores may be stale');
     }
@@ -480,43 +526,49 @@ export async function POST(request: NextRequest) {
             currency: r.currency || 'USD',
           }));
       } catch (error) {
+        hadFailure = true;
         console.warn('[Nightly] Failed to query READY tickers:', (error as Error).message);
       }
     }
 
     // Step 8: Send Telegram summary
-    await sendNightlySummary({
-      date: new Date().toISOString().split('T')[0],
-      healthStatus: healthReport.overall,
-      regime: snapshotSync.synced ? 'SYNCED' : 'UNKNOWN',
-      openPositions: positions.length,
-      stopsUpdated: stopRecs.length,
-      readyCandidates: readyToBuy.length,
-      alerts,
-      portfolioValue: positions.reduce((sum, p) => sum + p.entryPrice * p.shares, 0),
-      dailyChange: 0,
-      dailyChangePercent: 0,
-      equity,
-      openRiskPercent,
-      positions: positionDetails,
-      stopChanges,
-      trailingStopChanges,
-      snapshotSynced: snapshotSync.rowCount,
-      snapshotFailed: snapshotSync.failed.length,
-      readyToBuy,
-      pyramidAlerts,
-      laggards: laggardAlerts,
-      climaxAlerts,
-      swapAlerts,
-      whipsawAlerts,
-      breadthAlert,
-      momentumAlert,
-    });
+    try {
+      await sendNightlySummary({
+        date: new Date().toISOString().split('T')[0],
+        healthStatus: healthReport.overall,
+        regime: snapshotSync.synced ? 'SYNCED' : 'UNKNOWN',
+        openPositions: positions.length,
+        stopsUpdated: stopRecs.length,
+        readyCandidates: readyToBuy.length,
+        alerts,
+        portfolioValue: positions.reduce((sum, p) => sum + p.entryPrice * p.shares, 0),
+        dailyChange: 0,
+        dailyChangePercent: 0,
+        equity,
+        openRiskPercent,
+        positions: positionDetails,
+        stopChanges,
+        trailingStopChanges,
+        snapshotSynced: snapshotSync.rowCount,
+        snapshotFailed: snapshotSync.failed.length,
+        readyToBuy,
+        pyramidAlerts,
+        laggards: laggardAlerts,
+        climaxAlerts,
+        swapAlerts,
+        whipsawAlerts,
+        breadthAlert,
+        momentumAlert,
+      });
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Telegram send failed:', (error as Error).message);
+    }
 
     // Step 9: Write heartbeat
     await prisma.heartbeat.create({
       data: {
-        status: 'SUCCESS',
+        status: hadFailure ? 'FAILED' : 'SUCCESS',
         details: JSON.stringify({
           healthStatus: healthReport.overall,
           positionsChecked: positions.length,
@@ -524,6 +576,7 @@ export async function POST(request: NextRequest) {
           trailingStopsApplied: trailingStopChanges.length,
           alertsCount: alerts.length,
           snapshotSync,
+          hadFailure,
         }),
       },
     });

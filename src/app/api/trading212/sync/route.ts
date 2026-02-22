@@ -1,11 +1,22 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/trading212/sync
+ * Consumes: trading212.ts, default-user.ts, equity-snapshot.ts, risk-gates.ts, market-data.ts, prisma.ts, @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-22
+ * Notes: Broker sync should surface risk gate warnings without blocking.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Trading212Client, mapT212Position, mapT212AccountSummary } from '@/lib/trading212';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
+import { validateRiskGates } from '@/lib/risk-gates';
+import { getFXRate } from '@/lib/market-data';
 import { apiError } from '@/lib/api-response';
 import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
+import type { RiskProfileType, Sleeve } from '@/types';
 
 const syncRequestSchema = z.object({
   userId: z.string().trim().min(1).optional(),
@@ -60,6 +71,7 @@ export async function POST(request: NextRequest) {
       created: 0,
       updated: 0,
       closed: 0,
+      riskGateWarnings: [] as string[],
       errors: [] as string[],
     };
 
@@ -157,6 +169,71 @@ export async function POST(request: NextRequest) {
         });
         syncResults.closed++;
       }
+    }
+
+    const fxCache = new Map<string, number>();
+    async function getFxToGbp(currency: string | null, ticker: string): Promise<number> {
+      const curr = (currency || 'USD').toUpperCase();
+      if (curr === 'GBX' || curr === 'GBp') return 0.01;
+      if (curr === 'GBP') return 1;
+      const isUk = ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(ticker);
+      if (isUk && (!currency || currency === '')) return 0.01;
+      const cached = fxCache.get(curr);
+      if (cached != null) return cached;
+      const rate = await getFXRate(curr, 'GBP');
+      fxCache.set(curr, rate);
+      return rate;
+    }
+
+    try {
+      const openPositions = await prisma.position.findMany({
+        where: { userId, status: 'OPEN' },
+        include: { stock: true },
+      });
+
+      const positionsForGates = await Promise.all(openPositions.map(async (p) => {
+        const fxToGbp = await getFxToGbp(p.stock.currency, p.stock.ticker);
+        const entryPriceGbp = p.entryPrice * fxToGbp;
+        const currentStopGbp = p.currentStop * fxToGbp;
+        const currentPriceGbp = entryPriceGbp;
+        return {
+          id: p.id,
+          ticker: p.stock.ticker,
+          sleeve: (p.stock.sleeve || 'CORE') as Sleeve,
+          sector: p.stock.sector || 'Unknown',
+          cluster: p.stock.cluster || 'General',
+          value: entryPriceGbp * p.shares,
+          riskDollars: Math.max(0, (currentPriceGbp - currentStopGbp) * p.shares),
+          shares: p.shares,
+          entryPrice: entryPriceGbp,
+          currentStop: currentStopGbp,
+          currentPrice: currentPriceGbp,
+        };
+      }));
+
+      for (const pos of positionsForGates) {
+        const existing = positionsForGates.filter((p) => p.id !== pos.id);
+        const gateResults = validateRiskGates(
+          {
+            sleeve: pos.sleeve,
+            sector: pos.sector,
+            cluster: pos.cluster,
+            value: pos.value,
+            riskDollars: pos.riskDollars,
+          },
+          existing,
+          accountData.totalValue,
+          user.riskProfile as RiskProfileType
+        );
+        const failed = gateResults.filter((g) => !g.passed);
+        if (failed.length > 0) {
+          syncResults.riskGateWarnings.push(
+            `${pos.ticker}: ${failed.map((g) => g.gate).join(', ')}`
+          );
+        }
+      }
+    } catch (error) {
+      syncResults.riskGateWarnings.push(`Risk gate warning check failed: ${(error as Error).message}`);
     }
 
     // Update user's last sync time, equity, and cached account data

@@ -1,4 +1,12 @@
 /**
+ * DEPENDENCIES
+ * Consumed by: nightly-task.bat
+ * Consumes: health-check.ts, stop-manager.ts, telegram.ts, market-data.ts, equity-snapshot.ts, snapshot-sync.ts, laggard-detector.ts, modules/*, risk-gates.ts, position-sizer.ts, prisma.ts, @/types
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-22
+ * Notes: Nightly automation should continue on partial failures.
+ */
+/**
  * HybridTurtle Nightly Cron Job — Standalone
  *
  * Runs the full nightly process directly (no running dashboard needed).
@@ -38,6 +46,7 @@ import type { RiskProfileType, Sleeve } from '@/types';
 
 async function runNightlyProcess() {
   const userId = 'default-user';
+  let hadFailure = false;
 
   console.log('========================================');
   console.log(`[HybridTurtle] Nightly process started at ${new Date().toISOString()}`);
@@ -53,6 +62,7 @@ async function runNightlyProcess() {
         console.warn(`        Failed: ${preCacheResult.failed.join(', ')}`);
       }
     } catch (error) {
+      hadFailure = true;
       console.error('  [0] Pre-cache failed:', (error as Error).message);
     }
 
@@ -65,18 +75,31 @@ async function runNightlyProcess() {
       healthReport = await runHealthCheck(userId);
       console.log(`        Health: ${healthReport.overall}`);
     } catch (error) {
+      hadFailure = true;
       console.error('  [1] Health check failed:', (error as Error).message);
     }
 
     // Step 2: Get open positions + fetch live prices
     console.log('  [2/9] Fetching positions and live prices...');
-    const positions = await prisma.position.findMany({
-      where: { userId, status: 'OPEN' },
-      include: { stock: true },
-    });
+    let positions: Awaited<ReturnType<typeof prisma.position.findMany>> = [];
+    try {
+      positions = await prisma.position.findMany({
+        where: { userId, status: 'OPEN' },
+        include: { stock: true },
+      });
+    } catch (error) {
+      hadFailure = true;
+      console.error('  [2] Position fetch failed:', (error as Error).message);
+    }
 
     const openTickers = positions.map((p) => p.stock.ticker);
-    const livePrices = openTickers.length > 0 ? await getBatchPrices(openTickers) : {};
+    let livePrices: Record<string, number> = {};
+    try {
+      livePrices = openTickers.length > 0 ? await getBatchPrices(openTickers) : {};
+    } catch (error) {
+      hadFailure = true;
+      console.error('  [2] Live price fetch failed:', (error as Error).message);
+    }
     const stockCurrencies: Record<string, string | null> = {};
     for (const p of positions) {
       stockCurrencies[p.stock.ticker] = p.stock.currency;
@@ -131,6 +154,7 @@ async function runNightlyProcess() {
         }
       }
     } catch (error) {
+      hadFailure = true;
       console.error('  [3] R-based stop recommendations failed:', (error as Error).message);
     }
 
@@ -154,6 +178,7 @@ async function runNightlyProcess() {
         }
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('  [3b] Trailing stop calculation failed:', (error as Error).message);
     }
     console.log(`        ${stopRecs.length} R-based, ${trailingStopChanges.length} trailing ATR`);
@@ -207,6 +232,7 @@ async function runNightlyProcess() {
         alerts.push(`${parts.join(' + ')} flagged for review`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('  [4] Laggard detection failed:', (error as Error).message);
     }
     console.log(`        ${laggardAlerts.length} laggards flagged`);
@@ -359,6 +385,7 @@ async function runNightlyProcess() {
         alerts.push(`Momentum expansion active — ADX ${spyAdx.toFixed(1)}, risk cap raised`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('  [5] Module checks failed:', (error as Error).message);
     }
     console.log(`        Climax: ${climaxAlerts.length}, Swap: ${swapAlerts.length}, Whipsaw: ${whipsawAlerts.length}`);
@@ -380,6 +407,7 @@ async function runNightlyProcess() {
       openRiskPercent = equity > 0 ? (openRisk / equity) * 100 : 0;
       await recordEquitySnapshot(userId, equity, openRiskPercent);
     } catch {
+      hadFailure = true;
       await recordEquitySnapshot(userId, equity);
     }
 
@@ -436,6 +464,7 @@ async function runNightlyProcess() {
         alerts.push(`${pyramidAlerts.length} position(s) eligible for pyramid add`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('  [6] Pyramid check failed:', (error as Error).message);
     }
     console.log(`        Equity: ${equity.toFixed(2)}, Risk: ${openRiskPercent.toFixed(1)}%, Pyramids: ${pyramidAlerts.length}`);
@@ -475,6 +504,7 @@ async function runNightlyProcess() {
         alerts.push(`Snapshot sync: ${result.rowCount} tickers synced, ${result.failed.length} failed`);
       }
     } catch (error) {
+      hadFailure = true;
       console.warn('  [7] Snapshot sync failed:', (error as Error).message);
       alerts.push('Snapshot sync failed — scores may be stale');
     }
@@ -531,6 +561,7 @@ async function runNightlyProcess() {
           alerts.push(`🚨 ${triggerMetCandidates.length} trigger(s) met — review for immediate entry`);
         }
       } catch (error) {
+        hadFailure = true;
         console.warn('  [7b] Failed to query READY tickers:', (error as Error).message);
       }
     }
@@ -573,6 +604,7 @@ async function runNightlyProcess() {
       momentumAlert,
     });
     } catch (error) {
+      hadFailure = true;
       console.error('  [8] Telegram send failed:', (error as Error).message);
     }
     console.log(`        Telegram: ${telegramSent ? 'SENT' : 'NOT SENT (check credentials)'}`);
@@ -581,7 +613,7 @@ async function runNightlyProcess() {
     console.log('  [9/9] Writing heartbeat...');
     await prisma.heartbeat.create({
       data: {
-        status: 'SUCCESS',
+        status: hadFailure ? 'FAILED' : 'SUCCESS',
         details: JSON.stringify({
           healthStatus: healthReport.overall,
           positionsChecked: positions.length,
@@ -589,6 +621,7 @@ async function runNightlyProcess() {
           trailingStopsApplied: trailingStopChanges.length,
           alertsCount: alerts.length,
           telegramSent,
+          hadFailure,
           snapshotSync,
         }),
       },

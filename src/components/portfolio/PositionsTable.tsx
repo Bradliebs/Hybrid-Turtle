@@ -64,7 +64,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
 
   // T212 bulk sync state
   const [bulkSyncing, setBulkSyncing] = useState(false);
-  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; total: number } | null>(null);
+  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; total: number; failedDetails?: string[] } | null>(null);
 
   // Exit modal state
   const [exitModal, setExitModal] = useState<Position | null>(null);
@@ -134,12 +134,16 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
             setBulkSyncing(true);
             setBulkSyncResult(null);
             try {
-              const data = await apiRequest<{ placed: number; failed: number; total: number }>('/api/stops/t212', {
+              const data = await apiRequest<{ placed: number; failed: number; total: number; results?: { ticker: string; action: string }[] }>('/api/stops/t212', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
               });
-              setBulkSyncResult({ placed: data.placed, failed: data.failed, total: data.total });
+              // Extract failure details for display
+              const failedDetails = (data.results ?? [])
+                .filter((r) => r.action.startsWith('FAILED'))
+                .map((r) => `${r.ticker}: ${r.action.replace('FAILED: ', '')}`);
+              setBulkSyncResult({ placed: data.placed, failed: data.failed, total: data.total, failedDetails });
               setTimeout(() => setBulkSyncResult(null), 5000);
             } catch { /* ignore */ }
             setBulkSyncing(false);
@@ -156,6 +160,13 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
             {bulkSyncResult.placed}/{bulkSyncResult.total} placed
             {bulkSyncResult.failed > 0 && <span className="text-loss">({bulkSyncResult.failed} failed)</span>}
           </span>
+        )}
+        {bulkSyncResult?.failedDetails && bulkSyncResult.failedDetails.length > 0 && (
+          <div className="text-xs text-loss mt-1">
+            {bulkSyncResult.failedDetails.map((d, i) => (
+              <div key={i}>{d}</div>
+            ))}
+          </div>
         )}
         </div>
       </div>
@@ -569,9 +580,10 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                                 });
                                 setT212PushStatus('success');
                                 setT212PushMessage(t212Data.message || 'Stop placed on Trading 212');
-                              } catch {
+                              } catch (err) {
                                 setT212PushStatus('error');
-                                setT212PushMessage('T212 push failed — update manually in the app');
+                                const msg = err instanceof Error ? err.message : 'Unknown error';
+                                setT212PushMessage(`T212 push failed: ${msg}`);
                               }
                             }
                             setRecApplying(false);
@@ -702,7 +714,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
               {/* Safety warning */}
               <div className="flex items-start gap-2 p-3 bg-warning/10 border border-warning/20 rounded-lg text-sm">
                 <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
-                <span className="text-warning/90">Stops can only move <strong>UP</strong> (monotonic enforcement). The new stop must be above {formatPrice(Math.max(stopModal.currentStop, t212CurrentStop ?? 0), stopModal.priceCurrency)}.</span>
+                <span className="text-warning/90">Stops can only move <strong>UP</strong> (monotonic enforcement).{!t212CurrentStop && pushToT212 ? ' Enter the same value to push existing stop to T212.' : ` The new stop must be above ${formatPrice(Math.max(stopModal.currentStop, t212CurrentStop ?? 0), stopModal.priceCurrency)}.`}</span>
               </div>
 
               {/* Input */}
@@ -801,7 +813,9 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   }
                   // Monotonic rule: use the HIGHER of DB stop and T212 stop as the floor
                   const effectiveFloor = Math.max(stopModal.currentStop, t212CurrentStop ?? 0);
-                  if (newStop <= effectiveFloor) {
+                  // Allow equal value if T212 has no stop yet (push-only, no DB change needed)
+                  const isPushOnly = newStop === stopModal.currentStop && !t212CurrentStop && pushToT212;
+                  if (!isPushOnly && newStop <= effectiveFloor) {
                     setStopError(`New stop must be above ${formatPrice(effectiveFloor, stopModal.priceCurrency)} (${t212CurrentStop && t212CurrentStop > stopModal.currentStop ? 'T212 stop' : 'current stop'})`);
                     return;
                   }
@@ -817,8 +831,12 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   setT212PushStatus('idle');
                   setT212PushMessage(null);
 
-                  const reason = `Manual stop update: ${formatPrice(stopModal.currentStop, stopModal.priceCurrency)} → ${formatPrice(newStop, stopModal.priceCurrency)}`;
-                  const ok = await onUpdateStop(stopModal.id, newStop, reason);
+                  // If push-only (same stop, no T212 stop yet), skip DB update
+                  let ok = true;
+                  if (!isPushOnly) {
+                    const reason = `Manual stop update: ${formatPrice(stopModal.currentStop, stopModal.priceCurrency)} → ${formatPrice(newStop, stopModal.priceCurrency)}`;
+                    ok = await onUpdateStop(stopModal.id, newStop, reason);
+                  }
 
                   if (!ok) {
                     setStopSubmitting(false);
@@ -840,9 +858,10 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                       });
                       setT212PushStatus('success');
                       setT212PushMessage(t212Data.message || 'Stop placed on Trading 212');
-                    } catch {
+                    } catch (err) {
                       setT212PushStatus('error');
-                      setT212PushMessage('Network error pushing to Trading 212');
+                      const msg = err instanceof Error ? err.message : 'Unknown error';
+                      setT212PushMessage(`T212 push failed: ${msg}`);
                     }
                   }
 

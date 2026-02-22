@@ -341,8 +341,10 @@ export async function PUT(request: NextRequest) {
           orderId: order?.id,
         });
 
-        // Rate limit spacing — 2s between orders
-        await new Promise((r) => setTimeout(r, 2000));
+        // Rate limit spacing — 6s between orders
+        // setStopLoss makes up to 3 API calls internally (GET + cancel + POST)
+        // T212 rate limits are per-endpoint, ~1 req/s for orders
+        await new Promise((r) => setTimeout(r, 6000));
       } catch (error) {
         results.push({
           ticker: pos.stock.ticker,
