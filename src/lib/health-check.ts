@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: nightly.ts, /api/health-check/route.ts, /api/nightly/route.ts
+ * Consumes: prisma.ts, market-data.ts, @/types
+ * Risk-sensitive: NO
+ * Last modified: 2026-02-22
+ * Notes: 16-point health audit — used in nightly Step 1 and dashboard.
+ */
 // ============================================================
 // 16-Point Health Check Service
 // ============================================================

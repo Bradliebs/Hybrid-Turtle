@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: nightly.ts, /api/nightly/route.ts
+ * Consumes: prisma.ts, utils.ts
+ * Risk-sensitive: NO
+ * Last modified: 2026-02-22
+ * Notes: Rate-limited to once per 6 hours — do not remove the 360-minute guard.
+ */
 import prisma from './prisma';
 import { getWeekStart } from './utils';
 

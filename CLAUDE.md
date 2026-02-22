@@ -239,6 +239,65 @@ prisma.positions.update()    // without checking stop monotonicity first
 
 ---
 
+## Workflow Orchestration
+
+### 1. Plan Node Default
+- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
+- Write a detailed spec upfront to `tasks/todo.md` before touching any code
+- If something goes sideways mid-task, STOP and re-plan — don't keep pushing
+- Use plan mode for verification steps, not just building
+
+### 2. Subagent Strategy
+- Use subagents liberally to keep the main context window clean
+- Offload research, exploration, and parallel analysis to subagents
+- For complex problems, use subagents rather than cramming everything into one context
+- One task per subagent for focused execution
+
+### 3. Self-Improvement Loop
+- After ANY correction from the user: update `tasks/lessons.md` with the pattern
+- Write rules that prevent the same mistake recurring
+- Review `tasks/lessons.md` at the start of each session for relevant patterns
+- Ruthlessly iterate on lessons until mistake rate drops
+
+### 4. Verification Before Done
+- Never mark a task complete without proving it works
+- Diff behaviour between main and your changes when relevant
+- Run tests, check logs, demonstrate correctness
+- Ask yourself: "Would a staff engineer approve this PR?"
+
+### 5. Demand Elegance (Balanced)
+- For non-trivial changes: pause and ask "is there a more elegant way?"
+- If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
+- Skip this for simple, obvious fixes — don't over-engineer
+- Challenge your own work before presenting it
+
+### 6. Autonomous Bug Fixing
+- When given a bug report: just fix it. Don't ask for hand-holding
+- Point at logs, errors, failing tests — then resolve them
+- Zero context switching required from the user
+- Fix failing tests without being told how
+
+---
+
+## Task Management
+
+1. **Plan First** — Write plan to `tasks/todo.md` with checkable items before any implementation
+2. **Verify Plan** — Check in before starting implementation on anything risk-sensitive
+3. **Track Progress** — Mark items complete as you go
+4. **Explain Changes** — High-level summary at each step
+5. **Document Results** — Add review section to `tasks/todo.md` when done
+6. **Capture Lessons** — Update `tasks/lessons.md` after any correction
+
+---
+
+## Core Principles
+
+- **Simplicity First** — Make every change as simple as possible. Minimal code impact.
+- **No Laziness** — Find root causes. No temporary fixes. Senior developer standards.
+- **Minimal Impact** — Changes should only touch what's necessary. Avoid introducing bugs.
+
+---
+
 ## How to Work With Me on This Project
 
 1. **One task per session** — don't compound tasks

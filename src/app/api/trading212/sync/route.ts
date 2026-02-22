@@ -92,64 +92,66 @@ export async function POST(request: NextRequest) {
       activeT212Tickers.add(pos.fullTicker);
 
       try {
-        // Ensure stock exists in our database
-        let stock = await prisma.stock.findUnique({
-          where: { ticker: pos.ticker },
+        // Atomic: ensure stock exists + create/update position in one transaction
+        await prisma.$transaction(async (tx) => {
+          let stock = await tx.stock.findUnique({
+            where: { ticker: pos.ticker },
+          });
+
+          if (!stock) {
+            stock = await tx.stock.create({
+              data: {
+                ticker: pos.ticker,
+                name: pos.name,
+                sleeve: 'CORE', // Default — user can reclassify
+              },
+            });
+          }
+
+          const existing = existingTickerMap.get(pos.fullTicker);
+
+          if (existing) {
+            // Update existing position
+            await tx.position.update({
+              where: { id: existing.id },
+              data: {
+                shares: pos.shares,
+                entryPrice: pos.entryPrice,
+                updatedAt: new Date(),
+              },
+            });
+            syncResults.updated++;
+          } else {
+            // Create new position
+            const initialRisk = pos.entryPrice * 0.05; // Default 5% stop-loss for synced positions
+            const stopLoss = pos.entryPrice - initialRisk;
+
+            await tx.position.create({
+              data: {
+                userId,
+                stockId: stock.id,
+                status: 'OPEN',
+                source: 'trading212',
+                t212Ticker: pos.fullTicker,
+                entryPrice: pos.entryPrice,
+                entryDate: new Date(pos.entryDate),
+                shares: pos.shares,
+                stopLoss,
+                initialRisk,
+                currentStop: stopLoss,
+                entry_price: pos.entryPrice,
+                initial_stop: stopLoss,
+                initial_R: initialRisk,
+                atr_at_entry: null,
+                profile_used: user.riskProfile,
+                entry_type: 'BREAKOUT',
+                protectionLevel: 'INITIAL',
+                notes: `Synced from Trading 212. ISIN: ${pos.isin}`,
+              },
+            });
+            syncResults.created++;
+          }
         });
-
-        if (!stock) {
-          stock = await prisma.stock.create({
-            data: {
-              ticker: pos.ticker,
-              name: pos.name,
-              sleeve: 'CORE', // Default — user can reclassify
-            },
-          });
-        }
-
-        const existing = existingTickerMap.get(pos.fullTicker);
-
-        if (existing) {
-          // Update existing position
-          await prisma.position.update({
-            where: { id: existing.id },
-            data: {
-              shares: pos.shares,
-              entryPrice: pos.entryPrice,
-              updatedAt: new Date(),
-            },
-          });
-          syncResults.updated++;
-        } else {
-          // Create new position
-          const initialRisk = pos.entryPrice * 0.05; // Default 5% stop-loss for synced positions
-          const stopLoss = pos.entryPrice - initialRisk;
-
-          await prisma.position.create({
-            data: {
-              userId,
-              stockId: stock.id,
-              status: 'OPEN',
-              source: 'trading212',
-              t212Ticker: pos.fullTicker,
-              entryPrice: pos.entryPrice,
-              entryDate: new Date(pos.entryDate),
-              shares: pos.shares,
-              stopLoss,
-              initialRisk,
-              currentStop: stopLoss,
-              entry_price: pos.entryPrice,
-              initial_stop: stopLoss,
-              initial_R: initialRisk,
-              atr_at_entry: null,
-              profile_used: user.riskProfile,
-              entry_type: 'BREAKOUT',
-              protectionLevel: 'INITIAL',
-              notes: `Synced from Trading 212. ISIN: ${pos.isin}`,
-            },
-          });
-          syncResults.created++;
-        }
       } catch (err) {
         syncResults.errors.push(`Error syncing ${pos.ticker}: ${(err as Error).message}`);
       }
@@ -159,15 +161,19 @@ export async function POST(request: NextRequest) {
     const existingEntries = Array.from(existingTickerMap.entries());
     for (const [t212Ticker, existing] of existingEntries) {
       if (!activeT212Tickers.has(t212Ticker)) {
-        await prisma.position.update({
-          where: { id: existing.id },
-          data: {
-            status: 'CLOSED',
-            exitDate: new Date(),
-            exitReason: 'Closed on Trading 212',
-          },
-        });
-        syncResults.closed++;
+        try {
+          await prisma.position.update({
+            where: { id: existing.id },
+            data: {
+              status: 'CLOSED',
+              exitDate: new Date(),
+              exitReason: 'Closed on Trading 212',
+            },
+          });
+          syncResults.closed++;
+        } catch (err) {
+          syncResults.errors.push(`Error closing ${t212Ticker}: ${(err as Error).message}`);
+        }
       }
     }
 

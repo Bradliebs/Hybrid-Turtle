@@ -17,8 +17,38 @@
 
 import 'server-only';
 import YahooFinance from 'yahoo-finance2';
+import { z } from 'zod';
 import type { StockQuote, TechnicalData, MarketIndex, FearGreedData } from '@/types';
 import * as eodhd from './market-data-eodhd';
+
+// ── Zod schemas for Yahoo Finance runtime validation ──
+const YahooQuoteSchema = z.object({
+  symbol: z.string().optional(),
+  shortName: z.string().optional(),
+  longName: z.string().optional(),
+  regularMarketPrice: z.number(),
+  regularMarketChange: z.number().optional(),
+  regularMarketChangePercent: z.number().optional(),
+  regularMarketVolume: z.number().optional(),
+  regularMarketPreviousClose: z.number().optional(),
+  regularMarketDayHigh: z.number().optional(),
+  regularMarketDayLow: z.number().optional(),
+  regularMarketOpen: z.number().optional(),
+}).passthrough();
+
+const YahooChartBarSchema = z.object({
+  date: z.union([z.string(), z.date()]),
+  open: z.number().finite(),
+  high: z.number().finite(),
+  low: z.number().finite(),
+  close: z.number().finite(),
+  adjclose: z.number().finite().optional(),
+  volume: z.number(),
+});
+
+const YahooChartResponseSchema = z.object({
+  quotes: z.array(YahooChartBarSchema),
+}).passthrough();
 
 // ── Provider routing ──
 // Checks MARKET_DATA_PROVIDER env var. Default is 'yahoo'.
@@ -188,8 +218,16 @@ export async function getStockQuote(ticker: string): Promise<StockQuote | null> 
   const yahooTicker = toYahooTicker(ticker);
 
   try {
-    const result = await yf.quote(yahooTicker);
-    if (!result || !result.regularMarketPrice) return null;
+    const raw = await yf.quote(yahooTicker);
+    if (!raw) return null;
+
+    // Runtime validation — rejects malformed Yahoo responses
+    const parsed = YahooQuoteSchema.safeParse(raw);
+    if (!parsed.success) {
+      console.warn(`[YF] Quote validation failed for ${ticker}:`, parsed.error.issues.map(i => i.message).join(', '));
+      return null;
+    }
+    const result = parsed.data;
 
     const quote: StockQuote = {
       ticker: result.symbol || ticker,
@@ -243,10 +281,18 @@ export async function getDailyPrices(
 
     if (!quotes || quotes.length === 0) return [];
 
+    // Runtime validation — rejects malformed chart responses
+    const chartParsed = YahooChartResponseSchema.safeParse({ quotes });
+    if (!chartParsed.success) {
+      console.warn(`[YF] Chart validation failed for ${ticker}:`, chartParsed.error.issues.map(i => i.message).join(', '));
+      return [];
+    }
+    const validBars = chartParsed.data.quotes;
+
     // Sort newest first (scan-engine expects this order)
-    const bars: DailyBar[] = quotes
-      .sort((a: YahooChartBar, b: YahooChartBar) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .map((bar: YahooChartBar) => ({
+    const bars: DailyBar[] = validBars
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map((bar) => ({
         date: new Date(bar.date).toISOString().split('T')[0],
         open: bar.open,
         high: bar.high,

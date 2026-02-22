@@ -104,9 +104,17 @@ async function runNightlyProcess() {
     for (const p of positions) {
       stockCurrencies[p.stock.ticker] = p.stock.currency;
     }
-    const gbpPrices = openTickers.length > 0
-      ? await normalizeBatchPricesToGBP(livePrices, stockCurrencies)
-      : {};
+    let gbpPrices: Record<string, number> = {};
+    try {
+      gbpPrices = openTickers.length > 0
+        ? await normalizeBatchPricesToGBP(livePrices, stockCurrencies)
+        : {};
+    } catch (error) {
+      hadFailure = true;
+      // Fall back to raw prices so downstream steps can still run
+      gbpPrices = { ...livePrices };
+      console.error('  [2] FX normalisation failed, using raw prices as fallback:', (error as Error).message);
+    }
     console.log(`        ${positions.length} positions, ${Object.keys(livePrices).length} prices fetched`);
 
     // Step 3: Generate stop recommendations (isolated)
@@ -263,23 +271,25 @@ async function runNightlyProcess() {
       console.warn('  [5] Climax detection failed:', (error as Error).message);
     }
 
-    try {
-      const riskProfile = (user?.riskProfile || 'BALANCED') as RiskProfileType;
-      const enrichedForSwap = positions.map((p) => {
-        const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
-        const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
-        const rMultiple = calculateRMultiple(rawPrice, p.entryPrice, p.initialRisk);
-        return {
-          id: p.id,
-          ticker: p.stock.ticker,
-          cluster: p.stock.cluster || 'General',
-          sleeve: p.stock.sleeve as Sleeve,
-          value: gbpPrice * p.shares,
-          rMultiple,
-        };
-      });
-      const totalPortfolioValue = enrichedForSwap.reduce((s, p) => s + p.value, 0);
+    // Shared data for risk modules — computed once, used by swap/whipsaw/breadth/momentum
+    const riskProfile = (user?.riskProfile || 'BALANCED') as RiskProfileType;
+    const enrichedForSwap = positions.map((p) => {
+      const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
+      const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
+      const rMultiple = calculateRMultiple(rawPrice, p.entryPrice, p.initialRisk);
+      return {
+        id: p.id,
+        ticker: p.stock.ticker,
+        cluster: p.stock.cluster || 'General',
+        sleeve: p.stock.sleeve as Sleeve,
+        value: gbpPrice * p.shares,
+        rMultiple,
+      };
+    });
+    const totalPortfolioValue = enrichedForSwap.reduce((s, p) => s + p.value, 0);
 
+    // Swap suggestions (isolated)
+    try {
       const latestScan = await prisma.scan.findFirst({
         where: { userId },
         orderBy: { runDate: 'desc' },
@@ -305,7 +315,13 @@ async function runNightlyProcess() {
       if (swapAlerts.length > 0) {
         alerts.push(`${swapAlerts.length} swap suggestion(s) — stronger candidates available`);
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('  [5] Swap suggestions failed:', (error as Error).message);
+    }
 
+    // Whipsaw kill switch (isolated)
+    try {
       const closedPositions = await prisma.position.findMany({
         where: { userId, status: 'CLOSED' },
         include: { stock: true },
@@ -328,7 +344,13 @@ async function runNightlyProcess() {
       if (whipsawAlerts.length > 0) {
         alerts.push(`${whipsawAlerts.length} ticker(s) blocked by whipsaw kill switch`);
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('  [5] Whipsaw check failed:', (error as Error).message);
+    }
 
+    // Breadth safety (isolated)
+    try {
       const stocks = await prisma.stock.findMany({ where: { active: true }, select: { ticker: true } });
       const universeTickers = stocks.map((s) => s.ticker);
       // Sample up to 30 tickers for breadth — avoids 266 sequential Yahoo calls
@@ -365,7 +387,13 @@ async function runNightlyProcess() {
       if (breadthResult.isRestricted) {
         alerts.push(`Breadth ${breadthPct.toFixed(0)}% < 40% — max positions reduced to ${breadthResult.maxPositionsOverride}`);
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('  [5] Breadth safety failed:', (error as Error).message);
+    }
 
+    // Momentum expansion (isolated)
+    try {
       let spyAdx = 20;
       try {
         const spyBars = await getDailyPrices('SPY', 'compact');
@@ -386,7 +414,7 @@ async function runNightlyProcess() {
       }
     } catch (error) {
       hadFailure = true;
-      console.warn('  [5] Module checks failed:', (error as Error).message);
+      console.warn('  [5] Momentum expansion failed:', (error as Error).message);
     }
     console.log(`        Climax: ${climaxAlerts.length}, Swap: ${swapAlerts.length}, Whipsaw: ${whipsawAlerts.length}`);
 
