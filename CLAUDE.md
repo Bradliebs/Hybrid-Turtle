@@ -265,5 +265,5 @@ prisma.positions.update()    // without checking stop monotonicity first
 
 ---
 
-*Last updated: 20 February 2026*
+*Last updated: 22 February 2026*
 *Account size: ~£429 + £50/week | Profile: SMALL_ACCOUNT | Broker: Trading 212*

@@ -105,9 +105,11 @@ echo  [3/7] Setting up environment...
 if not exist ".env" (
     :: Generate a cryptographically random secret (32 bytes, base64)
     for /f "tokens=*" %%i in ('powershell -NoProfile -Command "$b = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)"') do set NEXTAUTH_SECRET=%%i
+    for /f "tokens=*" %%i in ('powershell -NoProfile -Command "$b = New-Object byte[] 32; [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)"') do set CRON_SECRET=%%i
     > ".env" echo DATABASE_URL=file:./dev.db
     >> ".env" echo NEXTAUTH_URL=http://localhost:3000
     >> ".env" echo NEXTAUTH_SECRET=!NEXTAUTH_SECRET!
+    >> ".env" echo CRON_SECRET=!CRON_SECRET!
     >> ".env" echo.
     >> ".env" echo # Telegram nightly reports - fill these in during Step 7 or later
     >> ".env" echo # TELEGRAM_BOT_TOKEN=your-bot-token-here
