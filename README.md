@@ -224,6 +224,14 @@ Download and install from https://nodejs.org (choose the **LTS** version). Close
 - Temporarily disable antivirus software.
 - Ensure you have internet access.
 
+### "Prisma engines do not seem to be compatible" / "not a valid Win32 application"
+This means the Prisma database engine doesn't match your Node.js architecture. Usually caused by having 32-bit Node.js on a 64-bit machine.
+1. Check your architecture: open a terminal and run `node -e "console.log(process.arch)"`
+2. If it says `ia32` instead of `x64` — uninstall Node.js, then download and install the **64-bit (x64)** version from https://nodejs.org
+3. Delete the `node_modules` folder and run `install.bat` again
+
+If the architecture is already `x64`, the binary may be corrupted (e.g. antivirus quarantine). Delete `node_modules\.prisma`, then run `npx prisma generate`.
+
 ### "Port 3000 already in use"
 `start.bat` handles this automatically. If it persists, open Task Manager (Ctrl+Shift+Esc), end any **Node.js** processes, and try again.
 

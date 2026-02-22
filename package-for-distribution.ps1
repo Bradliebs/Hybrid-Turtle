@@ -6,7 +6,12 @@ $outDir = Join-Path $source 'dist'
 $dest = Join-Path $outDir $zipName
 
 # Folders/files to exclude
-$exclude = @('.next', 'node_modules', 'dist', '.git', '.env', 'dev.db', 'dev.db-journal')
+$exclude = @(
+    '.next', 'node_modules', 'dist', '.git',
+    '.env', 'dev.db', 'dev.db-journal',
+    'install.log', 'nightly.log', '*.tsbuildinfo',
+    'reports', 'AGENT_REVIEW.md', 'AUDIT_CHECKLIST.md', 'AUDIT_PHASE1_INVENTORY.md'
+)
 
 Write-Host ''
 Write-Host '  ==========================================================='
@@ -62,16 +67,22 @@ foreach ($item in $items) {
     }
 }
 
-# Copy entire Planning folder (sibling of hybridturtle) so seed + stops sync work out of the box
-$planningDir = Join-Path (Split-Path $source -Parent) 'Planning'
-$planningDest = Join-Path $tempDir 'Planning'
+# Verify key files are present in the staging directory
+$requiredFiles = @('install.bat', 'start.bat', '.env.example', 'package.json')
+foreach ($reqFile in $requiredFiles) {
+    $reqPath = Join-Path $tempDir $reqFile
+    if (-not (Test-Path $reqPath)) {
+        Write-Host "  ! Missing expected file: $reqFile" -ForegroundColor Yellow
+    }
+}
 
-if (Test-Path $planningDir) {
-    Copy-Item $planningDir $planningDest -Recurse -Force
-    $fileCount = (Get-ChildItem $planningDest -File).Count
+# Verify Planning folder is included
+$planningStaged = Join-Path $tempDir 'Planning'
+if (Test-Path $planningStaged) {
+    $fileCount = (Get-ChildItem $planningStaged -File).Count
     Write-Host "    + Planning folder ($fileCount files)"
 } else {
-    Write-Host '  ! Planning folder not found - ticker lists will not be included' -ForegroundColor Yellow
+    Write-Host '  ! Planning folder not found in package - ticker seeding will not work' -ForegroundColor Yellow
 }
 
 # Create the zip
