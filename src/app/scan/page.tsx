@@ -6,7 +6,10 @@ import StageFunnel from '@/components/scan/StageFunnel';
 import TechnicalFilterGrid from '@/components/scan/TechnicalFilterGrid';
 import CandidateTable from '@/components/scan/CandidateTable';
 import PositionSizer from '@/components/scan/PositionSizer';
-import TickerChart from '@/components/scan/TickerChart';
+import dynamic from 'next/dynamic';
+
+// Dynamic import: lightweight-charts (~45KB) only loaded when scan page is visited
+const TickerChart = dynamic(() => import('@/components/scan/TickerChart'), { ssr: false });
 import StatusBadge from '@/components/shared/StatusBadge';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { cn } from '@/lib/utils';
@@ -533,9 +536,9 @@ export default function ScanPage() {
                       No portfolio data available to evaluate risk gates.
                     </div>
                   )}
-                  {riskCapChecks.map((check, i) => (
+                  {riskCapChecks.map((check) => (
                     <div
-                      key={i}
+                      key={check.label}
                       className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg"
                     >
                       {check.passed ? (

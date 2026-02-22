@@ -264,9 +264,9 @@ export default function DashboardPage() {
                   No recent publications yet.
                 </div>
               )}
-              {publications.map((pub, i) => (
+              {publications.map((pub) => (
                 <div
-                  key={i}
+                  key={`${pub.date}-${pub.title}`}
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-navy-600/30 transition-colors cursor-pointer group"
                 >
                   <div className="flex-shrink-0">

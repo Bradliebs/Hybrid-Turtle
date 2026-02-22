@@ -48,9 +48,12 @@ export async function GET(request: NextRequest) {
       take: limit,
     });
 
+    // Trade log is append-only — cache for 2 minutes, serve stale for 1 min while revalidating
     return NextResponse.json({
       logs,
       count: logs.length,
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=120, stale-while-revalidate=60' },
     });
   } catch (error) {
     console.error('Trade log list error:', error);

@@ -5,9 +5,6 @@ const nextConfig = {
       bodySizeLimit: '2mb',
     },
   },
-  images: {
-    domains: ['avatars.githubusercontent.com'],
-  },
 };
 
 module.exports = nextConfig;

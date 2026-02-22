@@ -67,8 +67,8 @@ export default function BQSvsFWSScatter({ tickers }: BQSvsFWSScatterProps) {
             }}
           />
           <Scatter data={data} fill="#f59e0b">
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} fillOpacity={0.7} r={4} />
+            {data.map((entry) => (
+              <Cell key={entry.ticker} fill={entry.color} fillOpacity={0.7} r={4} />
             ))}
           </Scatter>
         </ScatterChart>

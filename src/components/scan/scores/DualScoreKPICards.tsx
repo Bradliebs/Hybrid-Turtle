@@ -1,4 +1,4 @@
-'use client';
+import { memo } from 'react';
 
 interface DualScoreKPICardsProps {
   autoYes: number;
@@ -10,7 +10,7 @@ interface DualScoreKPICardsProps {
   total: number;
 }
 
-export default function DualScoreKPICards({
+function DualScoreKPICards({
   autoYes, autoNo, conditional, avgNCS, avgBQS, avgFWS, total,
 }: DualScoreKPICardsProps) {
   const cards = [
@@ -77,3 +77,5 @@ export default function DualScoreKPICards({
     </div>
   );
 }
+
+export default memo(DualScoreKPICards);

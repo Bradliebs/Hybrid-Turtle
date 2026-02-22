@@ -71,8 +71,8 @@ export default function DistributionDonut({
       </div>
       {/* Legend */}
       <div className="grid grid-cols-2 gap-2 mt-2">
-        {data.map((item, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
+        {data.map((item) => (
+          <div key={item.name} className="flex items-center gap-2 text-xs">
             <div
               className="w-3 h-3 rounded-full flex-shrink-0"
               style={{ backgroundColor: item.color }}
@@ -88,9 +88,9 @@ export default function DistributionDonut({
       {tickers && tickers.length > 0 && (
         <div className="mt-3 pt-3 border-t border-border">
           <div className="flex flex-wrap gap-1.5">
-            {tickers.map((t, i) => (
+            {tickers.map((t) => (
               <span
-                key={i}
+                key={t.ticker}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-navy-800 text-xs"
               >
                 <span className="text-primary-400 font-semibold">{t.ticker}</span>

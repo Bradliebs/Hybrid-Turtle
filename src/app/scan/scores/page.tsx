@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/shared/Navbar';
 import DualScoreKPICards from '@/components/scan/scores/DualScoreKPICards';
-import NCSDistributionChart from '@/components/scan/scores/NCSDistributionChart';
-import BQSvsFWSScatter from '@/components/scan/scores/BQSvsFWSScatter';
+import dynamic from 'next/dynamic';
+
+// Dynamic imports: recharts (~200KB) only loaded when scores page is visited
+const NCSDistributionChart = dynamic(() => import('@/components/scan/scores/NCSDistributionChart'), { ssr: false });
+const BQSvsFWSScatter = dynamic(() => import('@/components/scan/scores/BQSvsFWSScatter'), { ssr: false });
 import DualScoreFilters from '@/components/scan/scores/DualScoreFilters';
 import DualScoreTable from '@/components/scan/scores/DualScoreTable';
 import WhyCard from '@/components/scan/scores/WhyCard';

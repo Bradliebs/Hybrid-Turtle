@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Get open positions
-    let positions: Awaited<ReturnType<typeof prisma.position.findMany>> = [];
+    let positions: Awaited<ReturnType<typeof prisma.position.findMany<{ include: { stock: true } }>>> = [];
     try {
       positions = await prisma.position.findMany({
         where: { userId, status: 'OPEN' },

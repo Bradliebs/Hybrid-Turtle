@@ -196,7 +196,6 @@ export async function syncSnapshot(
   // 6. Process each stock in batches
   const failed: string[] = [];
   let done = 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const batchData: Record<string, unknown>[] = [];
 
   for (let i = 0; i < stocks.length; i += BATCH_SIZE) {

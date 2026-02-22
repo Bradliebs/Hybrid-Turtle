@@ -172,8 +172,8 @@ export default function ActionCardWidget() {
           color="warning"
         >
           <div className="space-y-1.5">
-            {card.stopUpdates.map((s, i) => (
-              <div key={i} className="flex items-center gap-2 text-[11px]">
+            {card.stopUpdates.map((s) => (
+              <div key={s.ticker} className="flex items-center gap-2 text-[11px]">
                 <span className="font-medium text-foreground w-12">{s.ticker}</span>
                 <span className="text-muted-foreground">${s.from.toFixed(2)}</span>
                 <ArrowRight className="w-3 h-3 text-profit" />
@@ -204,8 +204,8 @@ export default function ActionCardWidget() {
               color="primary"
             >
               <div className="space-y-2">
-                {card.swapDetails.map((s, i) => (
-                  <div key={i} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
+                {card.swapDetails.map((s) => (
+                  <div key={`${s.weakTicker}-${s.strongTicker}`} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
                     <div className="flex items-center gap-1.5 mb-1">
                       <span className="text-[10px] text-muted-foreground">Cluster:</span>
                       <span className="text-[11px] font-medium text-foreground">{s.cluster}</span>
@@ -243,8 +243,8 @@ export default function ActionCardWidget() {
               color="warning"
             >
               <div className="space-y-2">
-                {card.laggardDetails.map((l, i) => (
-                  <div key={i} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
+                {card.laggardDetails.map((l) => (
+                  <div key={l.ticker} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[11px] font-medium text-foreground">{l.ticker}</span>
                       <span
@@ -292,8 +292,8 @@ export default function ActionCardWidget() {
               color="danger"
             >
               <div className="space-y-2">
-                {card.climaxDetails.map((c, i) => (
-                  <div key={i} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
+                {card.climaxDetails.map((c) => (
+                  <div key={c.ticker} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[11px] font-medium text-foreground">{c.ticker}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-loss/10 text-loss border border-loss/20">
@@ -333,8 +333,8 @@ export default function ActionCardWidget() {
               color="danger"
             >
               <div className="space-y-1.5">
-                {card.whipsawDetails.map((w, i) => (
-                  <div key={i} className="flex items-center gap-2 text-[11px] bg-surface-elevated/50 rounded-md p-2 border border-border/30">
+                {card.whipsawDetails.map((w) => (
+                  <div key={w.ticker} className="flex items-center gap-2 text-[11px] bg-surface-elevated/50 rounded-md p-2 border border-border/30">
                     <Ban className="w-3 h-3 text-loss shrink-0" />
                     <div>
                       <span className="font-medium text-foreground">{w.ticker}</span>
@@ -358,8 +358,8 @@ export default function ActionCardWidget() {
               color="info"
             >
               <div className="space-y-2">
-                {card.fastFollowerDetails.map((f, i) => (
-                  <div key={i} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
+                {card.fastFollowerDetails.map((f) => (
+                  <div key={f.ticker} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[11px] font-medium text-foreground">{f.ticker}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
@@ -401,8 +401,8 @@ export default function ActionCardWidget() {
               color="info"
             >
               <div className="space-y-2">
-                {card.reentryDetails.map((r, i) => (
-                  <div key={i} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
+                {card.reentryDetails.map((r) => (
+                  <div key={r.ticker} className="bg-surface-elevated/50 rounded-md p-2 border border-border/30">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-[11px] font-medium text-foreground">{r.ticker}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -440,8 +440,8 @@ export default function ActionCardWidget() {
       {card.notes.length > 0 && (
         <div className="border-t border-border/50 pt-2 mt-2">
           <div className="space-y-1">
-            {card.notes.map((note, i) => (
-              <div key={i} className="text-[10px] text-muted-foreground">
+            {card.notes.map((note) => (
+              <div key={note} className="text-[10px] text-muted-foreground">
                 {note}
               </div>
             ))}

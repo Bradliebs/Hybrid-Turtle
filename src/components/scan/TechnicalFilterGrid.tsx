@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { Check, X } from 'lucide-react';
 
@@ -28,7 +27,7 @@ const filterLabels = [
   { key: 'dataQuality', label: 'Data Quality' },
 ];
 
-export default function TechnicalFilterGrid({ results }: TechnicalFilterGridProps) {
+function TechnicalFilterGrid({ results }: TechnicalFilterGridProps) {
   return (
     <div className="card-surface overflow-x-auto">
       <table className="data-table">
@@ -81,3 +80,5 @@ export default function TechnicalFilterGrid({ results }: TechnicalFilterGridProp
     </div>
   );
 }
+
+export default memo(TechnicalFilterGrid);

@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { HealthStatus } from '@/types';
 
@@ -35,7 +34,7 @@ const pulseMap: Record<HealthStatus, string> = {
   RED: 'animate-pulse-red',
 };
 
-export default function TrafficLight({ status, size = 'md', label, pulse = false, className }: TrafficLightProps) {
+function TrafficLight({ status, size = 'md', label, pulse = false, className }: TrafficLightProps) {
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <div
@@ -61,7 +60,7 @@ export default function TrafficLight({ status, size = 'md', label, pulse = false
   );
 }
 
-// Full three-light display
+export default memo(TrafficLight);
 interface TrafficLightFullProps {
   status: HealthStatus;
   className?: string;

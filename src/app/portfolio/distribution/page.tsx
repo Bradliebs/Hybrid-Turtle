@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import Navbar from '@/components/shared/Navbar';
 import KPIBanner from '@/components/portfolio/KPIBanner';
-import DistributionDonut from '@/components/portfolio/DistributionDonut';
-import PerformanceChart from '@/components/portfolio/PerformanceChart';
+import dynamic from 'next/dynamic';
+
+// Dynamic imports: recharts (~200KB) only loaded when distribution page is visited
+const DistributionDonut = dynamic(() => import('@/components/portfolio/DistributionDonut'), { ssr: false });
+const PerformanceChart = dynamic(() => import('@/components/portfolio/PerformanceChart'), { ssr: false });
 import SleeveAllocation from '@/components/portfolio/SleeveAllocation';
 import { apiRequest } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/utils';

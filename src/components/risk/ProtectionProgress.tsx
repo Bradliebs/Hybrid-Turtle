@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn, formatR } from '@/lib/utils';
 import { Shield, Lock, TrendingUp, ArrowUp } from 'lucide-react';
 
@@ -26,7 +25,7 @@ const levelConfig: Record<string, { color: string; bgColor: string; icon: React.
 const levelOrder = ['INITIAL', 'BREAKEVEN', 'LOCK_08R', 'LOCK_1R_TRAIL'];
 const levelThresholds = [0, 1.5, 2.5, 3.0];
 
-export default function ProtectionProgress({ positions = [] }: ProtectionProgressProps) {
+function ProtectionProgress({ positions = [] }: ProtectionProgressProps) {
   const progressPositions: PositionProgress[] = positions.map((pos) => {
     const currentIdx = levelOrder.indexOf(pos.protectionLevel);
     const nextIdx = currentIdx + 1;
@@ -131,3 +130,5 @@ export default function ProtectionProgress({ positions = [] }: ProtectionProgres
     </div>
   );
 }
+
+export default memo(ProtectionProgress);

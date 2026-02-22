@@ -877,9 +877,9 @@ export default function SettingsPage() {
               'NEVER exceed max positions for risk profile',
               'NEVER average down on a losing position',
               'NEVER trade on Monday (Observe Only)',
-            ].map((rule, i) => (
+            ].map((rule) => (
               <div
-                key={i}
+                key={rule}
                 className="flex items-center gap-2 p-2 bg-loss/5 border border-loss/20 rounded"
               >
                 <Shield className="w-3 h-3 text-loss flex-shrink-0" />

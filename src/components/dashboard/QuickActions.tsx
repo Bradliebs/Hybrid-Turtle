@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import Link from 'next/link';
 import { TrendingUp, PieChart, ShieldCheck, Scale, BookOpen } from 'lucide-react';
 
@@ -47,7 +46,7 @@ const actions = [
   },
 ];
 
-export default function QuickActions() {
+function QuickActions() {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {actions.map((action) => {
@@ -75,3 +74,5 @@ export default function QuickActions() {
     </div>
   );
 }
+
+export default memo(QuickActions);

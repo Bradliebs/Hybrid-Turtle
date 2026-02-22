@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import type { ScoredTicker } from '@/lib/dual-score';
 import { safeNum } from '@/lib/dual-score';
 import { Info } from 'lucide-react';
@@ -63,7 +62,7 @@ function ScoreBar({ value, label, color }: { value: number; label: string; color
   );
 }
 
-export default function WhyCard({ ticker }: WhyCardProps) {
+function WhyCard({ ticker }: WhyCardProps) {
   if (!ticker) {
     return (
       <div className="card-surface p-4 h-full flex flex-col items-center justify-center gap-3 min-h-[400px]">
@@ -172,3 +171,5 @@ export default function WhyCard({ ticker }: WhyCardProps) {
     </div>
   );
 }
+
+export default memo(WhyCard);

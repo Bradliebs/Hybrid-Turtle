@@ -150,8 +150,8 @@ export default function ModuleStatusPanel() {
               </div>
               {isExpanded && hasDetails && (
                 <div className="mt-2 pt-2 border-t border-border/50 text-[10px] text-muted-foreground space-y-1">
-                  {getModuleDetails(mod, data)?.map((detail, i) => (
-                    <div key={i}>{detail}</div>
+                  {getModuleDetails(mod, data)?.map((detail) => (
+                    <div key={detail}>{detail}</div>
                   ))}
                 </div>
               )}

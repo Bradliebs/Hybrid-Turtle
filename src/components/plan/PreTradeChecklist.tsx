@@ -114,8 +114,8 @@ export default function PreTradeChecklist({
           </div>
           <p className="text-xs text-muted-foreground mb-2">The following items need attention before entering:</p>
           <ul className="space-y-1">
-            {criticalFailed.map((c, i) => (
-              <li key={i} className="text-xs text-warning/80">• {c.label}</li>
+            {criticalFailed.map((c) => (
+              <li key={c.label} className="text-xs text-warning/80">• {c.label}</li>
             ))}
           </ul>
         </div>
@@ -135,9 +135,9 @@ export default function PreTradeChecklist({
                 </span>
               </div>
               <div className="space-y-1.5">
-                {items.map((item, i) => (
+                {items.map((item) => (
                   <div
-                    key={i}
+                    key={item.label}
                     className={cn(
                       'flex items-center gap-2 p-2 rounded',
                       item.checked ? 'bg-navy-800/50' : 'bg-loss/5 border border-loss/20'

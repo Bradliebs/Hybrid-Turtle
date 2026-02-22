@@ -163,8 +163,8 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
         )}
         {bulkSyncResult?.failedDetails && bulkSyncResult.failedDetails.length > 0 && (
           <div className="text-xs text-loss mt-1">
-            {bulkSyncResult.failedDetails.map((d, i) => (
-              <div key={i}>{d}</div>
+            {bulkSyncResult.failedDetails.map((d) => (
+              <div key={d}>{d}</div>
             ))}
           </div>
         )}

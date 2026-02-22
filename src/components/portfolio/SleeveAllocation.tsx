@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 
 interface SleeveData {
@@ -14,7 +13,7 @@ interface SleeveAllocationProps {
   sleeves?: SleeveData[];
 }
 
-export default function SleeveAllocation({ sleeves = [] }: SleeveAllocationProps) {
+function SleeveAllocation({ sleeves = [] }: SleeveAllocationProps) {
   return (
     <div className="card-surface p-4">
       <h3 className="text-sm font-semibold text-foreground mb-4">Sleeve Allocation</h3>
@@ -67,3 +66,5 @@ export default function SleeveAllocation({ sleeves = [] }: SleeveAllocationProps
     </div>
   );
 }
+
+export default memo(SleeveAllocation);

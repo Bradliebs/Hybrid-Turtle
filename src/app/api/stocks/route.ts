@@ -62,7 +62,10 @@ export async function GET(request: NextRequest) {
       hedge: stocks.filter((s) => s.sleeve === 'HEDGE').length,
     };
 
-    return NextResponse.json({ stocks, summary });
+    // Stock list changes infrequently — cache for 5 minutes, serve stale for 1 min while revalidating
+    return NextResponse.json({ stocks, summary }, {
+      headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
+    });
   } catch (error) {
     console.error('GET /api/stocks error:', error);
     return apiError(500, 'STOCKS_FETCH_FAILED', 'Failed to fetch stocks', (error as Error).message, true);

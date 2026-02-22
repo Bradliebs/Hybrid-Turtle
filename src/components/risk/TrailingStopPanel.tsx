@@ -240,9 +240,9 @@ export default function TrailingStopPanel() {
           <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">
             Sync Results
           </div>
-          {syncResults.map((result, idx) => (
+          {syncResults.map((result) => (
             <div
-              key={idx}
+              key={result.ticker}
               className={cn(
                 'flex items-center justify-between text-xs px-3 py-2 rounded-lg',
                 result.action === 'UPDATED'

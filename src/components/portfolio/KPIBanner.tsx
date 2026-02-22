@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 
@@ -13,11 +12,11 @@ interface KPIBannerProps {
   }[];
 }
 
-export default function KPIBanner({ items }: KPIBannerProps) {
+function KPIBanner({ items }: KPIBannerProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      {items.map((item, i) => (
-        <div key={i} className="kpi-card">
+      {items.map((item) => (
+        <div key={item.label} className="kpi-card">
           <span className="metric-label">{item.label}</span>
           <span className="metric-value text-foreground">
             {item.prefix && <span className="text-muted-foreground text-lg">{item.prefix}</span>}
@@ -39,3 +38,5 @@ export default function KPIBanner({ items }: KPIBannerProps) {
     </div>
   );
 }
+
+export default memo(KPIBanner);

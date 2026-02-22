@@ -54,8 +54,8 @@ export default function NCSDistributionChart({ tickers }: NCSDistributionChartPr
           />
           <Bar dataKey="count" radius={[4, 4, 0, 0]}>
             <LabelList dataKey="count" position="top" fill="#fff" fontSize={11} fontWeight={700} />
-            {data.map((entry, i) => (
-              <Cell key={i} fill={entry.color} />
+            {data.map((entry) => (
+              <Cell key={entry.range} fill={entry.color} />
             ))}
           </Bar>
         </BarChart>

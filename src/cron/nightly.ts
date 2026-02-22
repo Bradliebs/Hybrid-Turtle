@@ -81,7 +81,7 @@ async function runNightlyProcess() {
 
     // Step 2: Get open positions + fetch live prices
     console.log('  [2/9] Fetching positions and live prices...');
-    let positions: Awaited<ReturnType<typeof prisma.position.findMany>> = [];
+    let positions: Awaited<ReturnType<typeof prisma.position.findMany<{ include: { stock: true } }>>> = [];
     try {
       positions = await prisma.position.findMany({
         where: { userId, status: 'OPEN' },

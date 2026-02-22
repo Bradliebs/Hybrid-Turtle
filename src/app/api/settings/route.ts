@@ -31,10 +31,13 @@ export async function GET(request: NextRequest) {
       ? '****' + user.eodhApiKey.slice(-4)
       : null;
 
+    // Settings change rarely — cache for 5 minutes, serve stale for 1 min while revalidating
     return NextResponse.json({
       ...user,
       eodhApiKey: maskedKey,
       eodhApiKeySet: !!user.eodhApiKey,
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
     });
   } catch (error) {
     console.error('GET /api/settings error:', error);

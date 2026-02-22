@@ -1,4 +1,4 @@
-'use client';
+import { memo } from 'react';
 
 interface StageFunnelProps {
   stages: {
@@ -8,17 +8,17 @@ interface StageFunnelProps {
   }[];
 }
 
-export default function StageFunnel({ stages }: StageFunnelProps) {
+function StageFunnel({ stages }: StageFunnelProps) {
   const maxCount = Math.max(...stages.map((s) => s.count));
 
   return (
     <div className="card-surface p-4">
       <h3 className="text-sm font-semibold text-foreground mb-4">Scan Funnel</h3>
       <div className="space-y-2">
-        {stages.map((stage, i) => {
+        {stages.map((stage) => {
           const widthPercent = maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
           return (
-            <div key={i} className="flex items-center gap-3">
+            <div key={stage.label} className="flex items-center gap-3">
               <span className="text-xs text-muted-foreground w-32 text-right truncate">
                 {stage.label}
               </span>
@@ -41,3 +41,5 @@ export default function StageFunnel({ stages }: StageFunnelProps) {
     </div>
   );
 }
+
+export default memo(StageFunnel);

@@ -182,6 +182,8 @@ model Heartbeat {
   timestamp DateTime @default(now())
   status    String
   details   String?  // JSON stored as string
+
+  @@index([timestamp])
 }
 
 model TradeLog {
@@ -354,6 +356,7 @@ model SnapshotTicker {
 
   @@index([snapshotId])
   @@index([ticker])
+  @@index([snapshotId, ticker])  // composite for common lookup pattern
 }
 
 model Snapshot {

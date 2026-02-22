@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.ok) {
       return parsed.response;
     }
-    let { userId } = parsed.data;
+    let userId: string = parsed.data.userId ?? '';
 
     if (!userId) {
       userId = await ensureDefaultUser();
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     }
 
     const fxCache = new Map<string, number>();
-    async function getFxToGbp(currency: string | null, ticker: string): Promise<number> {
+    const getFxToGbp = async (currency: string | null, ticker: string): Promise<number> => {
       const curr = (currency || 'USD').toUpperCase();
       if (curr === 'GBX' || curr === 'GBp') return 0.01;
       if (curr === 'GBP') return 1;

@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { MarketRegime } from '@/types';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
@@ -52,7 +51,7 @@ const iconSizes = {
   lg: 'w-5 h-5',
 };
 
-export default function RegimeBadge({ regime, size = 'md', className }: RegimeBadgeProps) {
+function RegimeBadge({ regime, size = 'md', className }: RegimeBadgeProps) {
   const config = regimeConfig[regime];
   const Icon = config.icon;
 
@@ -72,3 +71,5 @@ export default function RegimeBadge({ regime, size = 'md', className }: RegimeBa
     </div>
   );
 }
+
+export default memo(RegimeBadge);

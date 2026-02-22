@@ -1,5 +1,4 @@
-'use client';
-
+import { memo } from 'react';
 import { cn } from '@/lib/utils';
 import type { CandidateStatus, HealthStatus, MarketRegime, PositionStatus, ProtectionLevel } from '@/types';
 
@@ -43,7 +42,7 @@ const statusLabels: Record<string, string> = {
   HIGH_RISK: 'High Risk',
 };
 
-export default function StatusBadge({ status, className }: StatusBadgeProps) {
+function StatusBadge({ status, className }: StatusBadgeProps) {
   const style = statusStyles[status] || 'bg-muted text-muted-foreground border border-border';
   const label = statusLabels[status] || status;
 
@@ -59,3 +58,5 @@ export default function StatusBadge({ status, className }: StatusBadgeProps) {
     </span>
   );
 }
+
+export default memo(StatusBadge);
