@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type {
   HealthStatus,
   MarketRegime,
@@ -109,7 +110,7 @@ interface AppState {
   isMarketDataStale: () => boolean;
 }
 
-export const useStore = create<AppState>()((set, get) => ({
+export const useStore = create<AppState>()(persist((set, get) => ({
   // System State
   healthStatus: 'YELLOW',
   marketRegime: 'SIDEWAYS',
@@ -191,4 +192,10 @@ export const useStore = create<AppState>()((set, get) => ({
     const state = get();
     return Date.now() - state.marketDataFetchedAt > CACHE_TTL;
   },
+}), {
+  name: 'hybrid-turtle-settings',
+  partialize: (state) => ({
+    riskProfile: state.riskProfile,
+    equity: state.equity,
+  }),
 }));
