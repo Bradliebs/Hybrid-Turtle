@@ -543,3 +543,56 @@ CIEN
 NCNO
 ALTR
 AMBA
+
+# ========== NEW CANDIDATES (Feb 2026 — breakout scan) ==========
+PCVX
+MTH
+HIFS
+
+# ========== INDUSTRIAL COMPOUNDERS (Feb 2026) ==========
+CTAS
+FAST
+GWW
+ITW
+DOV
+RSG
+
+# ========== RAILS & LOGISTICS (Feb 2026) ==========
+CNI
+CP
+CSX
+NSC
+WAB
+
+# ========== TELECOM (Feb 2026) ==========
+TMUS
+VZ
+T
+
+# ========== CHEMICALS & COATINGS (Feb 2026) ==========
+ECL
+SHW
+
+# ========== MINERS / GOLD / METALS (Feb 2026) ==========
+BHP
+TECK
+NEM
+AEM
+WPM
+STLD
+
+# ========== AUTO / RETAIL MOMENTUM (Feb 2026) ==========
+ORLY
+AZO
+ULTA
+FRG
+
+# ========== RESTAURANTS (Feb 2026) ==========
+DPZ
+YUM
+
+# ========== QUALITY FINANCIAL (Feb 2026) ==========
+MKL
+
+# ========== UNIQUE / ANALYTICS (Feb 2026) ==========
+FICO

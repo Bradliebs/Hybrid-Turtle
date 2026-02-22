@@ -55,3 +55,23 @@ BLNK
 WOLF
 # PTON: Peloton — business model under structural pressure.
 PTON
+
+# ========== AI / HIGH BETA TECH (Feb 2026) ==========
+ALAB
+AI
+
+# ========== SEMIS HIGH BETA (Feb 2026) ==========
+GFS
+
+# ========== METALS / COMMODITY VOLATILITY (Feb 2026) ==========
+AG
+PAAS
+CLF
+AA
+
+# ========== BIOTECH VOLATILITY (Feb 2026) ==========
+SRPT
+
+# ========== RETAIL / NARRATIVE BETA (Feb 2026) ==========
+CVNA
+ROKU

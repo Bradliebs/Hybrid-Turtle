@@ -32,6 +32,28 @@ XLE
 XLF
 XLV
 XLK
+XLI
+XLY
+XLP
+XLU
+XLB
+XLRE
+
+# ========== GLOBAL / GEOGRAPHIC ETFs ==========
+VEA
+EEM
+EFA
+VGK
+
+# ========== STYLE / FACTOR ETFs ==========
+QQQ
+IWM
+VUG
+VTV
+
+# ========== REAL ASSETS / DEFENSIVE ETFs ==========
+GLD
+VNQ
 
 # ========== MOMENTUM & FACTOR ETFs ==========
 MTUM
