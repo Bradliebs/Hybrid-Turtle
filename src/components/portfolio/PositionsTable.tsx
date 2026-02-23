@@ -71,6 +71,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   const [exitInput, setExitInput] = useState('');
   const [exitError, setExitError] = useState<string | null>(null);
   const [exitSubmitting, setExitSubmitting] = useState(false);
+  const [exitConfirmStep, setExitConfirmStep] = useState(false); // Two-step exit confirmation
 
   const filtered = positions.filter((p) => {
     if (tab === 'all') return true;
@@ -367,6 +368,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                             setExitModal(pos);
                             setExitInput(pos.currentPrice.toFixed(2));
                             setExitError(null);
+                            setExitConfirmStep(false);
                           }}
                           className="px-2 py-1 text-xs bg-loss/20 text-loss rounded hover:bg-loss/30 transition-colors"
                         >
@@ -957,39 +959,80 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   <AlertTriangle className="w-3.5 h-3.5" /> {exitError}
                 </p>
               )}
+
+              {/* ── Step 2: Final confirmation warning ── */}
+              {exitConfirmStep && (
+                <div className="border-2 border-loss rounded-lg p-4 bg-loss/10 space-y-3 animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-loss" />
+                    <span className="text-loss font-bold text-sm uppercase tracking-wider">Final Warning</span>
+                    <AlertTriangle className="w-5 h-5 text-loss" />
+                  </div>
+                  <p className="text-sm text-loss/90 font-medium">
+                    You are about to permanently close <strong>{exitModal.ticker}</strong> ({exitModal.shares} shares) at <strong>{formatPrice(parseFloat(exitInput), exitModal.priceCurrency)}</strong>.
+                  </p>
+                  <p className="text-sm text-loss/90">
+                    This action <strong>cannot be undone</strong>. The position will be marked as CLOSED in the database.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Make sure you have already sold this position on your broker before confirming.
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setExitConfirmStep(false)}
+                      className="flex-1 px-4 py-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-lg transition-colors"
+                    >
+                      Go Back
+                    </button>
+                    <button
+                      disabled={exitSubmitting}
+                      onClick={async () => {
+                        const price = parseFloat(exitInput);
+                        if (!onExitPosition) {
+                          setExitError('Exit not available');
+                          return;
+                        }
+                        setExitSubmitting(true);
+                        const ok = await onExitPosition(exitModal.id, price);
+                        setExitSubmitting(false);
+                        if (ok) {
+                          setExitModal(null);
+                          setExitConfirmStep(false);
+                        } else {
+                          setExitError('Failed to close position');
+                        }
+                      }}
+                      className="flex-1 px-4 py-2 text-sm bg-loss text-white font-bold rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50"
+                    >
+                      {exitSubmitting ? 'Closing…' : 'I Understand — Close Position'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-2 p-4 border-t border-border">
               <button
-                onClick={() => setExitModal(null)}
+                onClick={() => { setExitModal(null); setExitConfirmStep(false); }}
                 className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 Cancel
               </button>
-              <button
-                disabled={exitSubmitting}
-                onClick={async () => {
-                  const price = parseFloat(exitInput);
-                  if (isNaN(price) || price <= 0) {
-                    setExitError('Enter a valid exit price');
-                    return;
-                  }
-                  if (!onExitPosition) {
-                    setExitError('Exit not available');
-                    return;
-                  }
-                  setExitSubmitting(true);
-                  const ok = await onExitPosition(exitModal.id, price);
-                  setExitSubmitting(false);
-                  if (ok) {
-                    setExitModal(null);
-                  } else {
-                    setExitError('Failed to close position');
-                  }
-                }}
-                className="px-4 py-2 text-sm bg-loss/20 text-loss rounded-lg hover:bg-loss/30 transition-colors disabled:opacity-50"
-              >
-                {exitSubmitting ? 'Closing…' : 'Confirm Exit'}
-              </button>
+              {!exitConfirmStep && (
+                <button
+                  onClick={() => {
+                    const price = parseFloat(exitInput);
+                    if (isNaN(price) || price <= 0) {
+                      setExitError('Enter a valid exit price');
+                      return;
+                    }
+                    // Step 1 passed — show the final warning
+                    setExitConfirmStep(true);
+                  }}
+                  className="px-4 py-2 text-sm bg-loss/20 text-loss rounded-lg hover:bg-loss/30 transition-colors"
+                >
+                  Confirm Exit
+                </button>
+              )}
             </div>
           </div>
         </div>
