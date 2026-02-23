@@ -347,10 +347,8 @@ export async function DELETE(request: NextRequest) {
 
 /**
  * PUT — Bulk push all DB stops to Trading 212
- * For each open position with a T212 ticker:
- *   - Routes to the correct T212 account based on position.accountType
- *   - Cancels existing T212 stop orders
- *   - Places a new stop at the DB's currentStop price
+ * Uses setStopLossBatch to fetch pending orders ONCE per account, then process all positions.
+ * Much faster than individual setStopLoss calls (seconds vs minutes for many positions).
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -363,75 +361,71 @@ export async function PUT(request: NextRequest) {
       include: { stock: true },
     });
 
-    // Cache T212 clients by account type to avoid repeated DB lookups
-    const clientCache = new Map<T212AccountType, Trading212Client>();
-
-    const results: {
-      ticker: string;
-      t212Ticker: string;
-      accountType: string;
-      stopPrice: number;
-      action: string;
-      orderId?: number;
-    }[] = [];
+    // Group positions by account type for batched processing
+    const byAccount = new Map<T212AccountType, typeof positions>();
+    const skippedResults: Array<{
+      ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string;
+    }> = [];
 
     for (const pos of positions) {
       const t212Ticker = pos.t212Ticker || pos.stock.t212Ticker;
       const posAcctType: T212AccountType = pos.accountType === 'isa' ? 'isa' : 'invest';
 
       if (!t212Ticker) {
-        results.push({
-          ticker: pos.stock.ticker,
-          t212Ticker: '',
-          accountType: posAcctType,
-          stopPrice: pos.currentStop,
-          action: 'SKIPPED_NO_T212_TICKER',
-        });
+        skippedResults.push({ ticker: pos.stock.ticker, t212Ticker: '', accountType: posAcctType, stopPrice: pos.currentStop, action: 'SKIPPED_NO_T212_TICKER' });
         continue;
       }
-
       if (pos.currentStop <= 0) {
-        results.push({
-          ticker: pos.stock.ticker,
-          t212Ticker,
-          accountType: posAcctType,
-          stopPrice: 0,
-          action: 'SKIPPED_NO_STOP',
-        });
+        skippedResults.push({ ticker: pos.stock.ticker, t212Ticker, accountType: posAcctType, stopPrice: 0, action: 'SKIPPED_NO_STOP' });
         continue;
       }
 
+      const group = byAccount.get(posAcctType) ?? [];
+      group.push(pos);
+      byAccount.set(posAcctType, group);
+    }
+
+    // Process each account type with a single batch call
+    const results: Array<{
+      ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string; orderId?: number;
+    }> = [...skippedResults];
+
+    for (const [acctType, acctPositions] of byAccount.entries()) {
       try {
-        // Get or create client for this account type
-        let client = clientCache.get(posAcctType);
-        if (!client) {
-          client = await getT212Client(userId, posAcctType);
-          clientCache.set(posAcctType, client);
+        const client = await getT212Client(userId, acctType);
+
+        const batchInput = acctPositions.map((pos) => ({
+          t212Ticker: (pos.t212Ticker || pos.stock.t212Ticker)!,
+          shares: pos.shares,
+          stopPrice: pos.currentStop,
+        }));
+
+        // Ticker lookup for results
+        const tickerMap = new Map(acctPositions.map((p) => [p.t212Ticker || p.stock.t212Ticker, p.stock.ticker]));
+
+        const batchResults = await client.setStopLossBatch(batchInput);
+
+        for (const r of batchResults) {
+          results.push({
+            ticker: tickerMap.get(r.t212Ticker) || r.t212Ticker,
+            t212Ticker: r.t212Ticker,
+            accountType: acctType,
+            stopPrice: r.stopPrice,
+            action: r.action === 'FAILED' ? `FAILED: ${r.error}` : r.action,
+            orderId: r.orderId,
+          });
         }
-
-        const order = await client.setStopLoss(t212Ticker, pos.shares, pos.currentStop);
-
-        results.push({
-          ticker: pos.stock.ticker,
-          t212Ticker,
-          accountType: posAcctType,
-          stopPrice: pos.currentStop,
-          action: 'PLACED',
-          orderId: order?.id,
-        });
-
-        // Rate limit spacing — 6s between orders
-        // setStopLoss makes up to 3 API calls internally (GET + cancel + POST)
-        // T212 rate limits are per-endpoint, ~1 req/s for orders
-        await new Promise((r) => setTimeout(r, 6000));
       } catch (error) {
-        results.push({
-          ticker: pos.stock.ticker,
-          t212Ticker,
-          accountType: posAcctType,
-          stopPrice: pos.currentStop,
-          action: `FAILED: ${(error as Error).message}`,
-        });
+        // Client creation failed — mark all positions in this account as failed
+        for (const pos of acctPositions) {
+          results.push({
+            ticker: pos.stock.ticker,
+            t212Ticker: pos.t212Ticker || pos.stock.t212Ticker || '',
+            accountType: acctType,
+            stopPrice: pos.currentStop,
+            action: `FAILED: ${(error as Error).message}`,
+          });
+        }
       }
     }
 

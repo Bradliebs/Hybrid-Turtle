@@ -363,6 +363,113 @@ export class Trading212Client {
     return cancelled;
   }
 
+  // ---- Bulk Stop Management ----
+
+  /** Result for each position in a bulk stop-loss push */
+  interface BulkStopResult {
+    t212Ticker: string;
+    stopPrice: number;
+    action: 'PLACED' | 'SKIPPED_SAME' | 'SKIPPED_NO_SHARES' | 'FAILED';
+    orderId?: number;
+    error?: string;
+  }
+
+  /**
+   * Bulk push stop-losses for multiple positions.
+   * Fetches pending orders ONCE, then processes each position sequentially.
+   * Rate limit: ~2s between cancel/place operations (T212: 1 req/1s for orders, 50/min for cancels).
+   *
+   * @param stops Array of { t212Ticker, shares, stopPrice } to set
+   * @returns Per-position results
+   */
+  async setStopLossBatch(
+    stops: Array<{ t212Ticker: string; shares: number; stopPrice: number }>
+  ): Promise<Array<{ t212Ticker: string; stopPrice: number; action: string; orderId?: number; error?: string }>> {
+    // 1. Fetch ALL pending orders once
+    const pending = await this.getPendingOrders();
+    const allStopOrders = pending.filter(
+      (o) => o.type === 'STOP' && o.side === 'SELL'
+    );
+
+    // Index by ticker for O(1) lookup
+    const stopsByTicker = new Map<string, T212PendingOrder[]>();
+    for (const order of allStopOrders) {
+      const existing = stopsByTicker.get(order.ticker) ?? [];
+      existing.push(order);
+      stopsByTicker.set(order.ticker, existing);
+    }
+
+    const results: Array<{ t212Ticker: string; stopPrice: number; action: string; orderId?: number; error?: string }> = [];
+
+    for (const { t212Ticker, shares, stopPrice } of stops) {
+      if (shares <= 0) {
+        results.push({ t212Ticker, stopPrice, action: 'SKIPPED_NO_SHARES' });
+        continue;
+      }
+
+      const existingStops = stopsByTicker.get(t212Ticker) ?? [];
+
+      // Monotonic enforcement
+      const highestExisting = existingStops.reduce(
+        (max, o) => Math.max(max, o.stopPrice ?? 0), 0
+      );
+      if (highestExisting > 0 && stopPrice < highestExisting) {
+        results.push({
+          t212Ticker, stopPrice,
+          action: 'FAILED',
+          error: `Monotonic rule: cannot lower stop from ${highestExisting.toFixed(2)} to ${stopPrice.toFixed(2)}`,
+        });
+        continue;
+      }
+
+      // Skip if already set to same price
+      if (
+        existingStops.length === 1 &&
+        Math.abs((existingStops[0].stopPrice ?? 0) - stopPrice) < 0.005
+      ) {
+        results.push({ t212Ticker, stopPrice, action: 'SKIPPED_SAME', orderId: existingStops[0].id });
+        continue;
+      }
+
+      try {
+        // Cancel existing stops for this ticker
+        for (const old of existingStops) {
+          try {
+            await this.cancelOrder(old.id);
+            await new Promise((r) => setTimeout(r, 300));
+          } catch { /* already cancelled/filled */ }
+        }
+
+        // Brief pause after cancels before placing new order
+        if (existingStops.length > 0) {
+          await new Promise((r) => setTimeout(r, 500));
+        }
+
+        // Place new stop
+        const order = await this.placeStopOrder({
+          quantity: -shares,
+          stopPrice,
+          ticker: t212Ticker,
+          timeValidity: 'GOOD_TILL_CANCEL',
+        });
+
+        results.push({ t212Ticker, stopPrice, action: 'PLACED', orderId: order?.id });
+
+        // Rate limit: 2s between positions (place order limit is 1 req/2s)
+        await new Promise((r) => setTimeout(r, 2000));
+      } catch (error) {
+        results.push({
+          t212Ticker, stopPrice, action: 'FAILED',
+          error: (error as Error).message,
+        });
+        // Still wait even on failure to avoid burning rate limit
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    return results;
+  }
+
   // ---- Connection Test ----
 
   /** Test the API connection by fetching account summary */
