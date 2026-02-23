@@ -141,7 +141,6 @@ export function checkRegimeStability(
   }
 
   const isStable = consecutiveDays >= 3;
-  const displayRegime = isStable ? currentRegime : 'SIDEWAYS';
 
   return {
     currentRegime: isStable ? currentRegime : 'CHOP',

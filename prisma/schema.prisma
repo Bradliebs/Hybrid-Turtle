@@ -156,7 +156,7 @@ model ScanResult {
   passesAllFilters Boolean
   passesRiskGates  Boolean?
   passesAntiChase  Boolean?
-  shares           Int?
+  shares           Float?
   riskDollars      Float?
 
   @@index([scanId])

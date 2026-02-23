@@ -34,9 +34,9 @@ export default function SwapSuggestionsWidget() {
 
       {!loading && swaps.length > 0 && (
         <div className="space-y-3">
-          {swaps.map((swap, i) => (
+          {swaps.map((swap) => (
             <div
-              key={`${swap.weakTicker}-${swap.strongTicker}-${i}`}
+              key={`${swap.cluster}-${swap.weakTicker}-${swap.strongTicker}`}
               className="bg-navy-700/40 rounded-lg p-3 border border-warning/15"
             >
               {/* Cluster label */}

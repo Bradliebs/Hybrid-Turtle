@@ -74,14 +74,14 @@ export async function GET(request: NextRequest) {
         }),
         prisma.position.findMany({
           where: { userId, status: 'CLOSED' },
-          include: { stock: true },
+          include: { stock: { select: { ticker: true } } },
           orderBy: { exitDate: 'desc' },
           take: 50,
         }),
         prisma.scan.findFirst({
           where: { userId },
           orderBy: { runDate: 'desc' },
-          include: { results: { include: { stock: true } } },
+          include: { results: { include: { stock: { select: { ticker: true, cluster: true } } } } },
         }),
         prisma.stock.findMany({ where: { active: true }, select: { ticker: true } }),
       ]);

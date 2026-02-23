@@ -60,6 +60,9 @@ export function calculatePositionSize(input: PositionSizeInput): PositionSizingR
   if (stopPrice >= entryPrice) {
     throw new Error('Stop price must be below entry price for long positions');
   }
+  if (fxToGbp <= 0) {
+    throw new Error('FX rate must be positive');
+  }
 
   const profile = RISK_PROFILES[riskProfile];
   const riskPercent = customRiskPercent ?? profile.riskPerTrade;

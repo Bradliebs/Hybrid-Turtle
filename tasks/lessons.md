@@ -33,3 +33,13 @@ The cross-ref API returned `priceCurrency` (GBX, USD, EUR) per ticker, but the P
 ### Pattern: Yahoo chart API period2 is exclusive — scan showed yesterday's price
 `getDailyPrices` set `period2` to today's date. Yahoo Finance chart API treats `period2` as **exclusive** (returns data where date < period2), so today's completed bar was never included. The scan showed Friday's close (266.10) instead of Monday's actual close (263.76). Fixed by setting `period2` to tomorrow (+1 day).
 **Rule:** Yahoo chart API `period2` is exclusive. Always set it to at least tomorrow's date to capture the latest available bar.
+
+## 2026-02-23 — Full System Audit
+
+### Pattern: Unvalidated request.json() on mutation routes
+The settings PUT route destructured `equity` directly from `await request.json()` with no Zod validation, while every other mutation route used `parseJsonBody()` or a Zod schema. A malformed equity value could flow into position sizing.
+**Rule:** Every API mutation route must validate its body with Zod. After adding a new PUT/POST/DELETE route, grep for `request.json()` without a corresponding `.safeParse()` — that's the smell.
+
+### Pattern: Grouped try-catch kills downstream modules
+The nightly API route wrapped modules 7 (Swap), 11 (Whipsaw), 10 (Breadth), and 13 (Momentum) in a single try-catch. A swap failure killed breadth and momentum checks. The cron version had each in its own try-catch.
+**Rule:** Each risk module in the nightly pipeline must have its own isolated try-catch. One module failure must never cascade to kill subsequent modules.

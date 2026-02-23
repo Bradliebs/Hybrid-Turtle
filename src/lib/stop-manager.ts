@@ -206,7 +206,7 @@ export async function generateStopRecommendations(
 > {
   const positions = await prisma.position.findMany({
     where: { userId, status: 'OPEN' },
-    include: { stock: true },
+    include: { stock: { select: { ticker: true } } },
   });
 
   const recommendations: {
@@ -227,7 +227,7 @@ export async function generateStopRecommendations(
       position.entryPrice,
       position.initialRisk,
       position.currentStop,
-      position.protectionLevel as ProtectionLevel,
+      (position.protectionLevel as ProtectionLevel) ?? 'INITIAL',
       currentATRs?.get(position.stock.ticker)
     );
 
@@ -355,7 +355,7 @@ export async function generateTrailingStopRecommendations(
 }[]> {
   const positions = await prisma.position.findMany({
     where: { userId, status: 'OPEN' },
-    include: { stock: true },
+    include: { stock: { select: { ticker: true, currency: true } } },
   });
 
   const recommendations: {

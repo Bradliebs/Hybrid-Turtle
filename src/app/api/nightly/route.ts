@@ -12,7 +12,7 @@ import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
 import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
-import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR } from '@/lib/market-data';
+import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { detectLaggards } from '@/lib/laggard-detector';
@@ -57,6 +57,14 @@ export async function POST(request: NextRequest) {
         );
       }
       if (parsed.data.userId) userId = parsed.data.userId;
+    }
+
+    // Step 0: Pre-cache historical data (warm the cache for downstream ATR/ADX calls)
+    try {
+      const preCacheResult = await preCacheHistoricalData();
+      console.log(`[Nightly] Pre-cached ${preCacheResult.success}/${preCacheResult.total} tickers (${preCacheResult.failed.length} failed)`);
+    } catch (error) {
+      console.warn('[Nightly] Pre-cache failed (non-fatal):', (error as Error).message);
     }
 
     // Step 1: Run health check
@@ -268,25 +276,25 @@ export async function POST(request: NextRequest) {
       console.warn('[Nightly] Climax detection failed:', (error as Error).message);
     }
 
-    try {
-      // Module 7: Heat-Map Swap
-      const riskProfile = (user?.riskProfile || 'BALANCED') as RiskProfileType;
-      const enrichedForSwap = positions.map((p) => {
-        const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
-        const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
-        const rMultiple = calculateRMultiple(rawPrice, p.entryPrice, p.initialRisk);
-        return {
-          id: p.id,
-          ticker: p.stock.ticker,
-          cluster: p.stock.cluster || 'General',
-          sleeve: p.stock.sleeve as Sleeve,
-          value: gbpPrice * p.shares,
-          rMultiple,
-        };
-      });
-      const totalPortfolioValue = enrichedForSwap.reduce((s, p) => s + p.value, 0);
+    // Shared data for risk-signal modules
+    const riskProfile = (user?.riskProfile || 'BALANCED') as RiskProfileType;
+    const enrichedForSwap = positions.map((p) => {
+      const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
+      const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
+      const rMultiple = calculateRMultiple(rawPrice, p.entryPrice, p.initialRisk);
+      return {
+        id: p.id,
+        ticker: p.stock.ticker,
+        cluster: p.stock.cluster || 'General',
+        sleeve: p.stock.sleeve as Sleeve,
+        value: gbpPrice * p.shares,
+        rMultiple,
+      };
+    });
+    const totalPortfolioValue = enrichedForSwap.reduce((s, p) => s + p.value, 0);
 
-      // Get READY candidates from latest scan
+    // Module 7: Heat-Map Swap — isolated try-catch so failure doesn't kill downstream modules
+    try {
       const latestScan = await prisma.scan.findFirst({
         where: { userId },
         orderBy: { runDate: 'desc' },
@@ -312,8 +320,13 @@ export async function POST(request: NextRequest) {
       if (swapAlerts.length > 0) {
         alerts.push(`🔄 ${swapAlerts.length} swap suggestion(s) — stronger candidates available`);
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Swap module failed:', (error as Error).message);
+    }
 
-      // Module 11: Whipsaw Kill Switch
+    // Module 11: Whipsaw Kill Switch — isolated try-catch
+    try {
       const closedPositions = await prisma.position.findMany({
         where: { userId, status: 'CLOSED' },
         include: { stock: true },
@@ -336,11 +349,20 @@ export async function POST(request: NextRequest) {
       if (whipsawAlerts.length > 0) {
         alerts.push(`🚫 ${whipsawAlerts.length} ticker(s) blocked by whipsaw kill switch`);
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Whipsaw module failed:', (error as Error).message);
+    }
 
-      // Module 10: Breadth Safety Valve
+    // Module 10: Breadth Safety Valve — isolated try-catch
+    try {
       const stocks = await prisma.stock.findMany({ where: { active: true }, select: { ticker: true } });
       const universeTickers = stocks.map((s) => s.ticker);
-      const breadthPct = universeTickers.length > 0 ? await calculateBreadth(universeTickers) : 100;
+      // Sample up to 30 tickers for breadth — avoids 266 sequential Yahoo calls (matches cron version)
+      const sampleSize = Math.min(30, universeTickers.length);
+      const shuffled = [...universeTickers].sort(() => Math.random() - 0.5);
+      const breadthSample = shuffled.slice(0, sampleSize);
+      const breadthPct = breadthSample.length > 0 ? await calculateBreadth(breadthSample) : 100;
 
       const { maxPositions } = getRiskBudget(
         enrichedForSwap.map((p) => ({
@@ -369,8 +391,13 @@ export async function POST(request: NextRequest) {
       if (breadthResult.isRestricted) {
         alerts.push(`🔻 Breadth ${breadthPct.toFixed(0)}% < 40% — max positions reduced to ${breadthResult.maxPositionsOverride}`);
       }
+    } catch (error) {
+      hadFailure = true;
+      console.warn('[Nightly] Breadth module failed:', (error as Error).message);
+    }
 
-      // Module 13: Momentum Expansion
+    // Module 13: Momentum Expansion — isolated try-catch
+    try {
       let spyAdx = 20;
       try {
         const spyBars = await getDailyPrices('SPY', 'compact');
@@ -391,7 +418,7 @@ export async function POST(request: NextRequest) {
       }
     } catch (error) {
       hadFailure = true;
-      console.warn('[Nightly] Module checks failed:', (error as Error).message);
+      console.warn('[Nightly] Momentum module failed:', (error as Error).message);
     }
 
     // Step 5: Record equity snapshot with open risk percent

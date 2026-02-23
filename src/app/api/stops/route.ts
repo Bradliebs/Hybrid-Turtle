@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     const positions = await prisma.position.findMany({
       where: { userId, status: 'OPEN' },
-      include: { stock: true },
+      include: { stock: { select: { ticker: true, currency: true } } },
     });
 
     const tickers = positions.map((p) => p.stock.ticker);

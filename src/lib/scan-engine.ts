@@ -296,7 +296,8 @@ export async function runFullScan(
             riskPercent = sizing.riskPercent;
             totalCost = sizing.totalCost;
           } catch {
-            // Skip if sizing fails
+            // Sizing failed — mark candidate as non-viable so it doesn't ghost through gates with zero values
+            passesAllFilters = false;
           }
 
           // ── Stage 5: Risk Gates ──
@@ -372,7 +373,8 @@ export async function runFullScan(
                 riskPercent = sizing.riskPercent;
                 totalCost = sizing.totalCost;
               } catch {
-                // Skip if sizing fails
+                // Sizing failed — mark candidate as non-viable
+                passesAllFilters = false;
               }
 
               const gateValueAfterPullback = totalCost ?? 0;

@@ -100,6 +100,7 @@ export function validateRiskGates(
   });
 
   // Gate 4: Cluster concentration (profile-aware cap)
+  // Always push a result — missing cluster data should not silently bypass this gate
   if (newPosition.cluster) {
     const clusterValue = existingPositions
       .filter((p) => p.cluster === newPosition.cluster)
@@ -112,9 +113,18 @@ export function validateRiskGates(
       current: clusterPercent * 100,
       limit: caps.clusterCap * 100,
     });
+  } else {
+    results.push({
+      passed: true,
+      gate: 'Cluster Concentration',
+      message: 'No cluster assigned — gate N/A',
+      current: 0,
+      limit: caps.clusterCap * 100,
+    });
   }
 
   // Gate 5: Sector concentration (profile-aware cap)
+  // Always push a result — missing sector data should not silently bypass this gate
   if (newPosition.sector) {
     const sectorValue = existingPositions
       .filter((p) => p.sector === newPosition.sector)
@@ -125,6 +135,14 @@ export function validateRiskGates(
       gate: 'Sector Concentration',
       message: `${newPosition.sector} sector: ${(sectorPercent * 100).toFixed(1)}% (max ${(caps.sectorCap * 100).toFixed(0)}%)`,
       current: sectorPercent * 100,
+      limit: caps.sectorCap * 100,
+    });
+  } else {
+    results.push({
+      passed: true,
+      gate: 'Sector Concentration',
+      message: 'No sector assigned — gate N/A',
+      current: 0,
       limit: caps.sectorCap * 100,
     });
   }

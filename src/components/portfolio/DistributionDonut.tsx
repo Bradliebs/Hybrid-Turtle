@@ -41,8 +41,8 @@ export default function DistributionDonut({
               dataKey="value"
               stroke="none"
             >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
+              {data.map((entry) => (
+                <Cell key={`cell-${entry.name}`} fill={entry.color} />
               ))}
             </Pie>
             <Tooltip

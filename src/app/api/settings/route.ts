@@ -3,6 +3,15 @@ import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { apiError } from '@/lib/api-response';
+import { z } from 'zod';
+
+const settingsPutSchema = z.object({
+  userId: z.string().trim().min(1).optional(),
+  riskProfile: z.enum(['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT', 'AGGRESSIVE']).optional(),
+  equity: z.number().positive('Equity must be positive').optional(),
+  marketDataProvider: z.enum(['yahoo', 'eodhd']).optional(),
+  eodhApiKey: z.string().nullable().optional(),
+});
 
 // GET /api/settings?userId=default-user
 export async function GET(request: NextRequest) {
@@ -71,23 +80,29 @@ export async function GET(request: NextRequest) {
 // PUT /api/settings — save risk profile and equity
 export async function PUT(request: NextRequest) {
   try {
-    const { userId, riskProfile, equity, marketDataProvider, eodhApiKey } = await request.json();
-    const id = userId || 'default-user';
-
-    const validProfiles = ['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT', 'AGGRESSIVE'];
-    if (riskProfile && !validProfiles.includes(riskProfile)) {
-      return apiError(400, 'INVALID_RISK_PROFILE', 'Invalid risk profile');
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return apiError(400, 'INVALID_JSON', 'Request body must be valid JSON');
     }
 
-    // Validate market data provider
-    const validProviders = ['yahoo', 'eodhd'];
-    if (marketDataProvider && !validProviders.includes(marketDataProvider)) {
-      return apiError(400, 'INVALID_PROVIDER', 'Invalid market data provider. Must be yahoo or eodhd.');
+    const parsed = settingsPutSchema.safeParse(raw);
+    if (!parsed.success) {
+      return apiError(
+        400,
+        'INVALID_REQUEST',
+        'Invalid settings payload',
+        parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ')
+      );
     }
+
+    const { riskProfile, equity, marketDataProvider, eodhApiKey } = parsed.data;
+    const id = parsed.data.userId || 'default-user';
 
     const data: Record<string, unknown> = {};
     if (riskProfile) data.riskProfile = riskProfile;
-    if (equity !== undefined && equity > 0) data.equity = equity;
+    if (equity !== undefined) data.equity = equity;
     if (marketDataProvider) data.marketDataProvider = marketDataProvider;
     // Only update eodhApiKey if explicitly provided (not the masked version)
     if (eodhApiKey !== undefined && eodhApiKey !== null && !eodhApiKey.startsWith('****')) {

@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     // Match CSV tickers to open positions
     const positions = await prisma.position.findMany({
       where: { userId, status: 'OPEN' },
-      include: { stock: true },
+      include: { stock: { select: { ticker: true } } },
     });
 
     const results: {

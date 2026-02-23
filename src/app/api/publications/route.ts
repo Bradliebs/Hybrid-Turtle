@@ -30,12 +30,12 @@ export async function GET(request: NextRequest) {
       }),
       prisma.stopHistory.findFirst({
         orderBy: { createdAt: 'desc' },
-        include: { position: { include: { stock: true } } },
+        include: { position: { include: { stock: { select: { ticker: true } } } } },
       }),
       prisma.position.findFirst({
         where: { userId },
         orderBy: { createdAt: 'desc' },
-        include: { stock: true },
+        include: { stock: { select: { ticker: true } } },
       }),
     ]);
 
