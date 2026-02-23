@@ -29,8 +29,7 @@ function KPIBanner({ items }: KPIBannerProps) {
                 item.change >= 0 ? 'text-profit' : 'text-loss'
               )}
             >
-              {item.change >= 0 ? '+' : ''}
-              {item.changeLabel || item.change.toFixed(2)}
+              {item.changeLabel || `${item.change >= 0 ? '+' : ''}${item.change.toFixed(2)}`}
             </span>
           )}
         </div>
