@@ -1,6 +1,20 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: StopUpdateQueue (plan + portfolio), nightly via direct import
+ * Consumes: stop-manager.ts, market-data.ts, prisma.ts
+ * Risk-sensitive: YES — generates and applies stop updates
+ * Last modified: 2026-02-23
+ * Notes: GET merges R-based AND trailing ATR recommendations into one list,
+ *        picking the higher stop per position. Matches nightly Step 3 + 3b.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { updateStopLoss, generateStopRecommendations, StopLossError } from '@/lib/stop-manager';
+import {
+  updateStopLoss,
+  generateStopRecommendations,
+  generateTrailingStopRecommendations,
+  StopLossError,
+} from '@/lib/stop-manager';
 import { parseJsonBody } from '@/lib/request-validation';
 import prisma from '@/lib/prisma';
 import { getBatchPrices } from '@/lib/market-data';
@@ -61,9 +75,53 @@ export async function GET(request: NextRequest) {
       } catch { /* skip */ }
     }
 
-    const recommendations = await generateStopRecommendations(userId, priceMap, atrMap);
+    // ── Merge R-based + Trailing ATR recommendations ──
+    // Mirrors nightly Step 3 + Step 3b: both engines run, highest stop wins per position.
+    const rBasedRecs = await generateStopRecommendations(userId, priceMap, atrMap);
+    let trailingRecs: Awaited<ReturnType<typeof generateTrailingStopRecommendations>> = [];
+    try {
+      trailingRecs = await generateTrailingStopRecommendations(userId);
+    } catch {
+      // Trailing ATR is best-effort — R-based recs still returned if this fails
+    }
 
-    return NextResponse.json(recommendations);
+    // Build a map keyed by positionId, keeping whichever rec has the higher newStop
+    const merged = new Map<string, {
+      positionId: string;
+      ticker: string;
+      currentStop: number;
+      newStop: number;
+      newLevel: string;
+      reason: string;
+    }>();
+
+    for (const rec of rBasedRecs) {
+      merged.set(rec.positionId, {
+        positionId: rec.positionId,
+        ticker: rec.ticker,
+        currentStop: rec.currentStop,
+        newStop: rec.newStop,
+        newLevel: rec.newLevel,
+        reason: rec.reason,
+      });
+    }
+
+    for (const rec of trailingRecs) {
+      const existing = merged.get(rec.positionId);
+      if (!existing || rec.trailingStop > existing.newStop) {
+        // Trailing ATR wins — use it (only if it's above currentStop, which generateTrailingStopRecommendations guarantees)
+        merged.set(rec.positionId, {
+          positionId: rec.positionId,
+          ticker: rec.ticker,
+          currentStop: rec.currentStop,
+          newStop: rec.trailingStop,
+          newLevel: 'TRAILING_ATR',
+          reason: rec.reason,
+        });
+      }
+    }
+
+    return NextResponse.json(Array.from(merged.values()));
   } catch (error) {
     console.error('Stop recommendations error:', error);
     return apiError(500, 'STOP_RECOMMENDATIONS_FAILED', 'Failed to generate stop recommendations', (error as Error).message, true);

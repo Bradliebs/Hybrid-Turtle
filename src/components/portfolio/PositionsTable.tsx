@@ -333,6 +333,21 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                             setT212CurrentStop(null);
                             setRecApplying(false);
                             setRecApplyError(null);
+
+                            // Fetch merged recommendation (R-based + trailing ATR) from server
+                            // and override pre-fill if the server recommends a higher stop
+                            try {
+                              const stopRecs = await apiRequest<Array<{
+                                positionId: string;
+                                newStop: number;
+                              }>>('/api/stops?userId=default-user');
+                              const serverRec = stopRecs.find((r) => r.positionId === pos.id);
+                              if (serverRec && serverRec.newStop > _recommended) {
+                                _recommended = serverRec.newStop;
+                                setStopInput(_recommended.toFixed(2));
+                              }
+                            } catch { /* best-effort — ladder pre-fill still applies */ }
+
                             // Fetch T212 stop status in background
                             setT212Loading(true);
                             try {

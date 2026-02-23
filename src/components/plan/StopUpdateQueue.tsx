@@ -56,6 +56,7 @@ const protectionColors: Record<string, string> = {
   BREAKEVEN: 'text-warning',
   LOCK_08R: 'text-blue-400',
   LOCK_1R_TRAIL: 'text-profit',
+  TRAILING_ATR: 'text-primary-400',
 };
 
 interface StopUpdateQueueProps {
@@ -194,7 +195,7 @@ export default function StopUpdateQueue({ userId, onApplied }: StopUpdateQueuePr
       </div>
 
       <div className="bg-primary/10 border border-primary/30 rounded-lg p-3 mb-4 text-xs text-primary-400 font-semibold">
-        Stops can only move UP — recommendations from live prices + ATR
+        Stops can only move UP — recommendations from R-based levels + trailing ATR
       </div>
 
       {/* Loading state */}
