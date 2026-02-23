@@ -89,32 +89,46 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (accountType === 'isa') {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          t212IsaApiKey: null,
-          t212IsaApiSecret: null,
-          t212IsaConnected: false,
-          t212IsaLastSync: null,
-          t212IsaAccountId: null,
-          t212IsaCurrency: null,
-          t212IsaCash: null,
-          t212IsaInvested: null,
-          t212IsaTotalValue: null,
-        },
-      });
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: userId },
+          data: {
+            t212IsaApiKey: null,
+            t212IsaApiSecret: null,
+            t212IsaConnected: false,
+            t212IsaLastSync: null,
+            t212IsaAccountId: null,
+            t212IsaCurrency: null,
+            t212IsaCash: null,
+            t212IsaInvested: null,
+            t212IsaTotalValue: null,
+          },
+        }),
+        // Close orphaned positions for this account type
+        prisma.position.updateMany({
+          where: { userId, source: 'trading212', accountType: 'isa', status: 'OPEN' },
+          data: { status: 'CLOSED', exitDate: new Date(), exitReason: 'ISA account disconnected' },
+        }),
+      ]);
     } else {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          t212ApiKey: null,
-          t212ApiSecret: null,
-          t212Connected: false,
-          t212LastSync: null,
-          t212AccountId: null,
-          t212Currency: null,
-        },
-      });
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: userId },
+          data: {
+            t212ApiKey: null,
+            t212ApiSecret: null,
+            t212Connected: false,
+            t212LastSync: null,
+            t212AccountId: null,
+            t212Currency: null,
+          },
+        }),
+        // Close orphaned positions for this account type
+        prisma.position.updateMany({
+          where: { userId, source: 'trading212', accountType: 'invest', status: 'OPEN' },
+          data: { status: 'CLOSED', exitDate: new Date(), exitReason: 'Invest account disconnected' },
+        }),
+      ]);
     }
 
     return NextResponse.json({ success: true, accountType });

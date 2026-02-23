@@ -19,6 +19,21 @@ export async function GET(request: NextRequest) {
         equity: true,
         marketDataProvider: true,
         eodhApiKey: true,
+        // Trading 212 Invest
+        t212ApiKey: true,
+        t212ApiSecret: true,
+        t212Environment: true,
+        t212Connected: true,
+        t212AccountId: true,
+        t212Currency: true,
+        t212LastSync: true,
+        // Trading 212 ISA
+        t212IsaApiKey: true,
+        t212IsaApiSecret: true,
+        t212IsaConnected: true,
+        t212IsaAccountId: true,
+        t212IsaCurrency: true,
+        t212IsaLastSync: true,
       },
     });
 
@@ -31,11 +46,19 @@ export async function GET(request: NextRequest) {
       ? '****' + user.eodhApiKey.slice(-4)
       : null;
 
+    // Mask T212 keys — show last 4 chars only
+    const maskKey = (k: string | null) => k ? '****' + k.slice(-4) : null;
+
     // Settings change rarely — cache for 5 minutes, serve stale for 1 min while revalidating
     return NextResponse.json({
       ...user,
       eodhApiKey: maskedKey,
       eodhApiKeySet: !!user.eodhApiKey,
+      // Replace raw keys with masked versions
+      t212ApiKey: maskKey(user.t212ApiKey),
+      t212ApiSecret: maskKey(user.t212ApiSecret),
+      t212IsaApiKey: maskKey(user.t212IsaApiKey),
+      t212IsaApiSecret: maskKey(user.t212IsaApiSecret),
     }, {
       headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
     });

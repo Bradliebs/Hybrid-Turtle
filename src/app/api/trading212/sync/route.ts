@@ -116,11 +116,27 @@ export async function POST(request: NextRequest) {
         existingPositions.map((p) => [p.t212Ticker || p.stock.ticker, p])
       );
 
+      // Cross-account duplicate guard: find t212Tickers already open under OTHER account types.
+      // Prevents creating the same position twice when both Invest and ISA see the same holdings.
+      const otherAccountType = acctType === 'invest' ? 'isa' : 'invest';
+      const crossAccountPositions = await prisma.position.findMany({
+        where: { userId, source: 'trading212', status: 'OPEN', accountType: otherAccountType },
+        select: { t212Ticker: true },
+      });
+      const crossAccountTickers = new Set(crossAccountPositions.map((p) => p.t212Ticker).filter(Boolean));
+
       // Track which T212 tickers are still open in this account
       const activeT212Tickers = new Set<string>();
 
       for (const pos of mappedPositions) {
         activeT212Tickers.add(pos.fullTicker);
+
+        // Skip if this ticker already exists as an OPEN position under the other account type
+        // (prevents duplicates when Invest and ISA see the same holdings)
+        if (crossAccountTickers.has(pos.fullTicker) && !existingTickerMap.has(pos.fullTicker)) {
+          acctResults.errors.push(`Skipped ${pos.ticker} — already tracked under ${otherAccountType} account`);
+          continue;
+        }
 
         try {
           // Atomic: ensure stock exists + create/update position in one transaction

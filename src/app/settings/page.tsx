@@ -130,9 +130,47 @@ export default function SettingsPage() {
           marketDataProvider?: string;
           eodhApiKey?: string | null;
           eodhApiKeySet?: boolean;
+          // T212 Invest
+          t212ApiKey?: string | null;
+          t212ApiSecret?: string | null;
+          t212Environment?: string;
+          t212Connected?: boolean;
+          t212AccountId?: string | null;
+          t212Currency?: string | null;
+          t212LastSync?: string | null;
+          // T212 ISA
+          t212IsaApiKey?: string | null;
+          t212IsaApiSecret?: string | null;
+          t212IsaConnected?: boolean;
+          t212IsaAccountId?: string | null;
+          t212IsaCurrency?: string | null;
+          t212IsaLastSync?: string | null;
         }>(`/api/settings?userId=${DEFAULT_USER_ID}`);
         if (data.marketDataProvider === 'eodhd') setMarketDataProvider('eodhd');
         if (data.eodhApiKeySet) setEodhApiKeySet(true);
+
+        // Restore T212 Invest connection state
+        if (data.t212Connected) {
+          setT212Connected(true);
+          if (data.t212ApiKey) setT212ApiKey(data.t212ApiKey);
+          if (data.t212ApiSecret) setT212ApiSecret(data.t212ApiSecret);
+          if (data.t212AccountId) setT212AccountId(data.t212AccountId);
+          if (data.t212Currency) setT212Currency(data.t212Currency);
+          if (data.t212LastSync) setT212LastSync(data.t212LastSync);
+        }
+        if (data.t212Environment === 'live' || data.t212Environment === 'demo') {
+          setT212Environment(data.t212Environment);
+        }
+
+        // Restore T212 ISA connection state
+        if (data.t212IsaConnected) {
+          setT212IsaConnected(true);
+          if (data.t212IsaApiKey) setT212IsaApiKey(data.t212IsaApiKey);
+          if (data.t212IsaApiSecret) setT212IsaApiSecret(data.t212IsaApiSecret);
+          if (data.t212IsaAccountId) setT212IsaAccountId(data.t212IsaAccountId);
+          if (data.t212IsaCurrency) setT212IsaCurrency(data.t212IsaCurrency);
+          if (data.t212IsaLastSync) setT212IsaLastSync(data.t212IsaLastSync);
+        }
       } catch {
         // Settings load failed — keep defaults (yahoo)
       }
