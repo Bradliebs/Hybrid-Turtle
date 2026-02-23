@@ -319,7 +319,7 @@ export async function POST(request: NextRequest) {
         t212AccountId: s.accountId.toString(),
         t212Currency: s.currency,
         t212Cash: s.cash,
-        t212Invested: s.investmentsValue,
+        t212Invested: s.investmentsCost, // Cost basis, not current value
         t212UnrealisedPL: s.unrealizedPL,
         t212TotalValue: s.totalValue,
       });
@@ -341,7 +341,7 @@ export async function POST(request: NextRequest) {
         t212IsaAccountId: s.accountId.toString(),
         t212IsaCurrency: s.currency,
         t212IsaCash: s.cash,
-        t212IsaInvested: s.investmentsValue,
+        t212IsaInvested: s.investmentsCost, // Cost basis, not current value
         t212IsaUnrealisedPL: s.unrealizedPL,
         t212IsaTotalValue: s.totalValue,
       });

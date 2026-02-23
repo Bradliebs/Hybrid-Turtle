@@ -121,6 +121,10 @@ export async function DELETE(request: NextRequest) {
             t212LastSync: null,
             t212AccountId: null,
             t212Currency: null,
+            t212Cash: null,
+            t212Invested: null,
+            t212UnrealisedPL: null,
+            t212TotalValue: null,
           },
         }),
         // Close orphaned positions for this account type
