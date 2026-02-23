@@ -72,9 +72,9 @@ export default function SwapSuggestionsWidget() {
             </div>
           ))}
 
-          <div className="flex items-start gap-1.5 text-[10px] text-muted-foreground/60 mt-1">
-            <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-            <span>Suggestions only — weak position must be underwater & below 0.5R</span>
+          <div className="flex items-start gap-2 text-xs text-amber-400 mt-3 p-2 rounded-md bg-amber-400/10 border border-amber-400/20">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span className="font-medium">Suggestions only — weak position must be underwater &amp; below 0.5R</span>
           </div>
         </div>
       )}
