@@ -237,25 +237,8 @@ export async function POST(request: NextRequest) {
 
     const client = await getT212ClientForPosition(position);
 
-    // Check existing T212 stop before placing — enforce monotonic rule
-    const pendingOrders = await client.getPendingOrders();
-    const existingT212Stops = pendingOrders.filter(
-      (o) => o.ticker === t212Ticker && o.type === 'STOP' && o.side === 'SELL'
-    );
-    const highestT212Stop = existingT212Stops.reduce(
-      (max, o) => Math.max(max, o.stopPrice ?? 0),
-      0
-    );
-    if (highestT212Stop > 0 && stopPrice < highestT212Stop) {
-      return apiError(
-        400,
-        'STOP_MONOTONIC_VIOLATION',
-        `Monotonic rule: T212 already has a stop at ${highestT212Stop.toFixed(2)}. New stop (${stopPrice.toFixed(2)}) cannot be lower. Stops can only move UP.`,
-        `existingT212Stop=${highestT212Stop.toFixed(2)}`
-      );
-    }
-
-    // Place or replace stop on T212
+    // setStopLoss handles: fetch pending orders, monotonic check, cancel old, place new
+    // — no need to call getPendingOrders() separately (avoids 1-req/5s rate limit)
     const order = await client.setStopLoss(t212Ticker, position.shares, stopPrice);
 
     // Also update local DB stop (respecting monotonic rule)

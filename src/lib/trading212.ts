@@ -134,58 +134,73 @@ export class Trading212Client {
   private async request<T>(path: string, options?: { method?: string; body?: unknown }): Promise<T> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
     const method = options?.method ?? 'GET';
-    
-    const response = await fetch(url, {
-      method,
-      headers: {
-        'Authorization': this.authHeader,
-        'Content-Type': 'application/json',
-      },
-      ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
-    });
+    const maxRetries = 2; // Retry up to 2 times on rate limit (429)
 
-    if (!response.ok) {
-      const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
-      const rateLimitReset = response.headers.get('x-ratelimit-reset');
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': this.authHeader,
+          'Content-Type': 'application/json',
+        },
+        ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
+      });
 
-      if (response.status === 429) {
+      if (!response.ok) {
+        const rateLimitReset = response.headers.get('x-ratelimit-reset');
+
+        if (response.status === 429) {
+          // Auto-retry after waiting for the rate limit window to reset
+          if (attempt < maxRetries) {
+            const waitMs = rateLimitReset
+              ? Math.max(1000, (parseInt(rateLimitReset) * 1000) - Date.now() + 500)
+              : 6000; // Default 6s wait (covers the 5s getPendingOrders limit)
+            const clampedWait = Math.min(waitMs, 15000); // Cap at 15s
+            console.warn(`T212 rate limited on ${method} ${path}, retrying in ${clampedWait}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise((r) => setTimeout(r, clampedWait));
+            continue;
+          }
+          throw new Trading212Error(
+            `Rate limited. Resets at ${rateLimitReset}`,
+            429,
+            rateLimitReset ? parseInt(rateLimitReset) : undefined
+          );
+        }
+
+        if (response.status === 401) {
+          throw new Trading212Error('Invalid API credentials', 401);
+        }
+
+        if (response.status === 403) {
+          throw new Trading212Error('Access forbidden — check API key permissions', 403);
+        }
+
+        // Read the response body for the actual T212 error detail
+        let errorDetail = '';
+        try {
+          const errorBody = await response.text();
+          // T212 often returns JSON with a message/code field
+          try {
+            const parsed = JSON.parse(errorBody);
+            errorDetail = parsed.message || parsed.code || parsed.errorMessage || errorBody;
+          } catch {
+            errorDetail = errorBody;
+          }
+        } catch {
+          errorDetail = response.statusText;
+        }
+
         throw new Trading212Error(
-          `Rate limited. Resets at ${rateLimitReset}`,
-          429,
-          rateLimitReset ? parseInt(rateLimitReset) : undefined
+          `Trading 212 API error ${response.status}: ${errorDetail}`,
+          response.status
         );
       }
 
-      if (response.status === 401) {
-        throw new Trading212Error('Invalid API credentials', 401);
-      }
-
-      if (response.status === 403) {
-        throw new Trading212Error('Access forbidden — check API key permissions', 403);
-      }
-
-      // Read the response body for the actual T212 error detail
-      let errorDetail = '';
-      try {
-        const errorBody = await response.text();
-        // T212 often returns JSON with a message/code field
-        try {
-          const parsed = JSON.parse(errorBody);
-          errorDetail = parsed.message || parsed.code || parsed.errorMessage || errorBody;
-        } catch {
-          errorDetail = errorBody;
-        }
-      } catch {
-        errorDetail = response.statusText;
-      }
-
-      throw new Trading212Error(
-        `Trading 212 API error ${response.status}: ${errorDetail}`,
-        response.status
-      );
+      return response.json();
     }
 
-    return response.json();
+    // Should never reach here, but TypeScript needs a return
+    throw new Trading212Error('Max retries exceeded', 429);
   }
 
   // ---- Positions ----

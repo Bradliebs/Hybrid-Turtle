@@ -815,10 +815,14 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   }
                   // Monotonic rule: use the HIGHER of DB stop and T212 stop as the floor
                   const effectiveFloor = Math.max(stopModal.currentStop, t212CurrentStop ?? 0);
-                  // Allow equal value if T212 has no stop yet (push-only, no DB change needed)
-                  const isPushOnly = newStop === stopModal.currentStop && !t212CurrentStop && pushToT212;
-                  if (!isPushOnly && newStop <= effectiveFloor) {
-                    setStopError(`New stop must be above ${formatPrice(effectiveFloor, stopModal.priceCurrency)} (${t212CurrentStop && t212CurrentStop > stopModal.currentStop ? 'T212 stop' : 'current stop'})`);
+                  // Block if trying to LOWER the stop
+                  if (newStop < effectiveFloor) {
+                    setStopError(`New stop must be at or above ${formatPrice(effectiveFloor, stopModal.priceCurrency)} (${t212CurrentStop && t212CurrentStop > stopModal.currentStop ? 'T212 stop' : 'current stop'})`);
+                    return;
+                  }
+                  // Same as current and not pushing to T212 → nothing to do
+                  if (newStop === stopModal.currentStop && !pushToT212) {
+                    setStopError('Stop is already at this price — check "Also set stop on Trading 212" to push it to your broker.');
                     return;
                   }
                   if (newStop >= stopModal.currentPrice) {
@@ -833,9 +837,9 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                   setT212PushStatus('idle');
                   setT212PushMessage(null);
 
-                  // If push-only (same stop, no T212 stop yet), skip DB update
+                  // Skip DB update if stop hasn't changed (push-only to T212)
                   let ok = true;
-                  if (!isPushOnly) {
+                  if (newStop !== stopModal.currentStop) {
                     const reason = `Manual stop update: ${formatPrice(stopModal.currentStop, stopModal.priceCurrency)} → ${formatPrice(newStop, stopModal.priceCurrency)}`;
                     ok = await onUpdateStop(stopModal.id, newStop, reason);
                   }
