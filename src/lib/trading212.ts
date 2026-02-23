@@ -365,15 +365,6 @@ export class Trading212Client {
 
   // ---- Bulk Stop Management ----
 
-  /** Result for each position in a bulk stop-loss push */
-  interface BulkStopResult {
-    t212Ticker: string;
-    stopPrice: number;
-    action: 'PLACED' | 'SKIPPED_SAME' | 'SKIPPED_NO_SHARES' | 'FAILED';
-    orderId?: number;
-    error?: string;
-  }
-
   /**
    * Bulk push stop-losses for multiple positions.
    * Fetches pending orders ONCE, then processes each position sequentially.
