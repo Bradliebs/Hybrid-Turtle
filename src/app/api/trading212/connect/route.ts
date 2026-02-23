@@ -11,6 +11,7 @@ const connectSchema = z.object({
   apiSecret: z.string().trim().min(1),
   environment: z.enum(['demo', 'live']).optional(),
   userId: z.string().trim().min(1).optional(),
+  accountType: z.enum(['invest', 'isa']).optional(), // Which T212 account to connect
 });
 
 // POST /api/trading212/connect — Test connection and save credentials
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.ok) {
       return parsed.response;
     }
-    const { apiKey, apiSecret, environment = 'demo' } = parsed.data;
+    const { apiKey, apiSecret, environment = 'demo', accountType = 'invest' } = parsed.data;
     let { userId } = parsed.data;
 
     // Ensure user exists
@@ -35,25 +36,40 @@ export async function POST(request: NextRequest) {
       return apiError(400, 'T212_CONNECT_FAILED', result.error || 'Failed to connect to Trading 212');
     }
 
-    // Save credentials to user profile (ensure user exists first)
+    // Save credentials to user profile — ISA uses separate DB fields
     await ensureDefaultUser();
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        t212ApiKey: apiKey,
-        t212ApiSecret: apiSecret,
-        t212Environment: environment,
-        t212Connected: true,
-        t212AccountId: result.accountId?.toString(),
-        t212Currency: result.currency,
-      },
-    });
+
+    if (accountType === 'isa') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          t212IsaApiKey: apiKey,
+          t212IsaApiSecret: apiSecret,
+          t212IsaConnected: true,
+          t212IsaAccountId: result.accountId?.toString(),
+          t212IsaCurrency: result.currency,
+        },
+      });
+    } else {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          t212ApiKey: apiKey,
+          t212ApiSecret: apiSecret,
+          t212Environment: environment,
+          t212Connected: true,
+          t212AccountId: result.accountId?.toString(),
+          t212Currency: result.currency,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
       accountId: result.accountId,
       currency: result.currency,
       environment,
+      accountType,
     });
   } catch (error) {
     console.error('Trading 212 connect error:', error);
@@ -61,29 +77,47 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE /api/trading212/connect — Disconnect Trading 212
+// DELETE /api/trading212/connect — Disconnect Trading 212 (invest or isa)
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
     let userId = searchParams.get('userId');
+    const accountType = searchParams.get('accountType') || 'invest';
 
     if (!userId) {
       userId = await ensureDefaultUser();
     }
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        t212ApiKey: null,
-        t212ApiSecret: null,
-        t212Connected: false,
-        t212LastSync: null,
-        t212AccountId: null,
-        t212Currency: null,
-      },
-    });
+    if (accountType === 'isa') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          t212IsaApiKey: null,
+          t212IsaApiSecret: null,
+          t212IsaConnected: false,
+          t212IsaLastSync: null,
+          t212IsaAccountId: null,
+          t212IsaCurrency: null,
+          t212IsaCash: null,
+          t212IsaInvested: null,
+          t212IsaTotalValue: null,
+        },
+      });
+    } else {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          t212ApiKey: null,
+          t212ApiSecret: null,
+          t212Connected: false,
+          t212LastSync: null,
+          t212AccountId: null,
+          t212Currency: null,
+        },
+      });
+    }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, accountType });
   } catch (error) {
     console.error('Trading 212 disconnect error:', error);
     return apiError(500, 'T212_DISCONNECT_FAILED', 'Failed to disconnect Trading 212', (error as Error).message, true);

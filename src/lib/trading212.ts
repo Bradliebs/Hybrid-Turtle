@@ -4,6 +4,9 @@
 
 export type Trading212Environment = 'demo' | 'live';
 
+/** Which T212 account a position belongs to — re-exported from trading212-dual.ts */
+export type T212AccountType = 'invest' | 'isa';
+
 const BASE_URLS: Record<Trading212Environment, string> = {
   demo: 'https://demo.trading212.com/api/v0',
   live: 'https://live.trading212.com/api/v0',
@@ -395,8 +398,12 @@ export class Trading212Error extends Error {
 
 // ---- Position Mapper ----
 
-/** Maps a Trading 212 position to HybridTurtle's internal format */
-export function mapT212Position(t212Pos: T212Position) {
+/**
+ * Maps a Trading 212 position to HybridTurtle's internal format.
+ * @param accountType — which T212 account this position came from (invest or isa).
+ *                      Defaults to 'invest' for backward compatibility.
+ */
+export function mapT212Position(t212Pos: T212Position, accountType?: T212AccountType) {
   const ticker = t212Pos.instrument.ticker
     // Trading 212 uses format like "AAPL_US_EQ" — extract the base ticker
     .replace(/_US_EQ$/, '')
@@ -420,6 +427,7 @@ export function mapT212Position(t212Pos: T212Position) {
     profitLossPercent: (t212Pos.walletImpact?.resultCoef || 0) * 100,
     valueInAccountCurrency: t212Pos.walletImpact?.valueInAccountCurrency || 0,
     source: 'trading212' as const,
+    accountType: accountType ?? 'invest',
   };
 }
 

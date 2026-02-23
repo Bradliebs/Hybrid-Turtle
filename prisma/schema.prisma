@@ -26,6 +26,17 @@ model User {
   t212Invested          Float?
   t212UnrealisedPL      Float?
   t212TotalValue        Float?
+  // Trading 212 ISA account integration
+  t212IsaApiKey         String?
+  t212IsaApiSecret      String?
+  t212IsaConnected      Boolean       @default(false)
+  t212IsaLastSync       DateTime?
+  t212IsaAccountId      String?
+  t212IsaCurrency       String?
+  t212IsaCash           Float?
+  t212IsaInvested       Float?
+  t212IsaUnrealisedPL   Float?
+  t212IsaTotalValue     Float?
   // Market data provider — yahoo (default) or eodhd
   marketDataProvider    String        @default("yahoo")     // yahoo | eodhd
   eodhApiKey            String?                              // EODHD API key (only needed if provider=eodhd)
@@ -66,6 +77,7 @@ model Position {
   stock           Stock       @relation(fields: [stockId], references: [id])
   status          String      @default("OPEN")       // OPEN | CLOSED
   source          String      @default("manual")     // manual | trading212
+  accountType     String?     @default("invest")     // invest | isa — which T212 account this position belongs to
   t212Ticker      String?                             // Original Trading 212 ticker e.g. AAPL_US_EQ
   entryPrice      Float
   entryDate       DateTime

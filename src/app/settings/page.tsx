@@ -49,7 +49,7 @@ export default function SettingsPage() {
   const [eodhApiKeySet, setEodhApiKeySet] = useState(false);
   const [showEodhKey, setShowEodhKey] = useState(false);
 
-  // Trading 212 state
+  // Trading 212 Invest state
   const [t212ApiKey, setT212ApiKey] = useState('');
   const [t212ApiSecret, setT212ApiSecret] = useState('');
   const [t212Environment, setT212Environment] = useState<'demo' | 'live'>('demo');
@@ -63,6 +63,19 @@ export default function SettingsPage() {
   const [t212Syncing, setT212Syncing] = useState(false);
   const [t212Error, setT212Error] = useState<string | null>(null);
   const [t212Success, setT212Success] = useState<string | null>(null);
+
+  // Trading 212 ISA state
+  const [t212IsaApiKey, setT212IsaApiKey] = useState('');
+  const [t212IsaApiSecret, setT212IsaApiSecret] = useState('');
+  const [t212IsaShowKey, setT212IsaShowKey] = useState(false);
+  const [t212IsaShowSecret, setT212IsaShowSecret] = useState(false);
+  const [t212IsaConnected, setT212IsaConnected] = useState(false);
+  const [t212IsaAccountId, setT212IsaAccountId] = useState<string | null>(null);
+  const [t212IsaCurrency, setT212IsaCurrency] = useState<string | null>(null);
+  const [t212IsaLastSync, setT212IsaLastSync] = useState<string | null>(null);
+  const [t212IsaConnecting, setT212IsaConnecting] = useState(false);
+  const [t212IsaError, setT212IsaError] = useState<string | null>(null);
+  const [t212IsaSuccess, setT212IsaSuccess] = useState<string | null>(null);
 
   const profile = RISK_PROFILES[riskProfile as keyof typeof RISK_PROFILES];
 
@@ -218,6 +231,7 @@ export default function SettingsPage() {
           apiKey: t212ApiKey,
           apiSecret: t212ApiSecret,
           environment: t212Environment,
+          accountType: 'invest',
         }),
       });
 
@@ -234,7 +248,7 @@ export default function SettingsPage() {
 
   const handleT212Disconnect = async () => {
     try {
-      await apiRequest(`/api/trading212/connect?userId=${DEFAULT_USER_ID}`, { method: 'DELETE' });
+      await apiRequest(`/api/trading212/connect?userId=${DEFAULT_USER_ID}&accountType=invest`, { method: 'DELETE' });
       setT212Connected(false);
       setT212AccountId(null);
       setT212Currency(null);
@@ -248,27 +262,88 @@ export default function SettingsPage() {
     }
   };
 
+  const handleT212IsaConnect = async () => {
+    if (!t212IsaApiKey || !t212IsaApiSecret) {
+      setT212IsaError('Please enter both API Key and API Secret');
+      return;
+    }
+
+    setT212IsaConnecting(true);
+    setT212IsaError(null);
+    setT212IsaSuccess(null);
+
+    try {
+      const data = await apiRequest<{ accountId: number; currency: string }>('/api/trading212/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: DEFAULT_USER_ID,
+          apiKey: t212IsaApiKey,
+          apiSecret: t212IsaApiSecret,
+          environment: t212Environment, // ISA shares environment with Invest
+          accountType: 'isa',
+        }),
+      });
+
+      setT212IsaConnected(true);
+      setT212IsaAccountId(data.accountId?.toString());
+      setT212IsaCurrency(data.currency);
+      setT212IsaSuccess(`Connected! ISA Account: ${data.accountId} (${data.currency})`);
+    } catch (err) {
+      setT212IsaError(err instanceof Error ? err.message : 'Network error — could not reach Trading 212');
+    } finally {
+      setT212IsaConnecting(false);
+    }
+  };
+
+  const handleT212IsaDisconnect = async () => {
+    try {
+      await apiRequest(`/api/trading212/connect?userId=${DEFAULT_USER_ID}&accountType=isa`, { method: 'DELETE' });
+      setT212IsaConnected(false);
+      setT212IsaAccountId(null);
+      setT212IsaCurrency(null);
+      setT212IsaLastSync(null);
+      setT212IsaApiKey('');
+      setT212IsaApiSecret('');
+      setT212IsaSuccess(null);
+      setT212IsaError(null);
+    } catch {
+      setT212IsaError('Failed to disconnect');
+    }
+  };
+
   const handleT212Sync = async () => {
     setT212Syncing(true);
     setT212Error(null);
     setT212Success(null);
 
     try {
-      const data = await apiRequest<{ syncedAt: string; sync: { created: number; updated: number; closed: number }; account?: { totalValue: number } }>('/api/trading212/sync', {
+      const data = await apiRequest<{ syncedAt: string; sync: { invest: { created: number; updated: number; closed: number }; isa: { created: number; updated: number; closed: number } }; account?: { totalValue?: number } }>('/api/trading212/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: DEFAULT_USER_ID }),
       });
 
       setT212LastSync(data.syncedAt);
-      setT212Success(
-        `Synced! ${data.sync.created} new, ${data.sync.updated} updated, ${data.sync.closed} closed`
-      );
+      const inv = data.sync.invest;
+      const isa = data.sync.isa;
+      const parts: string[] = [];
+      if (inv.created + inv.updated + inv.closed > 0) {
+        parts.push(`Invest: ${inv.created} new, ${inv.updated} updated, ${inv.closed} closed`);
+      }
+      if (isa.created + isa.updated + isa.closed > 0) {
+        parts.push(`ISA: ${isa.created} new, ${isa.updated} updated, ${isa.closed} closed`);
+      }
+      setT212Success(parts.length > 0 ? `Synced! ${parts.join(' | ')}` : 'Synced! No changes.');
+      if (data.sync.isa && (isa.created + isa.updated + isa.closed > 0)) {
+        setT212IsaLastSync(data.syncedAt);
+      }
 
-      // Update equity from T212 account value
-      if (data.account?.totalValue) {
-        setEquity(data.account.totalValue);
-        setEquityInput(data.account.totalValue.toFixed(2));
+      // Update equity from combined T212 account value (flat totalValue = invest + ISA combined)
+      const combined = data.account?.totalValue;
+      if (combined && combined > 0) {
+        setEquity(combined);
+        setEquityInput(combined.toFixed(2));
       }
     } catch (err) {
       setT212Error(err instanceof Error ? err.message : 'Network error during sync');
@@ -365,48 +440,75 @@ export default function SettingsPage() {
             Trading 212 Integration
           </h2>
           <p className="text-xs text-muted-foreground mb-4">
-            Connect your Trading 212 account to automatically sync your portfolio positions
+            Connect your Trading 212 accounts to automatically sync portfolio positions. Invest and ISA accounts use separate API keys.
           </p>
 
-          {t212Error && (
-            <div className="mb-4 p-3 bg-loss/10 border border-loss/30 rounded-lg text-sm text-loss flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-              {t212Error}
-            </div>
-          )}
+          {/* Environment selector — shared by both accounts */}
+          <div className="mb-4">
+            <label className="block text-sm text-muted-foreground mb-1">Environment</label>
+            <select
+              value={t212Environment}
+              onChange={(e) => setT212Environment(e.target.value as 'demo' | 'live')}
+              className="input-field"
+              disabled={t212Connected || t212IsaConnected}
+            >
+              <option value="demo">Paper Trading (Demo)</option>
+              <option value="live">Live Trading (Real Money)</option>
+            </select>
+            {(t212Connected || t212IsaConnected) && (
+              <p className="text-xs text-muted-foreground mt-1">Disconnect all accounts to change environment.</p>
+            )}
+          </div>
 
-          {t212Success && (
-            <div className="mb-4 p-3 bg-profit/10 border border-profit/30 rounded-lg text-sm text-profit flex items-center gap-2">
-              <Check className="w-4 h-4 flex-shrink-0" />
-              {t212Success}
-            </div>
-          )}
-
-          {t212Connected && (
-            <div className="mb-4 p-3 bg-primary/10 border border-primary/30 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-profit animate-pulse" />
-                  <span className="text-sm font-medium text-foreground">Connected</span>
-                  {t212AccountId && (
-                    <span className="text-xs text-muted-foreground">
-                      Account: {t212AccountId} ({t212Currency}) — {t212Environment.toUpperCase()}
-                    </span>
-                  )}
+          {/* Sync button — syncs both accounts at once */}
+          {(t212Connected || t212IsaConnected) && (
+            <div className="mb-4">
+              {t212Error && (
+                <div className="mb-3 p-3 bg-loss/10 border border-loss/30 rounded-lg text-sm text-loss flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                  {t212Error}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleT212Sync}
-                    disabled={t212Syncing}
-                    className="btn-primary flex items-center gap-1.5 text-xs px-3 py-1.5"
-                  >
-                    {t212Syncing ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-3 h-3" />
+              )}
+              {t212Success && (
+                <div className="mb-3 p-3 bg-profit/10 border border-profit/30 rounded-lg text-sm text-profit flex items-center gap-2">
+                  <Check className="w-4 h-4 flex-shrink-0" />
+                  {t212Success}
+                </div>
+              )}
+              <button
+                onClick={handleT212Sync}
+                disabled={t212Syncing}
+                className="btn-primary flex items-center gap-1.5 text-sm px-4 py-2"
+              >
+                {t212Syncing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                {t212Syncing ? 'Syncing Both Accounts...' : 'Sync All Connected Accounts'}
+              </button>
+            </div>
+          )}
+
+          {/* ── Invest Account ── */}
+          <div className="border border-border rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+              <TrendingUp className="w-4 h-4 text-primary-400" />
+              Invest Account
+            </h3>
+
+            {t212Connected && (
+              <div className="mb-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-profit animate-pulse" />
+                    <span className="text-sm font-medium text-foreground">Connected</span>
+                    {t212AccountId && (
+                      <span className="text-xs text-muted-foreground">
+                        Account: {t212AccountId} ({t212Currency}) — {t212Environment.toUpperCase()}
+                      </span>
                     )}
-                    {t212Syncing ? 'Syncing...' : 'Sync Now'}
-                  </button>
+                  </div>
                   <button
                     onClick={handleT212Disconnect}
                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-loss/20 text-loss rounded-lg hover:bg-loss/30 transition-colors"
@@ -415,77 +517,59 @@ export default function SettingsPage() {
                     Disconnect
                   </button>
                 </div>
+                {t212LastSync && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Last synced: {new Date(t212LastSync).toLocaleString()}
+                  </p>
+                )}
               </div>
-              {t212LastSync && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Last synced: {new Date(t212LastSync).toLocaleString()}
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">API Key</label>
-              <div className="relative">
-                <input
-                  type={t212ShowKey ? 'text' : 'password'}
-                  value={t212ApiKey}
-                  onChange={(e) => setT212ApiKey(e.target.value)}
-                  placeholder="Enter your Trading 212 API Key"
-                  className="input-field w-full pr-10"
-                  disabled={t212Connected}
-                />
-                <button
-                  onClick={() => setT212ShowKey(!t212ShowKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {t212ShowKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">API Secret</label>
-              <div className="relative">
-                <input
-                  type={t212ShowSecret ? 'text' : 'password'}
-                  value={t212ApiSecret}
-                  onChange={(e) => setT212ApiSecret(e.target.value)}
-                  placeholder="Enter your Trading 212 API Secret"
-                  className="input-field w-full pr-10"
-                  disabled={t212Connected}
-                />
-                <button
-                  onClick={() => setT212ShowSecret(!t212ShowSecret)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {t212ShowSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex items-center gap-4">
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">Environment</label>
-              <select
-                value={t212Environment}
-                onChange={(e) => setT212Environment(e.target.value as 'demo' | 'live')}
-                className="input-field"
-                disabled={t212Connected}
-              >
-                <option value="demo">Paper Trading (Demo)</option>
-                <option value="live">Live Trading (Real Money)</option>
-              </select>
-            </div>
+            )}
 
             {!t212Connected && (
-              <div className="flex items-end">
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">API Key</label>
+                    <div className="relative">
+                      <input
+                        type={t212ShowKey ? 'text' : 'password'}
+                        value={t212ApiKey}
+                        onChange={(e) => setT212ApiKey(e.target.value)}
+                        placeholder="Invest API Key"
+                        className="input-field w-full pr-10 text-sm"
+                      />
+                      <button
+                        onClick={() => setT212ShowKey(!t212ShowKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {t212ShowKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">API Secret</label>
+                    <div className="relative">
+                      <input
+                        type={t212ShowSecret ? 'text' : 'password'}
+                        value={t212ApiSecret}
+                        onChange={(e) => setT212ApiSecret(e.target.value)}
+                        placeholder="Invest API Secret"
+                        className="input-field w-full pr-10 text-sm"
+                      />
+                      <button
+                        onClick={() => setT212ShowSecret(!t212ShowSecret)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {t212ShowSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
                 <button
                   onClick={handleT212Connect}
                   disabled={t212Connecting || !t212ApiKey || !t212ApiSecret}
                   className={cn(
-                    'btn-primary flex items-center gap-2 mt-auto',
+                    'btn-primary flex items-center gap-2 text-sm',
                     (t212Connecting || !t212ApiKey || !t212ApiSecret) && 'opacity-50 cursor-not-allowed'
                   )}
                 >
@@ -496,12 +580,119 @@ export default function SettingsPage() {
                   )}
                   {t212Connecting ? 'Connecting...' : 'Connect & Test'}
                 </button>
-              </div>
+              </>
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground mt-3">
-            Generate API keys from your Trading 212 app. Only works with Invest and Stocks ISA accounts.
+          {/* ── ISA Account ── */}
+          <div className="border border-border rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3">
+              <Shield className="w-4 h-4 text-primary-400" />
+              Stocks ISA Account
+            </h3>
+
+            {t212IsaError && (
+              <div className="mb-3 p-3 bg-loss/10 border border-loss/30 rounded-lg text-sm text-loss flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                {t212IsaError}
+              </div>
+            )}
+            {t212IsaSuccess && (
+              <div className="mb-3 p-3 bg-profit/10 border border-profit/30 rounded-lg text-sm text-profit flex items-center gap-2">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                {t212IsaSuccess}
+              </div>
+            )}
+
+            {t212IsaConnected && (
+              <div className="mb-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-profit animate-pulse" />
+                    <span className="text-sm font-medium text-foreground">Connected</span>
+                    {t212IsaAccountId && (
+                      <span className="text-xs text-muted-foreground">
+                        ISA Account: {t212IsaAccountId} ({t212IsaCurrency}) — {t212Environment.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleT212IsaDisconnect}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-loss/20 text-loss rounded-lg hover:bg-loss/30 transition-colors"
+                  >
+                    <Unplug className="w-3 h-3" />
+                    Disconnect
+                  </button>
+                </div>
+                {t212IsaLastSync && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Last synced: {new Date(t212IsaLastSync).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!t212IsaConnected && (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">ISA API Key</label>
+                    <div className="relative">
+                      <input
+                        type={t212IsaShowKey ? 'text' : 'password'}
+                        value={t212IsaApiKey}
+                        onChange={(e) => setT212IsaApiKey(e.target.value)}
+                        placeholder="ISA API Key"
+                        className="input-field w-full pr-10 text-sm"
+                      />
+                      <button
+                        onClick={() => setT212IsaShowKey(!t212IsaShowKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {t212IsaShowKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-muted-foreground mb-1">ISA API Secret</label>
+                    <div className="relative">
+                      <input
+                        type={t212IsaShowSecret ? 'text' : 'password'}
+                        value={t212IsaApiSecret}
+                        onChange={(e) => setT212IsaApiSecret(e.target.value)}
+                        placeholder="ISA API Secret"
+                        className="input-field w-full pr-10 text-sm"
+                      />
+                      <button
+                        onClick={() => setT212IsaShowSecret(!t212IsaShowSecret)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {t212IsaShowSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={handleT212IsaConnect}
+                  disabled={t212IsaConnecting || !t212IsaApiKey || !t212IsaApiSecret}
+                  className={cn(
+                    'btn-primary flex items-center gap-2 text-sm',
+                    (t212IsaConnecting || !t212IsaApiKey || !t212IsaApiSecret) && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {t212IsaConnecting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plug className="w-4 h-4" />
+                  )}
+                  {t212IsaConnecting ? 'Connecting...' : 'Connect & Test'}
+                </button>
+              </>
+            )}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Generate separate API keys for each account from your Trading 212 app.
             <a
               href="https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key"
               target="_blank"

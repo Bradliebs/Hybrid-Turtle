@@ -1,14 +1,22 @@
 /**
  * DEPENDENCIES
  * Consumed by: /api/trading212/sync
- * Consumes: trading212.ts, default-user.ts, equity-snapshot.ts, risk-gates.ts, market-data.ts, prisma.ts, @/types
+ * Consumes: trading212.ts, trading212-dual.ts, default-user.ts, equity-snapshot.ts, risk-gates.ts, market-data.ts, prisma.ts, @/types
  * Risk-sensitive: YES
- * Last modified: 2026-02-22
- * Notes: Broker sync should surface risk gate warnings without blocking.
+ * Last modified: 2026-02-23
+ * Notes: Dual-account broker sync — fetches Invest + ISA in parallel via DualT212Client.
+ *        Positions are kept SEPARATE with accountType tagging. Never aggregates.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { Trading212Client, mapT212Position, mapT212AccountSummary } from '@/lib/trading212';
+import { mapT212Position, mapT212AccountSummary } from '@/lib/trading212';
+import {
+  DualT212Client,
+  validateDualCredentials,
+  getCredentialsForAccount,
+  type T212AccountType,
+  type T212AccountData,
+} from '@/lib/trading212-dual';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { validateRiskGates } from '@/lib/risk-gates';
@@ -22,7 +30,7 @@ const syncRequestSchema = z.object({
   userId: z.string().trim().min(1).optional(),
 });
 
-// POST /api/trading212/sync — Sync positions from Trading 212
+// POST /api/trading212/sync — Sync positions from Trading 212 (both Invest + ISA)
 export async function POST(request: NextRequest) {
   try {
     const parsed = await parseJsonBody(request, syncRequestSchema);
@@ -35,148 +43,189 @@ export async function POST(request: NextRequest) {
       userId = await ensureDefaultUser();
     }
 
-    // Get user's Trading 212 credentials
+    // Load user with both Invest + ISA credentials
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
         t212ApiKey: true,
         t212ApiSecret: true,
         t212Environment: true,
+        t212Connected: true,
+        t212IsaApiKey: true,
+        t212IsaApiSecret: true,
+        t212IsaConnected: true,
         riskProfile: true,
       },
     });
 
-    if (!user || !user.t212ApiKey || !user.t212ApiSecret) {
-      return apiError(400, 'T212_NOT_CONFIGURED', 'Trading 212 API credentials not configured. Go to Settings to add them.');
+    if (!user) {
+      return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
-    // Create API client
-    const client = new Trading212Client(
-      user.t212ApiKey,
-      user.t212ApiSecret,
-      user.t212Environment as 'demo' | 'live'
-    );
+    const credStatus = validateDualCredentials(user);
+    if (!credStatus.canFetch) {
+      return apiError(400, 'T212_NOT_CONFIGURED', 'No Trading 212 accounts connected. Go to Settings to add credentials.');
+    }
 
-    // Fetch positions and account summary in parallel
-    const [t212Positions, t212Account] = await Promise.all([
-      client.getPositions(),
-      client.getAccountSummary(),
-    ]);
+    // Build dual client from DB credentials
+    const investCreds = getCredentialsForAccount(user, 'invest');
+    const isaCreds = getCredentialsForAccount(user, 'isa');
+    const dualClient = new DualT212Client(investCreds, isaCreds);
 
-    const mappedPositions = t212Positions.map(mapT212Position);
-    const accountData = mapT212AccountSummary(t212Account);
+    // Fetch both accounts in parallel (Promise.allSettled under the hood)
+    const dualResult = await dualClient.fetchBothAccounts();
 
-    // Sync positions to database
+    // Per-account sync results
     const syncResults = {
-      created: 0,
-      updated: 0,
-      closed: 0,
+      invest: { created: 0, updated: 0, closed: 0, errors: [] as string[] },
+      isa: { created: 0, updated: 0, closed: 0, errors: [] as string[] },
       riskGateWarnings: [] as string[],
-      errors: [] as string[],
     };
 
-    // Get existing T212-sourced positions for this user
-    const existingPositions = await prisma.position.findMany({
-      where: { userId, source: 'trading212', status: 'OPEN' },
-      include: { stock: true },
-    });
-
-    const existingTickerMap = new Map(
-      existingPositions.map((p) => [p.t212Ticker || p.stock.ticker, p])
-    );
-
-    // Track which T212 tickers are still open
-    const activeT212Tickers = new Set<string>();
-
-    for (const pos of mappedPositions) {
-      activeT212Tickers.add(pos.fullTicker);
-
-      try {
-        // Atomic: ensure stock exists + create/update position in one transaction
-        await prisma.$transaction(async (tx) => {
-          let stock = await tx.stock.findUnique({
-            where: { ticker: pos.ticker },
-          });
-
-          if (!stock) {
-            stock = await tx.stock.create({
-              data: {
-                ticker: pos.ticker,
-                name: pos.name,
-                sleeve: 'CORE', // Default — user can reclassify
-              },
-            });
-          }
-
-          const existing = existingTickerMap.get(pos.fullTicker);
-
-          if (existing) {
-            // Update existing position
-            await tx.position.update({
-              where: { id: existing.id },
-              data: {
-                shares: pos.shares,
-                entryPrice: pos.entryPrice,
-                updatedAt: new Date(),
-              },
-            });
-            syncResults.updated++;
-          } else {
-            // Create new position
-            const initialRisk = pos.entryPrice * 0.05; // Default 5% stop-loss for synced positions
-            const stopLoss = pos.entryPrice - initialRisk;
-
-            await tx.position.create({
-              data: {
-                userId,
-                stockId: stock.id,
-                status: 'OPEN',
-                source: 'trading212',
-                t212Ticker: pos.fullTicker,
-                entryPrice: pos.entryPrice,
-                entryDate: new Date(pos.entryDate),
-                shares: pos.shares,
-                stopLoss,
-                initialRisk,
-                currentStop: stopLoss,
-                entry_price: pos.entryPrice,
-                initial_stop: stopLoss,
-                initial_R: initialRisk,
-                atr_at_entry: null,
-                profile_used: user.riskProfile,
-                entry_type: 'BREAKOUT',
-                protectionLevel: 'INITIAL',
-                notes: `Synced from Trading 212. ISIN: ${pos.isin}`,
-              },
-            });
-            syncResults.created++;
-          }
-        });
-      } catch (err) {
-        syncResults.errors.push(`Error syncing ${pos.ticker}: ${(err as Error).message}`);
-      }
+    // Capture fetch-level errors
+    if (dualResult.errors.invest) {
+      syncResults.invest.errors.push(`Fetch failed: ${dualResult.errors.invest}`);
+    }
+    if (dualResult.errors.isa) {
+      syncResults.isa.errors.push(`Fetch failed: ${dualResult.errors.isa}`);
     }
 
-    // Mark positions as closed if they no longer exist on Trading 212
-    const existingEntries = Array.from(existingTickerMap.entries());
-    for (const [t212Ticker, existing] of existingEntries) {
-      if (!activeT212Tickers.has(t212Ticker)) {
+    // Detect same-key duplication: if Invest and ISA use the same API key,
+    // skip ISA sync entirely to avoid double-counting positions
+    const isDuplicateKey = !!(investCreds && isaCreds && investCreds.apiKey === isaCreds.apiKey);
+    if (isDuplicateKey) {
+      syncResults.isa.errors.push('Skipped — same API key as Invest account (duplicate)');
+    }
+
+    // Sync each account's positions to the database
+    const accountTypes: T212AccountType[] = isDuplicateKey ? ['invest'] : ['invest', 'isa'];
+    for (const acctType of accountTypes) {
+      const acctData: T212AccountData | null = dualResult[acctType];
+      if (!acctData) continue; // No data — either not connected or fetch failed
+
+      const mappedPositions = acctData.positions.map((p) => mapT212Position(p, acctType));
+      const acctResults = syncResults[acctType];
+
+      // Get existing T212-sourced positions for this account type
+      const existingPositions = await prisma.position.findMany({
+        where: { userId, source: 'trading212', status: 'OPEN', accountType: acctType },
+        include: { stock: true },
+      });
+
+      const existingTickerMap = new Map(
+        existingPositions.map((p) => [p.t212Ticker || p.stock.ticker, p])
+      );
+
+      // Track which T212 tickers are still open in this account
+      const activeT212Tickers = new Set<string>();
+
+      for (const pos of mappedPositions) {
+        activeT212Tickers.add(pos.fullTicker);
+
         try {
-          await prisma.position.update({
-            where: { id: existing.id },
-            data: {
-              status: 'CLOSED',
-              exitDate: new Date(),
-              exitReason: 'Closed on Trading 212',
-            },
+          // Atomic: ensure stock exists + create/update position in one transaction
+          await prisma.$transaction(async (tx) => {
+            let stock = await tx.stock.findUnique({
+              where: { ticker: pos.ticker },
+            });
+
+            if (!stock) {
+              stock = await tx.stock.create({
+                data: {
+                  ticker: pos.ticker,
+                  name: pos.name,
+                  sleeve: 'CORE', // Default — user can reclassify
+                },
+              });
+            }
+
+            const existing = existingTickerMap.get(pos.fullTicker);
+
+            if (existing) {
+              // Update existing position
+              await tx.position.update({
+                where: { id: existing.id },
+                data: {
+                  shares: pos.shares,
+                  entryPrice: pos.entryPrice,
+                  updatedAt: new Date(),
+                },
+              });
+              acctResults.updated++;
+            } else {
+              // Create new position
+              const initialRisk = pos.entryPrice * 0.05; // Default 5% stop-loss for synced positions
+              const stopLoss = pos.entryPrice - initialRisk;
+
+              await tx.position.create({
+                data: {
+                  userId,
+                  stockId: stock.id,
+                  status: 'OPEN',
+                  source: 'trading212',
+                  accountType: acctType,
+                  t212Ticker: pos.fullTicker,
+                  entryPrice: pos.entryPrice,
+                  entryDate: new Date(pos.entryDate),
+                  shares: pos.shares,
+                  stopLoss,
+                  initialRisk,
+                  currentStop: stopLoss,
+                  entry_price: pos.entryPrice,
+                  initial_stop: stopLoss,
+                  initial_R: initialRisk,
+                  atr_at_entry: null,
+                  profile_used: user.riskProfile,
+                  entry_type: 'BREAKOUT',
+                  protectionLevel: 'INITIAL',
+                  notes: `Synced from Trading 212 (${acctType.toUpperCase()}). ISIN: ${pos.isin}`,
+                },
+              });
+              acctResults.created++;
+            }
           });
-          syncResults.closed++;
         } catch (err) {
-          syncResults.errors.push(`Error closing ${t212Ticker}: ${(err as Error).message}`);
+          acctResults.errors.push(`Error syncing ${pos.ticker}: ${(err as Error).message}`);
         }
       }
+
+      // Mark positions as closed if they no longer exist on Trading 212 for this account.
+      // CRITICAL GUARD: Only auto-close if positions were actually fetched from T212.
+      // If the positions endpoint failed (rate-limited, timeout, etc.) but summary
+      // succeeded, acctData.positions is [] but positionsFetched is false.
+      // Closing positions based on a degraded empty list would be a data-loss bug.
+      if (acctData.positionsFetched) {
+        const existingEntries = Array.from(existingTickerMap.entries());
+        for (const [t212Ticker, existing] of existingEntries) {
+          if (!activeT212Tickers.has(t212Ticker)) {
+            try {
+              await prisma.position.update({
+                where: { id: existing.id },
+                data: {
+                  status: 'CLOSED',
+                  exitDate: new Date(),
+                  exitReason: `Closed on Trading 212 (${acctType.toUpperCase()})`,
+                },
+              });
+              acctResults.closed++;
+            } catch (err) {
+              acctResults.errors.push(`Error closing ${t212Ticker}: ${(err as Error).message}`);
+            }
+          }
+        }
+      } else if (existingTickerMap.size > 0) {
+        // Positions fetch failed — log warning but don't close anything
+        acctResults.errors.push(`Positions fetch degraded for ${acctType.toUpperCase()} — skipped auto-close of ${existingTickerMap.size} existing position(s)`);
+      }
     }
 
+    // Calculate combined total value for risk gate checks + equity.
+    // If invest and ISA use the same API key, don't double-count.
+    const investTotal = dualResult.invest?.summary?.totalValue ?? 0;
+    const isaTotal = isDuplicateKey ? 0 : (dualResult.isa?.summary?.totalValue ?? 0);
+    const combinedTotalValue = investTotal + isaTotal;
+
+    // Risk gate validation across ALL positions (both accounts)
     const fxCache = new Map<string, number>();
     const getFxToGbp = async (currency: string | null, ticker: string): Promise<number> => {
       const curr = (currency || 'USD').toUpperCase();
@@ -189,7 +238,7 @@ export async function POST(request: NextRequest) {
       const rate = await getFXRate(curr, 'GBP');
       fxCache.set(curr, rate);
       return rate;
-    }
+    };
 
     try {
       const openPositions = await prisma.position.findMany({
@@ -228,7 +277,7 @@ export async function POST(request: NextRequest) {
             riskDollars: pos.riskDollars,
           },
           existing,
-          accountData.totalValue,
+          combinedTotalValue,
           user.riskProfile as RiskProfileType
         );
         const failed = gateResults.filter((g) => !g.passed);
@@ -242,29 +291,92 @@ export async function POST(request: NextRequest) {
       syncResults.riskGateWarnings.push(`Risk gate warning check failed: ${(error as Error).message}`);
     }
 
-    // Update user's last sync time, equity, and cached account data
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
+    // Update user's cached account data for each connected account.
+    // If duplicate key detected, clear ISA fields to prevent future double-counting.
+    const userUpdate: Record<string, unknown> = {};
+
+    if (dualResult.invest?.summary) {
+      const s = dualResult.invest.summary;
+      Object.assign(userUpdate, {
         t212Connected: true,
         t212LastSync: new Date(),
-        t212AccountId: accountData.accountId.toString(),
-        t212Currency: accountData.currency,
-        equity: accountData.totalValue,
-        t212Cash: accountData.cash,
-        t212Invested: accountData.investmentsValue,
-        t212UnrealisedPL: accountData.unrealizedPL,
-        t212TotalValue: accountData.totalValue,
-      },
-    });
+        t212AccountId: s.accountId.toString(),
+        t212Currency: s.currency,
+        t212Cash: s.cash,
+        t212Invested: s.investmentsValue,
+        t212UnrealisedPL: s.unrealizedPL,
+        t212TotalValue: s.totalValue,
+      });
+    }
 
-    await recordEquitySnapshot(userId, accountData.totalValue);
+    if (isDuplicateKey) {
+      // Same API key stored in both Invest and ISA — clear ISA cached values
+      // to prevent the GET endpoint from double-counting
+      Object.assign(userUpdate, {
+        t212IsaTotalValue: null,
+        t212IsaCash: null,
+        t212IsaInvested: null,
+        t212IsaUnrealisedPL: null,
+      });
+    } else if (dualResult.isa?.summary) {
+      const s = dualResult.isa.summary;
+      Object.assign(userUpdate, {
+        t212IsaLastSync: new Date(),
+        t212IsaAccountId: s.accountId.toString(),
+        t212IsaCurrency: s.currency,
+        t212IsaCash: s.cash,
+        t212IsaInvested: s.investmentsValue,
+        t212IsaUnrealisedPL: s.unrealizedPL,
+        t212IsaTotalValue: s.totalValue,
+      });
+    }
+
+    // Equity is the combined total across both accounts
+    if (combinedTotalValue > 0) {
+      userUpdate.equity = combinedTotalValue;
+    }
+
+    if (Object.keys(userUpdate).length > 0) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: userUpdate,
+      });
+    }
+
+    if (combinedTotalValue > 0) {
+      await recordEquitySnapshot(userId, combinedTotalValue);
+    }
+
+    // Build combined position list for response
+    const allMappedPositions = dualClient.getCombinedPositions(dualResult);
+
+    // Build backward-compatible flat account fields from whichever accounts are connected.
+    // If duplicate key, only use invest summary to avoid double-counting.
+    const investSummary = dualResult.invest?.summary;
+    const isaSummary = isDuplicateKey ? null : dualResult.isa?.summary;
+    const flatAccount = {
+      accountId: investSummary?.accountId ?? isaSummary?.accountId ?? 0,
+      currency: investSummary?.currency ?? isaSummary?.currency ?? 'GBP',
+      cash: (investSummary?.cash ?? 0) + (isaSummary?.cash ?? 0),
+      totalCash: (investSummary?.totalCash ?? 0) + (isaSummary?.totalCash ?? 0),
+      investmentsValue: (investSummary?.investmentsValue ?? 0) + (isaSummary?.investmentsValue ?? 0),
+      investmentsCost: (investSummary?.investmentsCost ?? 0) + (isaSummary?.investmentsCost ?? 0),
+      unrealizedPL: (investSummary?.unrealizedPL ?? 0) + (isaSummary?.unrealizedPL ?? 0),
+      realizedPL: (investSummary?.realizedPL ?? 0) + (isaSummary?.realizedPL ?? 0),
+      totalValue: combinedTotalValue,
+    };
 
     return NextResponse.json({
       success: true,
       sync: syncResults,
-      account: accountData,
-      positions: mappedPositions,
+      account: flatAccount,
+      // Dual-account detail for consumers that want per-account data
+      accounts: {
+        invest: investSummary ?? null,
+        isa: isaSummary ?? null,
+        combinedTotalValue,
+      },
+      positions: allMappedPositions,
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {
@@ -273,7 +385,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET /api/trading212/sync — Get sync status
+// GET /api/trading212/sync — Get sync status (both Invest + ISA)
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
@@ -286,6 +398,8 @@ export async function GET(request: NextRequest) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
+        t212ApiKey: true,
+        t212IsaApiKey: true,
         t212Connected: true,
         t212LastSync: true,
         t212AccountId: true,
@@ -295,6 +409,15 @@ export async function GET(request: NextRequest) {
         t212Invested: true,
         t212UnrealisedPL: true,
         t212TotalValue: true,
+        // ISA fields
+        t212IsaConnected: true,
+        t212IsaLastSync: true,
+        t212IsaAccountId: true,
+        t212IsaCurrency: true,
+        t212IsaCash: true,
+        t212IsaInvested: true,
+        t212IsaUnrealisedPL: true,
+        t212IsaTotalValue: true,
       },
     });
 
@@ -302,22 +425,65 @@ export async function GET(request: NextRequest) {
       return apiError(404, 'USER_NOT_FOUND', 'User not found');
     }
 
-    const t212PositionCount = await prisma.position.count({
-      where: { userId, source: 'trading212', status: 'OPEN' },
-    });
+    // Detect if Invest and ISA use the same API key (user entered same key twice)
+    const isDuplicateKey = !!(user.t212ApiKey && user.t212IsaApiKey && user.t212ApiKey === user.t212IsaApiKey);
+
+    // Count positions per account type
+    const [investPositionCount, isaPositionCount] = await Promise.all([
+      prisma.position.count({
+        where: { userId, source: 'trading212', status: 'OPEN', accountType: 'invest' },
+      }),
+      prisma.position.count({
+        where: { userId, source: 'trading212', status: 'OPEN', accountType: 'isa' },
+      }),
+    ]);
+
+    // Derive top-level fields from whichever account is connected (prefer invest, fallback to ISA)
+    const primaryAccountId = user.t212AccountId ?? user.t212IsaAccountId;
+    const primaryCurrency = user.t212Currency ?? user.t212IsaCurrency;
+    const primaryLastSync = user.t212LastSync ?? user.t212IsaLastSync;
+
+    // If same API key in both, zero out ISA values to prevent double-counting
+    const isaTotalValue = isDuplicateKey ? 0 : (user.t212IsaTotalValue ?? 0);
+    const isaCash = isDuplicateKey ? 0 : (user.t212IsaCash ?? 0);
+    const isaInvested = isDuplicateKey ? 0 : (user.t212IsaInvested ?? 0);
+    const isaUnrealisedPL = isDuplicateKey ? 0 : (user.t212IsaUnrealisedPL ?? 0);
 
     return NextResponse.json({
-      connected: user.t212Connected,
-      lastSync: user.t212LastSync,
-      accountId: user.t212AccountId,
-      currency: user.t212Currency,
+      // Backward-compatible top-level fields
+      connected: user.t212Connected || user.t212IsaConnected,
+      lastSync: primaryLastSync,
+      accountId: primaryAccountId,
+      currency: primaryCurrency,
       environment: user.t212Environment,
-      positionCount: t212PositionCount,
+      positionCount: investPositionCount + isaPositionCount,
       account: {
+        totalValue: (user.t212TotalValue ?? 0) + isaTotalValue,
+        cash: (user.t212Cash ?? 0) + isaCash,
+        invested: (user.t212Invested ?? 0) + isaInvested,
+        unrealisedPL: (user.t212UnrealisedPL ?? 0) + isaUnrealisedPL,
+      },
+      ...(isDuplicateKey ? { duplicateKeyWarning: 'Invest and ISA use the same API key — ISA values excluded to prevent double-counting' } : {}),
+      // New dual-account detail
+      invest: {
+        connected: user.t212Connected,
+        lastSync: user.t212LastSync,
+        accountId: user.t212AccountId,
+        currency: user.t212Currency,
+        positionCount: investPositionCount,
         totalValue: user.t212TotalValue,
         cash: user.t212Cash,
         invested: user.t212Invested,
-        unrealisedPL: user.t212UnrealisedPL,
+      },
+      isa: {
+        connected: isDuplicateKey ? false : user.t212IsaConnected,
+        lastSync: user.t212IsaLastSync,
+        accountId: user.t212IsaAccountId,
+        currency: user.t212IsaCurrency,
+        positionCount: isDuplicateKey ? 0 : isaPositionCount,
+        totalValue: isDuplicateKey ? null : user.t212IsaTotalValue,
+        cash: isDuplicateKey ? null : user.t212IsaCash,
+        invested: isDuplicateKey ? null : user.t212IsaInvested,
       },
     });
   } catch (error) {

@@ -34,10 +34,10 @@ interface SyncStatus {
 interface SyncResult {
   success: boolean;
   sync: {
-    created: number;
-    updated: number;
-    closed: number;
-    errors: string[];
+    invest: { created: number; updated: number; closed: number };
+    isa: { created: number; updated: number; closed: number };
+    errors?: string[];
+    riskGateWarnings?: string[];
   };
   account: {
     accountId: number;
@@ -58,6 +58,7 @@ interface SyncResult {
     currentPrice: number;
     profitLoss: number;
     profitLossPercent: number;
+    accountType?: string;
   }>;
   syncedAt: string;
 }
@@ -237,20 +238,32 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
 
           {/* Sync Summary */}
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Check className="w-3 h-3 text-profit" />
-              {lastResult.sync.created} new
-            </span>
-            <span className="flex items-center gap-1">
-              <RefreshCw className="w-3 h-3 text-primary-400" />
-              {lastResult.sync.updated} updated
-            </span>
-            {lastResult.sync.closed > 0 && (
-              <span className="flex items-center gap-1">
-                <Unplug className="w-3 h-3 text-loss" />
-                {lastResult.sync.closed} closed
-              </span>
-            )}
+            {(() => {
+              // Sum across both accounts for the summary line
+              const inv = lastResult.sync.invest ?? { created: 0, updated: 0, closed: 0 };
+              const isa = lastResult.sync.isa ?? { created: 0, updated: 0, closed: 0 };
+              const created = inv.created + isa.created;
+              const updated = inv.updated + isa.updated;
+              const closed = inv.closed + isa.closed;
+              return (
+                <>
+                  <span className="flex items-center gap-1">
+                    <Check className="w-3 h-3 text-profit" />
+                    {created} new
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3 text-primary-400" />
+                    {updated} updated
+                  </span>
+                  {closed > 0 && (
+                    <span className="flex items-center gap-1">
+                      <Unplug className="w-3 h-3 text-loss" />
+                      {closed} closed
+                    </span>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

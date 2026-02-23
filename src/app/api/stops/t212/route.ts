@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Trading212Client, Trading212Error } from '@/lib/trading212';
+import type { T212AccountType } from '@/lib/trading212-dual';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { updateStopLoss, StopLossError } from '@/lib/stop-manager';
 import { apiError } from '@/lib/api-response';
@@ -22,9 +23,13 @@ const setStopSchema = z.object({
 // ============================================================
 
 /**
- * Helper: create a T212 client from the user's stored credentials
+ * Helper: create a T212 client from the user's stored credentials.
+ * Routes to the correct account (Invest or ISA) based on accountType.
+ * CRITICAL: a stop on an ISA position must NEVER be sent to the Invest client and vice versa.
  */
-async function getT212Client(userId: string) {
+async function getT212Client(userId: string, accountType?: T212AccountType | string | null) {
+  const acctType: T212AccountType = (accountType === 'isa') ? 'isa' : 'invest';
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -32,13 +37,31 @@ async function getT212Client(userId: string) {
       t212ApiSecret: true,
       t212Environment: true,
       t212Connected: true,
+      t212IsaApiKey: true,
+      t212IsaApiSecret: true,
+      t212IsaConnected: true,
     },
   });
 
-  if (!user || !user.t212ApiKey || !user.t212ApiSecret || !user.t212Connected) {
-    throw new Error('Trading 212 not connected. Go to Settings to add your API credentials.');
+  if (!user) {
+    throw new Error('User not found.');
   }
 
+  if (acctType === 'isa') {
+    if (!user.t212IsaApiKey || !user.t212IsaApiSecret || !user.t212IsaConnected) {
+      throw new Error('Trading 212 ISA account not connected. Go to Settings to add your ISA API credentials.');
+    }
+    return new Trading212Client(
+      user.t212IsaApiKey,
+      user.t212IsaApiSecret,
+      user.t212Environment as 'demo' | 'live'
+    );
+  }
+
+  // Invest (default)
+  if (!user.t212ApiKey || !user.t212ApiSecret || !user.t212Connected) {
+    throw new Error('Trading 212 Invest account not connected. Go to Settings to add your API credentials.');
+  }
   return new Trading212Client(
     user.t212ApiKey,
     user.t212ApiSecret,
@@ -47,8 +70,17 @@ async function getT212Client(userId: string) {
 }
 
 /**
+ * Helper: get a T212 client for a specific position, based on its accountType.
+ * Guarantees the stop is routed to the correct account.
+ */
+async function getT212ClientForPosition(position: { userId: string; accountType: string | null }) {
+  return getT212Client(position.userId, position.accountType);
+}
+
+/**
  * GET — List all pending stop orders from T212
- * Matches them against local DB positions
+ * Fetches from both Invest and ISA accounts (where connected).
+ * Matches them against local DB positions by accountType.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -56,26 +88,53 @@ export async function GET(request: NextRequest) {
     let userId = searchParams.get('userId');
     if (!userId) userId = await ensureDefaultUser();
 
-    const client = await getT212Client(userId);
+    // Load all open positions
+    const positions = await prisma.position.findMany({
+      where: { userId, status: 'OPEN' },
+      include: { stock: true },
+    });
 
-    // Fetch pending orders and positions in parallel
-    const [pendingOrders, positions] = await Promise.all([
-      client.getPendingOrders(),
-      prisma.position.findMany({
-        where: { userId, status: 'OPEN' },
-        include: { stock: true },
-      }),
-    ]);
+    // Determine which accounts we need to query
+    const hasInvestPositions = positions.some((p) => p.accountType !== 'isa');
+    const hasIsaPositions = positions.some((p) => p.accountType === 'isa');
 
-    // Filter to STOP sell orders only
-    const stopOrders = pendingOrders.filter(
-      (o) => o.type === 'STOP' && o.side === 'SELL'
+    // Fetch pending orders from each connected account in parallel
+    const pendingOrderFetches: Array<{
+      acctType: T212AccountType;
+      promise: Promise<Awaited<ReturnType<Trading212Client['getPendingOrders']>>>;
+    }> = [];
+
+    if (hasInvestPositions) {
+      try {
+        const investClient = await getT212Client(userId, 'invest');
+        pendingOrderFetches.push({ acctType: 'invest', promise: investClient.getPendingOrders() });
+      } catch { /* Invest not connected — skip */ }
+    }
+    if (hasIsaPositions) {
+      try {
+        const isaClient = await getT212Client(userId, 'isa');
+        pendingOrderFetches.push({ acctType: 'isa', promise: isaClient.getPendingOrders() });
+      } catch { /* ISA not connected — skip */ }
+    }
+
+    // Collect results, keyed by account type
+    const stopOrdersByAccount = new Map<T212AccountType, Awaited<ReturnType<Trading212Client['getPendingOrders']>>>();
+    const fetchResults = await Promise.allSettled(
+      pendingOrderFetches.map(async ({ acctType, promise }) => ({ acctType, orders: await promise }))
     );
+    for (const result of fetchResults) {
+      if (result.status === 'fulfilled') {
+        const stops = result.value.orders.filter((o) => o.type === 'STOP' && o.side === 'SELL');
+        stopOrdersByAccount.set(result.value.acctType, stops);
+      }
+    }
 
-    // Match against local positions and sync DB if T212 has a higher stop
+    // Match each position against the correct account's stop orders
     const matched = await Promise.all(positions.map(async (pos) => {
+      const posAcctType: T212AccountType = pos.accountType === 'isa' ? 'isa' : 'invest';
       const t212Ticker = pos.t212Ticker || pos.stock.t212Ticker || '';
-      const matchedOrder = stopOrders.find((o) => o.ticker === t212Ticker);
+      const accountStops = stopOrdersByAccount.get(posAcctType) ?? [];
+      const matchedOrder = accountStops.find((o) => o.ticker === t212Ticker);
       const t212Stop = matchedOrder?.stopPrice ?? 0;
 
       // If T212 has a higher stop than the DB, sync the DB UP (monotonic)
@@ -85,7 +144,7 @@ export async function GET(request: NextRequest) {
           await updateStopLoss(
             pos.id,
             t212Stop,
-            `Synced from T212: ${pos.currentStop.toFixed(2)} → ${t212Stop.toFixed(2)}`
+            `Synced from T212 (${posAcctType.toUpperCase()}): ${pos.currentStop.toFixed(2)} → ${t212Stop.toFixed(2)}`
           );
           dbSyncedUp = true;
         } catch {
@@ -97,6 +156,7 @@ export async function GET(request: NextRequest) {
         positionId: pos.id,
         ticker: pos.stock.ticker,
         t212Ticker,
+        accountType: posAcctType,
         shares: pos.shares,
         currentStop: dbSyncedUp ? t212Stop : pos.currentStop,
         t212StopOrder: matchedOrder
@@ -116,11 +176,15 @@ export async function GET(request: NextRequest) {
       };
     }));
 
+    // Collect unmatched stop orders across all accounts
+    const allStopOrders = Array.from(stopOrdersByAccount.values()).flat();
+    const unmatched = allStopOrders.filter(
+      (o) => !positions.some((p) => (p.t212Ticker || p.stock.t212Ticker) === o.ticker)
+    );
+
     return NextResponse.json({
       positions: matched,
-      unmatched: stopOrders.filter(
-        (o) => !positions.some((p) => (p.t212Ticker || p.stock.t212Ticker) === o.ticker)
-      ),
+      unmatched,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -171,7 +235,7 @@ export async function POST(request: NextRequest) {
       return apiError(400, 'INVALID_STOP_PRICE', 'Stop price must be positive');
     }
 
-    const client = await getT212Client(position.userId);
+    const client = await getT212ClientForPosition(position);
 
     // Check existing T212 stop before placing — enforce monotonic rule
     const pendingOrders = await client.getPendingOrders();
@@ -262,7 +326,7 @@ export async function DELETE(request: NextRequest) {
       return apiError(400, 'MISSING_T212_TICKER', 'No T212 ticker mapped');
     }
 
-    const client = await getT212Client(position.userId);
+    const client = await getT212ClientForPosition(position);
     const cancelled = await client.removeStopLoss(t212Ticker);
 
     return NextResponse.json({
@@ -284,8 +348,9 @@ export async function DELETE(request: NextRequest) {
 /**
  * PUT — Bulk push all DB stops to Trading 212
  * For each open position with a T212 ticker:
- *   - Cancel existing T212 stop orders
- *   - Place a new stop at the DB's currentStop price
+ *   - Routes to the correct T212 account based on position.accountType
+ *   - Cancels existing T212 stop orders
+ *   - Places a new stop at the DB's currentStop price
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -293,16 +358,18 @@ export async function PUT(request: NextRequest) {
     let userId = body.userId;
     if (!userId) userId = await ensureDefaultUser();
 
-    const client = await getT212Client(userId);
-
     const positions = await prisma.position.findMany({
       where: { userId, status: 'OPEN' },
       include: { stock: true },
     });
 
+    // Cache T212 clients by account type to avoid repeated DB lookups
+    const clientCache = new Map<T212AccountType, Trading212Client>();
+
     const results: {
       ticker: string;
       t212Ticker: string;
+      accountType: string;
       stopPrice: number;
       action: string;
       orderId?: number;
@@ -310,10 +377,13 @@ export async function PUT(request: NextRequest) {
 
     for (const pos of positions) {
       const t212Ticker = pos.t212Ticker || pos.stock.t212Ticker;
+      const posAcctType: T212AccountType = pos.accountType === 'isa' ? 'isa' : 'invest';
+
       if (!t212Ticker) {
         results.push({
           ticker: pos.stock.ticker,
           t212Ticker: '',
+          accountType: posAcctType,
           stopPrice: pos.currentStop,
           action: 'SKIPPED_NO_T212_TICKER',
         });
@@ -324,6 +394,7 @@ export async function PUT(request: NextRequest) {
         results.push({
           ticker: pos.stock.ticker,
           t212Ticker,
+          accountType: posAcctType,
           stopPrice: 0,
           action: 'SKIPPED_NO_STOP',
         });
@@ -331,11 +402,19 @@ export async function PUT(request: NextRequest) {
       }
 
       try {
+        // Get or create client for this account type
+        let client = clientCache.get(posAcctType);
+        if (!client) {
+          client = await getT212Client(userId, posAcctType);
+          clientCache.set(posAcctType, client);
+        }
+
         const order = await client.setStopLoss(t212Ticker, pos.shares, pos.currentStop);
 
         results.push({
           ticker: pos.stock.ticker,
           t212Ticker,
+          accountType: posAcctType,
           stopPrice: pos.currentStop,
           action: 'PLACED',
           orderId: order?.id,
@@ -349,6 +428,7 @@ export async function PUT(request: NextRequest) {
         results.push({
           ticker: pos.stock.ticker,
           t212Ticker,
+          accountType: posAcctType,
           stopPrice: pos.currentStop,
           action: `FAILED: ${(error as Error).message}`,
         });
