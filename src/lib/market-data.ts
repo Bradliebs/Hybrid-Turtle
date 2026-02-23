@@ -269,12 +269,18 @@ export async function getDailyPrices(
     const period1 = new Date();
     period1.setDate(period1.getDate() - (outputSize === 'full' ? 400 : 120));
 
+    // Yahoo chart API treats period2 as EXCLUSIVE — setting it to today
+    // excludes today's bar (returns only up to yesterday's close).
+    // Adding +1 day ensures we always get the latest available daily bar.
+    const period2 = new Date();
+    period2.setDate(period2.getDate() + 1);
+
     const yahooTicker = toYahooTicker(ticker);
     // Route through the rate-limited queue to prevent bursts
     const { quotes } = await enqueueChartCall(() =>
       yf.chart(yahooTicker, {
         period1: period1.toISOString().split('T')[0],
-        period2: new Date().toISOString().split('T')[0],
+        period2: period2.toISOString().split('T')[0],
         interval: '1d',
       })
     );

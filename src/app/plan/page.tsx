@@ -47,6 +47,7 @@ interface ReadyCandidate {
   distancePercent: number;
   shares?: number;
   riskDollars?: number;
+  priceCurrency?: string;
   matchType?: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'CONFLICT';
   agreementScore?: number;
   dualNCS?: number;
@@ -84,6 +85,8 @@ interface CrossRefTicker {
   dualEntryTrigger?: number;
   dualStopLevel?: number;
   dualDistancePct?: number;
+  // Per-ticker display currency (GBX for .L, USD for US, EUR etc.)
+  priceCurrency?: string;
 }
 
 interface HealthReportData {
@@ -200,6 +203,8 @@ export default function PlanPage() {
               distancePercent: t.scanDistancePercent ?? t.dualDistancePct ?? 0,
               shares: t.scanShares,
               riskDollars: t.scanRiskDollars ?? undefined,
+              // Per-ticker display currency from cross-ref (GBX for .L, USD for US, etc.)
+              priceCurrency: t.priceCurrency,
               // Cross-ref enrichment
               matchType: t.matchType === 'BOTH_REJECT' ? undefined : t.matchType,
               agreementScore: t.agreementScore,

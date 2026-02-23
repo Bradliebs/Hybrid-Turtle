@@ -85,6 +85,14 @@ export async function GET(request: NextRequest) {
       // Trailing ATR is best-effort — R-based recs still returned if this fails
     }
 
+    // Build ticker → priceCurrency lookup from positions
+    const priceCurrencyMap = new Map<string, string>();
+    for (const p of positions) {
+      const isUK = p.stock.ticker.endsWith('.L');
+      const priceCurrency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
+      priceCurrencyMap.set(p.stock.ticker, priceCurrency);
+    }
+
     // Build a map keyed by positionId, keeping whichever rec has the higher newStop
     const merged = new Map<string, {
       positionId: string;
@@ -93,6 +101,7 @@ export async function GET(request: NextRequest) {
       newStop: number;
       newLevel: string;
       reason: string;
+      priceCurrency: string;
     }>();
 
     for (const rec of rBasedRecs) {
@@ -103,6 +112,7 @@ export async function GET(request: NextRequest) {
         newStop: rec.newStop,
         newLevel: rec.newLevel,
         reason: rec.reason,
+        priceCurrency: priceCurrencyMap.get(rec.ticker) || 'USD',
       });
     }
 
@@ -117,6 +127,7 @@ export async function GET(request: NextRequest) {
           newStop: rec.trailingStop,
           newLevel: 'TRAILING_ATR',
           reason: rec.reason,
+          priceCurrency: priceCurrencyMap.get(rec.ticker) || 'USD',
         });
       }
     }

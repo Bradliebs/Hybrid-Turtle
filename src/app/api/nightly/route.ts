@@ -11,7 +11,7 @@ import prisma from '@/lib/prisma';
 import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
-import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
+import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
 import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR } from '@/lib/market-data';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
@@ -95,9 +95,17 @@ export async function POST(request: NextRequest) {
     for (const p of positions) {
       stockCurrencies[p.stock.ticker] = p.stock.currency;
     }
-    const gbpPrices = openTickers.length > 0
-      ? await normalizeBatchPricesToGBP(livePrices, stockCurrencies)
-      : {};
+    let gbpPrices: Record<string, number> = {};
+    try {
+      gbpPrices = openTickers.length > 0
+        ? await normalizeBatchPricesToGBP(livePrices, stockCurrencies)
+        : {};
+    } catch (error) {
+      hadFailure = true;
+      // Fall back to raw prices so downstream steps can still run
+      gbpPrices = { ...livePrices };
+      console.warn('[Nightly] FX normalisation failed, using raw prices as fallback:', (error as Error).message);
+    }
 
     // Step 3: Generate R-based stop recommendations
     // Pre-fetch ATRs for open positions so LOCK_1R_TRAIL trailing stops
@@ -132,20 +140,29 @@ export async function POST(request: NextRequest) {
       console.warn('[Nightly] Stop recommendations failed:', (error as Error).message);
     }
 
-    // Collect R-based stop changes for Telegram
-    const stopChanges: NightlyStopChange[] = stopRecs.map((rec) => {
+    // Apply R-based stop changes and collect for Telegram
+    // BUG FIX: Previously only mapped recs to display — never called updateStopLoss().
+    // This meant BREAKEVEN / LOCK_08R / LOCK_1R_TRAIL stops were silently skipped
+    // when running via API route instead of the .bat file.
+    const stopChanges: NightlyStopChange[] = [];
+    for (const rec of stopRecs) {
       const pos = positions.find((p) => p.id === rec.positionId);
       const isUK = rec.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(rec.ticker);
       const cur = isUK ? 'GBX' : (pos?.stock.currency || 'USD').toUpperCase();
-      return {
-        ticker: rec.ticker,
-        oldStop: rec.currentStop,
-        newStop: rec.newStop,
-        level: rec.newLevel,
-        reason: rec.reason,
-        currency: cur,
-      };
-    });
+      try {
+        await updateStopLoss(rec.positionId, rec.newStop, rec.reason, rec.newLevel);
+        stopChanges.push({
+          ticker: rec.ticker,
+          oldStop: rec.currentStop,
+          newStop: rec.newStop,
+          level: rec.newLevel,
+          reason: rec.reason,
+          currency: cur,
+        });
+      } catch {
+        // Monotonic violation or other error — skip silently (stop cannot decrease)
+      }
+    }
 
     // Step 3b: Generate trailing ATR stop recommendations and auto-apply
     const trailingStopChanges: NightlyStopChange[] = [];
@@ -458,9 +475,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6: Build position detail for Telegram
+    // Use GBP-normalised prices for consistent cross-currency P&L aggregation
     const positionDetails: NightlyPositionDetail[] = positions.map((p) => {
       const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
-      const pnl = (currentPrice - p.entryPrice) * p.shares;
+      const gbpPrice = gbpPrices[p.stock.ticker] ?? currentPrice;
+      const fxRatio = currentPrice > 0 ? gbpPrice / currentPrice : 1;
+      const pnlValue = (gbpPrice - p.entryPrice * fxRatio) * p.shares;
       const pnlPercent = p.entryPrice > 0 ? ((currentPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
       const rMultiple = p.initialRisk > 0 ? (currentPrice - p.entryPrice) / p.initialRisk : 0;
       const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
@@ -475,7 +495,7 @@ export async function POST(request: NextRequest) {
         currentStop: p.currentStop,
         protectionLevel: p.protectionLevel,
         rMultiple,
-        pnl,
+        pnl: pnlValue,
         pnlPercent,
         currency,
       };
@@ -497,6 +517,7 @@ export async function POST(request: NextRequest) {
 
     // Step 7b: Query READY tickers from the freshly synced snapshot
     let readyToBuy: NightlyReadyCandidate[] = [];
+    let triggerMetCandidates: NightlyTriggerMetCandidate[] = [];
     if (snapshotSync.snapshotId) {
       try {
         // Get tickers the user already holds to exclude them
@@ -525,6 +546,32 @@ export async function POST(request: NextRequest) {
             adx14: r.adx14,
             currency: r.currency || 'USD',
           }));
+
+        // Detect trigger-met candidates: close >= entryTrigger and not already held
+        const allTriggeredRows = await prisma.snapshotTicker.findMany({
+          where: {
+            snapshotId: snapshotSync.snapshotId,
+            status: { in: ['READY', 'WATCH'] },
+          },
+          orderBy: { distanceTo20dHighPct: 'asc' },
+        });
+        triggerMetCandidates = allTriggeredRows
+          .filter((r) => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0)
+          .map((r) => ({
+            ticker: r.ticker,
+            name: r.name || r.ticker,
+            sleeve: r.sleeve || 'CORE',
+            close: r.close,
+            entryTrigger: r.entryTrigger,
+            stopLevel: r.stopLevel,
+            distancePct: ((r.close - r.entryTrigger) / r.entryTrigger) * 100,
+            atr14: r.atr14,
+            adx14: r.adx14,
+            currency: r.currency || 'USD',
+          }));
+        if (triggerMetCandidates.length > 0) {
+          alerts.push(`🚨 ${triggerMetCandidates.length} trigger(s) met — review for immediate entry`);
+        }
       } catch (error) {
         hadFailure = true;
         console.warn('[Nightly] Failed to query READY tickers:', (error as Error).message);
@@ -541,7 +588,12 @@ export async function POST(request: NextRequest) {
         stopsUpdated: stopRecs.length,
         readyCandidates: readyToBuy.length,
         alerts,
-        portfolioValue: positions.reduce((sum, p) => sum + p.entryPrice * p.shares, 0),
+        // Portfolio value in GBP for multi-currency consistency
+        portfolioValue: positions.reduce((sum, p) => {
+          const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
+          const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
+          return sum + gbpPrice * p.shares;
+        }, 0),
         dailyChange: 0,
         dailyChangePercent: 0,
         equity,
@@ -552,6 +604,7 @@ export async function POST(request: NextRequest) {
         snapshotSynced: snapshotSync.rowCount,
         snapshotFailed: snapshotSync.failed.length,
         readyToBuy,
+        triggerMet: triggerMetCandidates,
         pyramidAlerts,
         laggards: laggardAlerts,
         climaxAlerts,

@@ -1,7 +1,7 @@
 'use client';
 
 import StatusBadge from '@/components/shared/StatusBadge';
-import { cn, formatCurrency, formatPercent } from '@/lib/utils';
+import { cn, formatPrice, formatPercent } from '@/lib/utils';
 import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap, Info, X, Download } from 'lucide-react';
 import { useState } from 'react';
 
@@ -17,6 +17,7 @@ interface Candidate {
   distancePercent: number;
   shares?: number;
   riskDollars?: number;
+  priceCurrency?: string;
   // Cross-ref enrichment
   matchType?: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'CONFLICT';
   agreementScore?: number;
@@ -222,11 +223,11 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
                     <span className="text-muted-foreground">Price</span>
-                    <div className="font-mono text-foreground">{formatCurrency(c.price)}</div>
+                    <div className="font-mono text-foreground">{formatPrice(c.price, c.priceCurrency)}</div>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Trigger</span>
-                    <div className="font-mono text-warning">{formatCurrency(c.entryTrigger)}</div>
+                    <div className="font-mono text-warning">{formatPrice(c.entryTrigger, c.priceCurrency)}</div>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Distance</span>
@@ -377,7 +378,7 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                     </div>
                     <div>
                       <span className="text-muted-foreground">Risk $</span>
-                      <div className="font-mono text-loss">{formatCurrency(c.riskDollars || 0)}</div>
+                      <div className="font-mono text-loss">{formatPrice(c.riskDollars || 0, c.priceCurrency)}</div>
                     </div>
                   </div>
                 )}

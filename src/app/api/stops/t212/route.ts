@@ -373,7 +373,7 @@ export async function PUT(request: NextRequest) {
       ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string; orderId?: number;
     }> = [...skippedResults];
 
-    for (const [acctType, acctPositions] of byAccount.entries()) {
+    for (const [acctType, acctPositions] of Array.from(byAccount.entries())) {
       try {
         const client = await getT212Client(userId, acctType);
 

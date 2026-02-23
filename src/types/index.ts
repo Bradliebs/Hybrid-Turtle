@@ -436,6 +436,7 @@ export interface EarlyBirdSignal {
   riskEfficiency: number;     // (entryTrigger - stop) / ATR — lower is better
   entryTrigger: number;       // 20d high + 0.1×ATR
   candidateStop: number;      // entryTrigger - 1.5×ATR
+  priceCurrency?: string;     // display currency (GBX for .L tickers, USD for US, etc.)
 }
 
 // Module 3: Laggard Purge

@@ -222,6 +222,8 @@ interface CrossRefTicker {
   dualEntryTrigger: number | null;
   dualStopLevel: number | null;
   dualDistancePct: number | null;
+  // Per-ticker display currency (GBX for .L, USD for US, EUR etc.)
+  priceCurrency: string;
   // Cross-reference classification
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;          // 0-100 how aligned the two systems are
@@ -342,6 +344,8 @@ export async function GET() {
             ? Math.round(((dual.entry_trigger - dual.close) / dual.close) * 10000) / 100
             : 0
           : null,
+        // Per-ticker display currency
+        priceCurrency: scan?.priceCurrency || (ticker.endsWith('.L') ? 'GBX' : (dual?.currency || 'USD').toUpperCase()),
         // Classification
         matchType,
         agreementScore,

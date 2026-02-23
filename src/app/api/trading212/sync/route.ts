@@ -158,12 +158,16 @@ export async function POST(request: NextRequest) {
             const existing = existingTickerMap.get(pos.fullTicker);
 
             if (existing) {
-              // Update existing position
+              // Update existing position — ONLY update shares count.
+              // CRITICAL: Do NOT overwrite entryPrice with T212's averagePricePaid.
+              // After partial sells or pyramid adds on T212, the average cost changes,
+              // but our initialRisk / initial_R / initial_stop / entry_price are all
+              // based on the original entry. Overwriting entryPrice would corrupt
+              // R-multiple calculations and the entire stop protection ladder.
               await tx.position.update({
                 where: { id: existing.id },
                 data: {
                   shares: pos.shares,
-                  entryPrice: pos.entryPrice,
                   updatedAt: new Date(),
                 },
               });
@@ -242,6 +246,19 @@ export async function POST(request: NextRequest) {
     const combinedTotalValue = investTotal + isaTotal;
 
     // Risk gate validation across ALL positions (both accounts)
+    // Build live price map from T212 position data for accurate value/risk calculations
+    const t212LivePrices = new Map<string, number>();
+    for (const acctType of accountTypes) {
+      const acctData = dualResult[acctType];
+      if (!acctData) continue;
+      for (const rawPos of acctData.positions) {
+        const mapped = mapT212Position(rawPos, acctType);
+        if (mapped.currentPrice > 0) {
+          t212LivePrices.set(mapped.ticker, mapped.currentPrice);
+        }
+      }
+    }
+
     const fxCache = new Map<string, number>();
     const getFxToGbp = async (currency: string | null, ticker: string): Promise<number> => {
       const curr = (currency || 'USD').toUpperCase();
@@ -264,19 +281,20 @@ export async function POST(request: NextRequest) {
 
       const positionsForGates = await Promise.all(openPositions.map(async (p) => {
         const fxToGbp = await getFxToGbp(p.stock.currency, p.stock.ticker);
-        const entryPriceGbp = p.entryPrice * fxToGbp;
+        // Use live price from T212 if available, fallback to entry price
+        const rawCurrentPrice = t212LivePrices.get(p.stock.ticker) ?? p.entryPrice;
+        const currentPriceGbp = rawCurrentPrice * fxToGbp;
         const currentStopGbp = p.currentStop * fxToGbp;
-        const currentPriceGbp = entryPriceGbp;
         return {
           id: p.id,
           ticker: p.stock.ticker,
           sleeve: (p.stock.sleeve || 'CORE') as Sleeve,
           sector: p.stock.sector || 'Unknown',
           cluster: p.stock.cluster || 'General',
-          value: entryPriceGbp * p.shares,
+          value: currentPriceGbp * p.shares,
           riskDollars: Math.max(0, (currentPriceGbp - currentStopGbp) * p.shares),
           shares: p.shares,
-          entryPrice: entryPriceGbp,
+          entryPrice: p.entryPrice * fxToGbp,
           currentStop: currentStopGbp,
           currentPrice: currentPriceGbp,
         };

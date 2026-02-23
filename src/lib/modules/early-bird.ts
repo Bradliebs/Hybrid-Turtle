@@ -111,6 +111,7 @@ export function checkEarlyBird(
     riskEfficiency,
     entryTrigger,
     candidateStop,
+    // priceCurrency set by scanEarlyBirds which has DB context
   };
 }
 
@@ -119,7 +120,7 @@ export function checkEarlyBird(
  * Parallelized in batches of 10 for performance.
  */
 export async function scanEarlyBirds(
-  tickers: { ticker: string; name: string }[],
+  tickers: { ticker: string; name: string; currency?: string | null }[],
   regime: MarketRegime
 ): Promise<EarlyBirdSignal[]> {
   const signals: EarlyBirdSignal[] = [];
@@ -128,7 +129,7 @@ export async function scanEarlyBirds(
   for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
     const batch = tickers.slice(i, i + BATCH_SIZE);
     const results = await Promise.allSettled(
-      batch.map(async ({ ticker, name }) => {
+      batch.map(async ({ ticker, name, currency }) => {
         // Need 200+ bars for MA200; fall back to compact (55) only if full fetch fails
         const bars = await getDailyPrices(ticker, 'full');
         if (bars.length < 55) return null;
@@ -160,6 +161,12 @@ export async function scanEarlyBirds(
           adx, atrPercent, ma200Distance,
           entryTrigger, candidateStop, atr
         );
+
+        if (signal.eligible) {
+          // Derive display currency: .L tickers trade in GBX (pence), others use DB currency or USD
+          const isUK = ticker.endsWith('.L');
+          signal.priceCurrency = isUK ? 'GBX' : (currency || 'USD').toUpperCase();
+        }
 
         return signal.eligible ? signal : null;
       })

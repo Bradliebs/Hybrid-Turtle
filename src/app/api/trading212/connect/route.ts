@@ -48,6 +48,9 @@ export async function POST(request: NextRequest) {
           t212IsaConnected: true,
           t212IsaAccountId: result.accountId?.toString(),
           t212IsaCurrency: result.currency,
+          // ISA shares environment with Invest — save it so that if ISA
+          // is connected first (before Invest), the correct env is persisted
+          t212Environment: environment,
         },
       });
     } else {
@@ -101,6 +104,7 @@ export async function DELETE(request: NextRequest) {
             t212IsaCurrency: null,
             t212IsaCash: null,
             t212IsaInvested: null,
+            t212IsaUnrealisedPL: null,
             t212IsaTotalValue: null,
           },
         }),

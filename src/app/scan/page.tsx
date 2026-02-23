@@ -12,11 +12,18 @@ import dynamic from 'next/dynamic';
 const TickerChart = dynamic(() => import('@/components/scan/TickerChart'), { ssr: false });
 import StatusBadge from '@/components/shared/StatusBadge';
 import RegimeBadge from '@/components/shared/RegimeBadge';
-import { cn } from '@/lib/utils';
+import { cn, formatPrice } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
-import { Search, Play, Filter, Check, X, AlertTriangle, BarChart3, GitMerge } from 'lucide-react';
+import { Search, Play, Filter, Check, X, AlertTriangle, BarChart3, GitMerge, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+
+/** Live price data returned by /api/scan/live-prices */
+interface LivePriceData {
+  price: number;
+  change: number;
+  changePercent: number;
+}
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -58,6 +65,10 @@ export default function ScanPage() {
   const [scanResult, setScanResult] = useState<ScanApiResult | null>(null);
   const [riskSummary, setRiskSummary] = useState<RiskBudgetSummary | null>(null);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
+  // Live price overlay — fetched separately from scan-time prices
+  const [livePrices, setLivePrices] = useState<Record<string, LivePriceData>>({});
+  const [livePricesFetchedAt, setLivePricesFetchedAt] = useState<string | null>(null);
+  const [isLoadingLive, setIsLoadingLive] = useState(false);
   const { marketRegime, riskProfile, equity } = useStore();
 
   const stages = [
@@ -197,6 +208,7 @@ export default function ScanPage() {
 
   const runScan = async () => {
     setIsRunning(true);
+    setLivePrices({}); // Clear stale live prices when re-scanning
     try {
       const data = await apiRequest<ScanApiResult>('/api/scan', {
         method: 'POST',
@@ -217,6 +229,49 @@ export default function ScanPage() {
       setIsRunning(false);
     }
   };
+
+  // Fetch live prices for READY/WATCH candidates so the user sees
+  // current market prices alongside the scan-time snapshot price.
+  const fetchLivePrices = async () => {
+    const actionable = [...readyCandidates, ...watchCandidates];
+    if (actionable.length === 0) return;
+
+    // Use yahooTicker if available, else ticker
+    const tickers = actionable.map((c) => c.yahooTicker || c.ticker);
+    setIsLoadingLive(true);
+    try {
+      const data = await apiRequest<{
+        prices: Record<string, LivePriceData>;
+        fetchedAt: string;
+      }>('/api/scan/live-prices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers }),
+      });
+      // Map back to display ticker (some tickers use yahooTicker like TTE.PA)
+      const mapped: Record<string, LivePriceData> = {};
+      actionable.forEach((c) => {
+        const key = c.yahooTicker || c.ticker;
+        if (data.prices[key]) {
+          mapped[c.ticker] = data.prices[key];
+        }
+      });
+      setLivePrices(mapped);
+      setLivePricesFetchedAt(data.fetchedAt);
+    } catch {
+      // Silent fail — scan-time prices still shown
+    } finally {
+      setIsLoadingLive(false);
+    }
+  };
+
+  // Auto-fetch live prices when READY/WATCH candidates are loaded
+  useEffect(() => {
+    if (readyCandidates.length + watchCandidates.length > 0) {
+      fetchLivePrices();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readyCandidates.length, watchCandidates.length]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -423,18 +478,37 @@ export default function ScanPage() {
                       <h3 className="text-sm font-semibold text-foreground">
                         READY & WATCH Candidates ({readyCandidates.length + watchCandidates.length})
                       </h3>
-                      <span className="text-xs text-muted-foreground">
-                        Sorted by distance to entry trigger
-                      </span>
+                      <div className="flex items-center gap-3">
+                        {livePricesFetchedAt && (
+                          <span className="text-[10px] text-muted-foreground">
+                            Live: {new Date(livePricesFetchedAt).toLocaleTimeString()}
+                          </span>
+                        )}
+                        <button
+                          onClick={fetchLivePrices}
+                          disabled={isLoadingLive}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-primary-400 hover:bg-primary/10 transition-colors disabled:opacity-50"
+                          title="Refresh live prices"
+                        >
+                          <RefreshCw className={cn('w-3 h-3', isLoadingLive && 'animate-spin')} />
+                          {isLoadingLive ? 'Loading…' : 'Live'}
+                        </button>
+                        <span className="text-xs text-muted-foreground">
+                          Sorted by distance to entry trigger
+                        </span>
+                      </div>
                     </div>
-                    <table className="data-table min-w-[700px]">
+                    <table className="data-table min-w-[800px]">
                       <thead>
                         <tr>
                           <th className="whitespace-nowrap">#</th>
                           <th className="whitespace-nowrap">Ticker</th>
                           <th className="whitespace-nowrap">Sleeve</th>
                           <th className="whitespace-nowrap">Status</th>
-                          <th className="text-right whitespace-nowrap">Price</th>
+                          <th className="text-right whitespace-nowrap">Scan Price</th>
+                          <th className="text-right whitespace-nowrap">
+                            <span className="text-cyan-400">Live</span>
+                          </th>
                           <th className="text-right whitespace-nowrap">Entry</th>
                           <th className="text-right whitespace-nowrap">Stop</th>
                           <th className="text-right whitespace-nowrap">Distance</th>
@@ -445,11 +519,21 @@ export default function ScanPage() {
                         {[...readyCandidates, ...watchCandidates]
                           .sort((a, b) => a.distancePercent - b.distancePercent)
                           .map((c, i: number) => {
+                            const live = livePrices[c.ticker];
+                            // Recalculate distance from live price to entry trigger
+                            const liveDistance = live && c.entryTrigger
+                              ? ((c.entryTrigger - live.price) / live.price) * 100
+                              : null;
                             const isTriggered = c.distancePercent <= 0;
+                            // Check if live price has now triggered (crossed above entry)
+                            const liveTriggered = liveDistance !== null && liveDistance <= 0;
                             return (
                               <tr
                                 key={c.ticker}
-                                className={cn(isTriggered && 'bg-emerald-500/10 border-l-2 border-l-emerald-400')}
+                                className={cn(
+                                  isTriggered && 'bg-emerald-500/10 border-l-2 border-l-emerald-400',
+                                  !isTriggered && liveTriggered && 'bg-cyan-500/10 border-l-2 border-l-cyan-400'
+                                )}
                               >
                                 <td className="text-muted-foreground font-mono text-sm">{i + 1}</td>
                                 <td>
@@ -460,6 +544,11 @@ export default function ScanPage() {
                                     {isTriggered && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
                                         ⚡ BUY
+                                      </span>
+                                    )}
+                                    {!isTriggered && liveTriggered && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 text-[10px] font-bold border border-cyan-500/30">
+                                        ⚡ LIVE
                                       </span>
                                     )}
                                   </div>
@@ -474,11 +563,43 @@ export default function ScanPage() {
                                     <StatusBadge status={c.status} />
                                   )}
                                 </td>
-                                <td className="text-right font-mono text-sm">{c.price?.toFixed(2)}</td>
-                                <td className="text-right font-mono text-sm text-primary-400">{c.entryTrigger?.toFixed(2)}</td>
-                                <td className="text-right font-mono text-sm text-loss">{c.stopPrice?.toFixed(2)}</td>
+                                {/* Scan-time price (from last scan run) */}
+                                <td className="text-right font-mono text-sm text-muted-foreground">{formatPrice(c.price, c.priceCurrency)}</td>
+                                {/* Live price from Yahoo quote API */}
+                                <td className="text-right font-mono text-sm">
+                                  {live ? (
+                                    <div className="flex flex-col items-end">
+                                      <span className="text-cyan-400 font-semibold">{formatPrice(live.price, c.priceCurrency)}</span>
+                                      <span className={cn(
+                                        'text-[10px]',
+                                        live.changePercent >= 0 ? 'text-profit' : 'text-loss'
+                                      )}>
+                                        {live.changePercent >= 0 ? '+' : ''}{live.changePercent.toFixed(2)}%
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground/40">—</span>
+                                  )}
+                                </td>
+                                <td className="text-right font-mono text-sm text-primary-400">{formatPrice(c.entryTrigger, c.priceCurrency)}</td>
+                                <td className="text-right font-mono text-sm text-loss">{formatPrice(c.stopPrice, c.priceCurrency)}</td>
                                 <td className="text-right">
-                                  {isTriggered ? (
+                                  {/* Show live distance if available, else scan-time distance */}
+                                  {liveDistance !== null ? (
+                                    liveTriggered ? (
+                                      <span className="font-mono text-sm font-bold text-cyan-400">ABOVE</span>
+                                    ) : (
+                                      <span className={cn('font-mono text-sm', liveDistance <= 2 ? 'text-profit' : 'text-warning')}>
+                                        {liveDistance.toFixed(1)}%
+                                        {/* Show scan distance as subscript if different */}
+                                        {Math.abs(liveDistance - c.distancePercent) > 0.1 && (
+                                          <span className="text-[10px] text-muted-foreground ml-1">
+                                            ({c.distancePercent.toFixed(1)}%)
+                                          </span>
+                                        )}
+                                      </span>
+                                    )
+                                  ) : isTriggered ? (
                                     <span className="font-mono text-sm font-bold text-emerald-400">ABOVE</span>
                                   ) : (
                                     <span className={cn('font-mono text-sm', c.distancePercent <= 2 ? 'text-profit' : 'text-warning')}>
