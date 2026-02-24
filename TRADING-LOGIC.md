@@ -24,6 +24,9 @@
 16. [Equity Snapshot](#16-equity-snapshot)
 17. [Risk Profile Constants](#17-risk-profile-constants)
 18. [API Routes — Quick Reference](#18-api-routes--quick-reference)
+19. [Breakout Integrity Score (BIS)](#19-breakout-integrity-score-bis)
+20. [EV Tracker](#20-ev-tracker)
+21. [Correlation Matrix](#21-correlation-matrix)
 
 ---
 
@@ -46,7 +49,7 @@ Universe (DB)
 **Nightly loop:**
 ```
 Health Check → Live Prices → Stop Management (R-based + trailing ATR)
-  → Laggard/Dead Money Detection → Risk Modules (climax, swap, whipsaw, breadth, momentum)
+  → Laggard/Dead Money Detection → Risk Modules (climax, swap, whipsaw, breadth, momentum, correlation)
   → Equity Snapshot + Pyramid Check → Snapshot Sync → Telegram Alert → Heartbeat
 ```
 
@@ -341,17 +344,34 @@ Position size caps are **profile-aware** — see [Concentration Caps](#concentra
 
 Three scores: **BQS** (Breakout Quality Score — good), **FWS** (Fatal Weakness Score — bad), **NCS** (Net Composite Score — final verdict).
 
-### BQS Components (0–100 total)
+### BQS Components (0–100, clamped)
+
+Theoretical range is −10 to 130 before `clamp(0, 100)` is applied.
 
 | Component | Weight | Formula |
-|-----------|--------|---------|
+|-----------|--------|--------|
 | Trend Strength | 0–25 | `25 × clamp((ADX − 15) / 20)` |
 | Direction Dominance | 0–10 | `10 × clamp((+DI − −DI) / 25)` |
 | Volatility Health | 0–15 | ATR% < 1% → scale up; 1–4% → 15 (full); 4–6% → scale down; > 6% → 0 |
 | Proximity | 0–15 | `15 × clamp(1 − dist20dHigh / 3.0)` |
-| Market Tailwind | 0–15 | BULLISH+stable=15, BULLISH+unstable=9, NEUTRAL=6, BEARISH=1.5 |
+| **Dual Regime Score (DRS)** | **−10 to +20** | Replaced old Market Tailwind — see table below |
 | RS Score | 0–15 | `15 × clamp((rsPct + 5) / 20)` |
 | Volume Bonus | 0–5 | If volRatio > 1.2: `5 × clamp((volRatio − 1.2) / 0.6)` |
+| **Weekly ADX Bonus** | **−5 to +10** | Weekly ADX ≥ 30 → +10; ≥ 25 → +5; < 20 → −5; no data → 0 |
+| **Breakout Integrity (BIS)** | **0–15** | See [§19](#19-breakout-integrity-score-bis) |
+
+#### Dual Regime Score (DRS) — `calcDualRegimeScore()`
+
+Replaces the old `marketTailwind()`. Consolidates directional regime, volatility regime, and dual-benchmark alignment into one component. Stored in `bqs_tailwind` for backward compatibility.
+
+| Condition | Score |
+|-----------|-------|
+| BEARISH | −10 |
+| SIDEWAYS / NEUTRAL | 0 |
+| BULLISH + HIGH_VOL | +10 |
+| BULLISH + not dual-aligned | +10 |
+| BULLISH + dual-aligned + NORMAL_VOL | +15 |
+| BULLISH + dual-aligned + LOW_VOL | +20 |
 
 ### FWS Components (0–100 total, higher = worse)
 
@@ -441,6 +461,18 @@ If SPY price inside band → forced SIDEWAYS (confidence 0.5)
   - Either BEARISH → BEARISH
   - Otherwise → SIDEWAYS
 
+### Volatility Regime
+
+`detectVolRegime(spyAtrPercent)` — classifies SPY's 14-day ATR% into a volatility regime, separate from directional regime.
+
+| SPY ATR% | Volatility Regime |
+|----------|------------------|
+| < 1.0% | `LOW_VOL` |
+| 1.0% – 2.0% | `NORMAL_VOL` |
+| > 2.0% | `HIGH_VOL` |
+
+Fed into `calcDualRegimeScore()` (§7) as the `vol_regime` field, affecting BQS scoring.
+
 ### Buy Permission
 
 `canBuy(regime)` → returns `true` **only** for BULLISH regime.
@@ -467,6 +499,21 @@ If SPY price inside band → forced SIDEWAYS (confidence 0.5)
 2. `rMultiple < 0.5`
 3. `rMultiple > −1.0` (not in freefall)
 4. Not a HEDGE position
+
+#### Dead Money Recovery Suppression
+
+Before flagging DEAD_MONEY, checks for trend recovery. If recovering, the flag is suppressed.
+
+**All 3 indicator inputs required** (gracefully skipped if any are missing):
+- `ma20` — 20-day moving average
+- `adxToday` — current ADX
+- `adxYesterday` — previous day ADX
+
+**Exemption conditions (both must be true):**
+1. `currentPrice > ma20` — price above 20-day MA
+2. `adxToday > adxYesterday` — ADX rising (strengthening trend)
+
+If recovering → `DEAD_MONEY` flag suppressed. If indicator fields missing → exemption skipped (flag applies normally).
 
 These are **suggestions only** — not auto-sell.
 
@@ -680,7 +727,7 @@ For profitable exits (> 0.5R, NOT stop-hit):
 | 2 | Live Prices | Fetch live prices for all open positions (batch via Yahoo) |
 | 3 | Stop Management | Generate R-based stop recommendations + **auto-apply trailing ATR stops** (2×ATR below highest close) |
 | 4 | Laggard Detection | Detect TRIM_LAGGARD + DEAD_MONEY flags |
-| 5 | Risk Modules | Run: Climax, Swap, Whipsaw, Breadth Safety (sampled 30 tickers), Momentum Expansion |
+| 5 | Risk Modules | Run: Climax, Swap, Whipsaw, Breadth Safety (sampled 30 tickers), Momentum Expansion, Correlation Matrix |
 | 6 | Equity Snapshot | Record equity snapshot (min 6h between snapshots) + check pyramid add opportunities |
 | 7 | Snapshot Sync | Sync snapshot data from Yahoo (full universe) + query READY/trigger-met candidates (top 15) |
 | 8 | Telegram Alert | Send summary: alerts, positions, stop changes, candidates, module results |
@@ -905,6 +952,13 @@ Certain profiles receive looser caps via `getProfileCaps()`. Add new overrides i
 | `GET /api/scan/live-prices` | Live price updates for scan results |
 | `POST /api/modules/early-bird` | Early Bird entry scan (Module 2) |
 
+### Analytics
+
+| Route | Purpose |
+|-------|--------|
+| `GET /api/ev-stats` | Expectancy stats with optional regime/sleeve/atrBucket/cluster filters |
+| `GET /api/risk/correlation` | All cached HIGH_CORR pairs for /risk page |
+
 ### Risk & Settings
 
 | Route | Purpose |
@@ -916,3 +970,78 @@ Certain profiles receive looser caps via `getProfileCaps()`. Add new overrides i
 | `GET /api/heartbeat` | Heartbeat status |
 | `POST /api/settings/telegram-test` | Send test Telegram message |
 | `GET /api/publications` | Publication/newsletter data |
+
+---
+
+## 19. Breakout Integrity Score (BIS)
+
+**Source:** `src/lib/breakout-integrity.ts`
+
+Scores the quality of a breakout candle (0–15 points) based on three sub-components measuring conviction, participation, and closing strength.
+
+| Sub-component | 0 pts | +2 pts | +5 pts |
+|---------------|-------|--------|--------|
+| Body-to-range ratio | < 0.4 | 0.4–0.6 | > 0.6 |
+| Volume vs 10d avg | < 1.0× | 1.0–1.5× | > 1.5× |
+| Close position in range | Bottom 30% | Middle 40% (0.3–0.7) | Top 30% (≥ 0.7) |
+
+**Integration:** Pre-computed per candle, stored as `bis_score` in the snapshot, then consumed by `computeBQS()` as the `bqs_bis` component (0–15 added directly to BQS sum). Defaults to 0 when not supplied — inert for legacy data.
+
+---
+
+## 20. EV Tracker
+
+**Source:** `src/lib/ev-tracker.ts`
+
+Records outcome data for each closed trade and provides expectancy analytics sliced by multiple dimensions.
+
+### Functions
+
+| Function | Purpose |
+|----------|--------|
+| `logEVRecord()` | Called on trade close. Non-blocking (errors logged, never thrown). Records: tradeId, regime, atrBucket, cluster, sleeve, entryNCS, outcome, rMultiple, closedAt |
+| `getExpectancyStats()` | Returns `ExpectancyStats` with overall + sliced stats |
+
+### ATR Bucket Classification
+
+| ATR% at entry | Bucket |
+|---------------|--------|
+| ≤ 0 or null | UNKNOWN |
+| < 2% | LOW |
+| < 4% | MEDIUM |
+| < 7% | HIGH |
+| ≥ 7% | EXTREME |
+
+### Expectancy Formula
+
+```
+E = avgWin × winRate + avgLoss × lossRate
+```
+
+**Slices:** overall, byRegime, byAtrBucket, byCluster, bySleeve
+
+---
+
+## 21. Correlation Matrix
+
+**Source:** `src/lib/correlation-matrix.ts`
+
+Computes pairwise Pearson correlation on 90 days of daily log returns for open positions + WATCH/READY scan candidates. Flags pairs > 0.75 as `HIGH_CORR`.
+
+### Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Lookback | 90 days |
+| High correlation threshold | 0.75 |
+| Minimum overlap days | 60 |
+| Batch size | 10 concurrent fetches |
+
+### Functions
+
+| Function | Purpose |
+|----------|--------|
+| `computeCorrelationMatrix()` | Full matrix computation. Batch-fetches daily prices, computes upper triangle, persists to `correlationFlag` table (delete-all + rewrite in transaction). **Runs nightly only.** |
+| `getCorrelationFlags(ticker)` | Get HIGH_CORR pairs involving a specific ticker (used by Module 7 Heatmap Swap) |
+| `getAllCorrelationFlags()` | All cached flags sorted by correlation desc (used by /risk page) |
+| `checkCorrelationWarnings(candidate, openTickers)` | Advisory check: warns if a new candidate is highly correlated with existing positions |
