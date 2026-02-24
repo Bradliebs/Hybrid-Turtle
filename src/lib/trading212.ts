@@ -272,19 +272,40 @@ export class Trading212Client {
   /**
    * Cancel a pending order by ID.
    * Rate limit: 50 req / 1m
+   * Includes 429 retry logic (up to 2 retries with backoff).
    */
   async cancelOrder(orderId: number): Promise<void> {
     const url = `${this.baseUrl}/equity/orders/${orderId}`;
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': this.authHeader,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) {
+    const maxRetries = 2;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': this.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) return;
+
+      if (response.status === 429) {
+        if (attempt < maxRetries) {
+          const rateLimitReset = response.headers.get('x-ratelimit-reset');
+          const waitMs = rateLimitReset
+            ? Math.max(1000, (parseInt(rateLimitReset) * 1000) - Date.now() + 500)
+            : 3000;
+          const clampedWait = Math.min(waitMs, 10000);
+          console.warn(`T212 rate limited on DELETE order ${orderId}, retrying in ${clampedWait}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise((r) => setTimeout(r, clampedWait));
+          continue;
+        }
+        throw new Trading212Error(`Rate limited cancelling order ${orderId}`, 429);
+      }
+
       if (response.status === 404) {
-        throw new Trading212Error('Order not found — may have already been filled or cancelled', 404);
+        // Already cancelled/filled — not an error in batch context
+        return;
       }
       throw new Trading212Error(`Failed to cancel order: ${response.status}`, response.status);
     }
@@ -461,15 +482,15 @@ export class Trading212Client {
 
         results.push({ t212Ticker, stopPrice, action: 'PLACED', orderId: order?.id });
 
-        // Rate limit: 2s between positions (place order limit is 1 req/2s)
-        await new Promise((r) => setTimeout(r, 2000));
+        // Rate limit: 2.5s between positions (place order limit is 1 req/2s, extra buffer for safety)
+        await new Promise((r) => setTimeout(r, 2500));
       } catch (error) {
         results.push({
           t212Ticker, stopPrice, action: 'FAILED',
           error: (error as Error).message,
         });
         // Still wait even on failure to avoid burning rate limit
-        await new Promise((r) => setTimeout(r, 1000));
+        await new Promise((r) => setTimeout(r, 1500));
       }
     }
 

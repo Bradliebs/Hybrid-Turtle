@@ -164,8 +164,76 @@ export default function StopUpdateQueue({ userId, onApplied }: StopUpdateQueuePr
 
   async function applyAll() {
     const pending = recs.filter((r) => getRow(r.ticker).status === 'idle');
+
+    // Phase 1: Apply all DB stops (fast, no external rate limits)
+    const t212Candidates: ApiRecommendation[] = [];
     for (const rec of pending) {
-      await apply(rec);
+      patchRow(rec.ticker, { status: 'applying', message: null, t212Status: 'idle', t212Message: null });
+      try {
+        await apiRequest('/api/stops', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            positionId: rec.positionId,
+            newStop: rec.newStop,
+            reason: rec.reason,
+          }),
+        });
+        patchRow(rec.ticker, {
+          status: 'success',
+          message: `Stop updated to ${formatPrice(rec.newStop)}`,
+        });
+        if (wantsT212(rec.ticker)) {
+          t212Candidates.push(rec);
+        }
+      } catch (err) {
+        patchRow(rec.ticker, {
+          status: 'error',
+          message: err instanceof Error ? err.message : 'Failed to apply stop',
+        });
+      }
+    }
+
+    onApplied?.();
+
+    // Phase 2: Bulk push to T212 via single batch call (avoids per-ticker getPendingOrders rate limit)
+    if (t212Candidates.length > 0) {
+      for (const rec of t212Candidates) {
+        patchRow(rec.ticker, { t212Status: 'pushing' });
+      }
+      try {
+        const data = await apiRequest<{
+          results?: Array<{ ticker: string; action: string; t212Ticker: string }>;
+        }>('/api/stops/t212', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        // Match results back to each candidate for per-row feedback
+        for (const rec of t212Candidates) {
+          const result = data.results?.find((r) => r.ticker === rec.ticker);
+          if (result) {
+            const ok = result.action === 'PLACED' || result.action.startsWith('SKIPPED');
+            patchRow(rec.ticker, {
+              t212Status: ok ? 'success' : 'error',
+              t212Message: ok ? 'Stop placed on Trading 212' : result.action.replace('FAILED: ', ''),
+            });
+          } else {
+            // Position not in results = already in sync or skipped
+            patchRow(rec.ticker, {
+              t212Status: 'success',
+              t212Message: 'T212 bulk sync completed',
+            });
+          }
+        }
+      } catch {
+        for (const rec of t212Candidates) {
+          patchRow(rec.ticker, {
+            t212Status: 'error',
+            t212Message: 'T212 bulk push failed — update your T212 app manually',
+          });
+        }
+      }
     }
   }
 

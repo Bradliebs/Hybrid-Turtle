@@ -43,3 +43,14 @@ The settings PUT route destructured `equity` directly from `await request.json()
 ### Pattern: Grouped try-catch kills downstream modules
 The nightly API route wrapped modules 7 (Swap), 11 (Whipsaw), 10 (Breadth), and 13 (Momentum) in a single try-catch. A swap failure killed breadth and momentum checks. The cron version had each in its own try-catch.
 **Rule:** Each risk module in the nightly pipeline must have its own isolated try-catch. One module failure must never cascade to kill subsequent modules.
+
+## 2026-02-24 — T212 Rate Limit on Bulk Stop Application
+
+### Pattern: Per-ticker API calls in a loop hitting rate limits
+`StopUpdateQueue.applyAll()` called `apply()` for each ticker sequentially, and each `apply()` called `POST /api/stops/t212` which internally calls `getPendingOrders()` (1 req/5s rate limit). With 20 tickers = 20 back-to-back `getPendingOrders()` calls = guaranteed 429 errors.
+**Fix:** Split `applyAll()` into two phases: (1) apply all DB stops (fast, no external API), then (2) ONE bulk `PUT /api/stops/t212` call which uses `setStopLossBatch()` — fetches pending orders only once, then processes with proper delays.
+**Rule:** When multiple positions need T212 API interaction, always use the batch endpoint (`PUT /api/stops/t212` → `setStopLossBatch()`) instead of individual `POST` calls. The batch method fetches `getPendingOrders()` once and spaces operations with proper delays.
+
+### Pattern: cancelOrder() missing 429 retry logic
+`cancelOrder()` used raw `fetch()` without the 429 retry logic that the `request()` helper provided. During bulk operations, cancel calls would fail immediately on rate limit instead of retrying.
+**Rule:** Every T212 API method that makes HTTP calls must include 429 retry logic, not just the `request()` helper. If a method uses raw `fetch()`, it needs its own retry loop.
