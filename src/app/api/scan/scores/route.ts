@@ -88,6 +88,10 @@ function dbRowToSnapshotRow(row: Record<string, unknown>): SnapshotRow {
     super_cluster_exposure_pct: (row.superClusterExposurePct as number) || 0,
     max_cluster_pct: (row.maxClusterPct as number) || 0,
     max_super_cluster_pct: (row.maxSuperClusterPct as number) || 0,
+    weekly_adx: (row.weeklyAdx as number) || 0,
+    vol_regime: (row.volRegime as string) || 'NORMAL_VOL',
+    dual_regime_aligned: (row.dualRegimeAligned as boolean) ?? true,
+    bis_score: (row.bisScore as number) || 0,
   };
 }
 

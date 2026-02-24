@@ -19,7 +19,9 @@ import type {
   RiskProfileType,
 } from '@/types';
 import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK, ATR_STOP_MULTIPLIER } from '@/types';
-import { getTechnicalData, getMarketRegime, getQuickPrice, getFXRate, getDailyPrices } from './market-data';
+
+const FAILED_BREAKOUT_COOLDOWN_DAYS = 5;
+import { getTechnicalData, getMarketRegime, getVolRegime, getQuickPrice, getFXRate, getDailyPrices } from './market-data';
 import { calculateAdaptiveBuffer } from './modules/adaptive-atr-buffer';
 import { calculatePositionSize } from './position-sizer';
 import { validateRiskGates } from './risk-gates';
@@ -155,7 +157,11 @@ export async function runFullScan(
   const candidates: ScanCandidate[] = [];
 
   // Determine market regime from SPY vs 200 MA (live data)
-  const regime = await getMarketRegime();
+  const [regime, volRegimeResult] = await Promise.all([
+    getMarketRegime(),
+    getVolRegime(),
+  ]);
+  const volRegime = volRegimeResult.volRegime;
 
   // ── Fetch existing positions for risk gate checks (Stage 5) ──
   const existingPositions = await prisma.position.findMany({
@@ -238,7 +244,8 @@ export async function runFullScan(
           technicals.twentyDayHigh,
           technicals.atr,
           technicals.atrPercent,
-          technicals.priorTwentyDayHigh
+          technicals.priorTwentyDayHigh,
+          volRegime
         );
         let entryTrigger = adaptiveBuffer.adjustedEntryTrigger;
         let stopPrice = entryTrigger - technicals.atr * ATR_STOP_MULTIPLIER;
@@ -246,11 +253,16 @@ export async function runFullScan(
         let status = classifyCandidate(price, entryTrigger);
         let passesAllFilters = filterResults.passesAll;
 
-        const atrSpiking = technicals.atrSpiking;
+        // ATR spike detection — use median of last 14 ATR values as baseline.
+        // Spike = current ATR ≥ 1.3× median. More robust than comparing to a
+        // single 20-day-ago snapshot. Raw ATR is unchanged for stop calculations.
+        const medianSpiking = technicals.medianAtr14 > 0
+          ? technicals.atr >= technicals.medianAtr14 * 1.3
+          : technicals.atrSpiking;  // fallback if median unavailable
         const bullishDI = technicals.plusDI > technicals.minusDI;
         let atrSpikeAction: 'NONE' | 'SOFT_CAP' | 'HARD_BLOCK' = 'NONE';
 
-        if (atrSpiking) {
+        if (medianSpiking) {
           if (bullishDI) {
             atrSpikeAction = 'SOFT_CAP';
             if (status === 'READY') status = 'WATCH';
@@ -318,84 +330,104 @@ export async function runFullScan(
           passesRiskGates = riskGateResults.every((g) => g.passed);
 
           // ── Stage 6: Anti-Chase / Execution Guard ──
-          const extATR = technicals.atr > 0 ? (price - entryTrigger) / technicals.atr : 0;
-          // Volatility expansion anti-chase override (all days):
-          // If price stretches too far above trigger in ATR terms (extATR > 0.8),
-          // force WAIT_PULLBACK regardless of earlier READY/WATCH classification.
-          // This is separate from the Monday-only gap guard in scan-guards.ts.
-          if (extATR > 0.8) {
-            antiChaseResult = {
-              passed: false,
-              reason: `WAIT_PULLBACK — ext_atr ${extATR.toFixed(2)} > 0.80`,
-            };
-            status = 'WAIT_PULLBACK';
-          } else {
-            antiChaseResult = checkAntiChasingGuard(
-              price,
-              entryTrigger,
-              technicals.atr,
-              new Date().getDay()
+
+          // Failed breakout cooldown: if the ticker had a failed breakout
+          // within FAILED_BREAKOUT_COOLDOWN_DAYS, block re-entry.
+          if (technicals.failedBreakoutAt) {
+            const daysSinceFailure = Math.floor(
+              (Date.now() - technicals.failedBreakoutAt.getTime()) / (1000 * 60 * 60 * 24)
             );
-          }
-
-          if (status === 'WAIT_PULLBACK') {
-            pullbackSignal = checkPullbackContinuationEntry({
-              status,
-              hh20: technicals.twentyDayHigh,
-              ema20: technicals.ema20 ?? technicals.twentyDayHigh,
-              atr: technicals.atr,
-              close: price,
-              low: technicals.dayLow ?? price,
-            });
-
-            if (pullbackSignal.triggered) {
-              entryTrigger = pullbackSignal.entryPrice ?? price;
-              stopPrice = pullbackSignal.stopPrice ?? stopPrice;
-              distancePercent = ((entryTrigger - price) / price) * 100;
-              status = 'READY';
+            if (daysSinceFailure < FAILED_BREAKOUT_COOLDOWN_DAYS) {
               antiChaseResult = {
-                passed: true,
-                reason: `PULLBACK_CONTINUATION — ${pullbackSignal.reason}`,
+                passed: false,
+                reason: `COOLDOWN — failed breakout ${daysSinceFailure}d ago (${FAILED_BREAKOUT_COOLDOWN_DAYS}d required)`,
               };
-
-              try {
-                const sizing = calculatePositionSize({
-                  equity,
-                  riskProfile,
-                  entryPrice: entryTrigger,
-                  stopPrice,
-                  sleeve: stock.sleeve,
-                  fxToGbp,
-                  allowFractional: true, // Trading 212 supports fractional shares
-                });
-                shares = sizing.shares;
-                riskDollars = sizing.riskDollars;
-                riskPercent = sizing.riskPercent;
-                totalCost = sizing.totalCost;
-              } catch {
-                // Sizing failed — mark candidate as non-viable
-                passesAllFilters = false;
-              }
-
-              const gateValueAfterPullback = totalCost ?? 0;
-              const gateRiskAfterPullback = riskDollars ?? 0;
-              riskGateResults = validateRiskGates(
-                {
-                  sleeve: stock.sleeve,
-                  sector: stock.sector,
-                  cluster: stock.cluster,
-                  value: gateValueAfterPullback,
-                  riskDollars: gateRiskAfterPullback,
-                },
-                positionsForGates,
-                equity,
-                riskProfile
-              );
-              passesRiskGates = riskGateResults.every((g) => g.passed);
+              status = 'COOLDOWN';
+              passesAntiChase = false;
             }
           }
 
-          passesAntiChase = antiChaseResult.passed;
+          // Skip remaining anti-chase checks if already in cooldown
+          if (status !== 'COOLDOWN') {
+            const extATR = technicals.atr > 0 ? (price - entryTrigger) / technicals.atr : 0;
+            // Volatility expansion anti-chase override (all days):
+            // If price stretches too far above trigger in ATR terms (extATR > 0.8),
+            // force WAIT_PULLBACK regardless of earlier READY/WATCH classification.
+            // This is separate from the Monday-only gap guard in scan-guards.ts.
+            if (extATR > 0.8) {
+              antiChaseResult = {
+                passed: false,
+                reason: `WAIT_PULLBACK — ext_atr ${extATR.toFixed(2)} > 0.80`,
+              };
+              status = 'WAIT_PULLBACK';
+            } else {
+              antiChaseResult = checkAntiChasingGuard(
+                price,
+                entryTrigger,
+                technicals.atr,
+                new Date().getDay()
+              );
+            }
+
+            if (status === 'WAIT_PULLBACK') {
+              pullbackSignal = checkPullbackContinuationEntry({
+                status,
+                hh20: technicals.twentyDayHigh,
+                ema20: technicals.ema20 ?? technicals.twentyDayHigh,
+                atr: technicals.atr,
+                close: price,
+                low: technicals.dayLow ?? price,
+              });
+
+              if (pullbackSignal.triggered) {
+                entryTrigger = pullbackSignal.entryPrice ?? price;
+                stopPrice = pullbackSignal.stopPrice ?? stopPrice;
+                distancePercent = ((entryTrigger - price) / price) * 100;
+                status = 'READY';
+                antiChaseResult = {
+                  passed: true,
+                  reason: `PULLBACK_CONTINUATION — ${pullbackSignal.reason}`,
+                };
+
+                try {
+                  const sizing = calculatePositionSize({
+                    equity,
+                    riskProfile,
+                    entryPrice: entryTrigger,
+                    stopPrice,
+                    sleeve: stock.sleeve,
+                    fxToGbp,
+                    allowFractional: true, // Trading 212 supports fractional shares
+                  });
+                  shares = sizing.shares;
+                  riskDollars = sizing.riskDollars;
+                  riskPercent = sizing.riskPercent;
+                  totalCost = sizing.totalCost;
+                } catch {
+                  // Sizing failed — mark candidate as non-viable
+                  passesAllFilters = false;
+                }
+
+                const gateValueAfterPullback = totalCost ?? 0;
+                const gateRiskAfterPullback = riskDollars ?? 0;
+                riskGateResults = validateRiskGates(
+                  {
+                    sleeve: stock.sleeve,
+                    sector: stock.sector,
+                    cluster: stock.cluster,
+                    value: gateValueAfterPullback,
+                    riskDollars: gateRiskAfterPullback,
+                  },
+                  positionsForGates,
+                  equity,
+                  riskProfile
+                );
+                passesRiskGates = riskGateResults.every((g) => g.passed);
+              }
+            }
+          } // end if (status !== 'COOLDOWN')
+
+          passesAntiChase = antiChaseResult?.passed ?? passesAntiChase;
         }
 
         // Determine native price currency (matches what T212/Yahoo shows)
@@ -430,7 +462,7 @@ export async function runFullScan(
           totalCost,
           filterResults: {
             ...filterResults,
-            atrSpiking,
+            atrSpiking: medianSpiking,
             atrSpikeAction,
           },
         } as ScanCandidate;
@@ -452,7 +484,7 @@ export async function runFullScan(
   }
 
   // Sort: triggered first → READY → WATCH → FAR/failed, then by rank score
-  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, FAR: 2 };
+  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, COOLDOWN: 2, FAR: 3 };
   candidates.sort((a, b) => {
     // Trigger-met candidates float to the very top (price ≥ entry trigger + passes filters)
     const aTriggered = a.passesAllFilters && a.price >= a.entryTrigger ? 1 : 0;

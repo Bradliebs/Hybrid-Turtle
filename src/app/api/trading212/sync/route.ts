@@ -7,6 +7,8 @@
  * Notes: Dual-account broker sync — fetches Invest + ISA in parallel via DualT212Client.
  *        Positions are kept SEPARATE with accountType tagging. Never aggregates.
  */
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { mapT212Position, mapT212AccountSummary } from '@/lib/trading212';

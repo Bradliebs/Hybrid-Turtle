@@ -6,6 +6,8 @@
  * Last modified: 2026-02-22
  * Notes: API nightly should continue on partial failures.
  */
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { runHealthCheck } from '@/lib/health-check';

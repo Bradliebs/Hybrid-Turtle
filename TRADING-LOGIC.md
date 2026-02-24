@@ -261,10 +261,10 @@ All 6 gates must pass before a new position is allowed:
 ### Core Formula
 
 ```
-Shares = floor( (Equity × Risk%) / ((Entry − Stop) × fxToGbp) × 1000 ) / 1000
+Shares = floor( (Equity × Risk%) / ((Entry − Stop) × fxToGbp) × 100 ) / 100
 ```
 
-Rounds to 3 decimal places (fractional shares supported).
+Floors to 2 decimal places (0.01 shares) when `allowFractional: true` (Trading 212). Whole shares when `allowFractional: false` (default).
 
 ### Position Size Cap Enforcement
 
@@ -278,8 +278,8 @@ Position size caps are **profile-aware** — see [Concentration Caps](#concentra
 |---------|---------------|
 | CONSERVATIVE | 0.75% |
 | BALANCED | 0.95% |
-| SMALL_ACCOUNT | 1.50% |
-| AGGRESSIVE | 1.00% |
+| SMALL_ACCOUNT | 2.00% |
+| AGGRESSIVE | 3.00% |
 
 ### Helper Functions
 
@@ -783,8 +783,8 @@ Replaces the Python `master_snapshot` pipeline.
 |---------|-----------|---------------|---------------|
 | CONSERVATIVE | 0.75% | 8 | 7.0% |
 | BALANCED | 0.95% | 5 | 5.5% |
-| SMALL_ACCOUNT | 1.50% | 4 | 10.0% |
-| AGGRESSIVE | 1.00% | 2 | 6.0% |
+| SMALL_ACCOUNT | 2.00% | 4 | 10.0% |
+| AGGRESSIVE | 3.00% | 3 | 12.0% |
 
 ### Sleeve Caps
 
@@ -811,14 +811,14 @@ Default values (used for CONSERVATIVE and AGGRESSIVE profiles):
 
 Certain profiles receive looser caps via `getProfileCaps()`. Add new overrides in `PROFILE_CAP_OVERRIDES` in `src/types/index.ts`.
 
-| Override | SMALL_ACCOUNT | BALANCED | Others |
-|----------|---------------|----------|--------|
-| Cluster Cap | **25%** | 20% (default) | 20% (default) |
-| Sector Cap | **30%** | 25% (default) | 25% (default) |
-| Position Size Cap (CORE) | **20%** | **18%** | 16% (default) |
-| Position Size Cap (ETF) | 16% (default) | 16% (default) | 16% (default) |
-| Position Size Cap (HIGH_RISK) | 12% (default) | 12% (default) | 12% (default) |
-| Position Size Cap (HEDGE) | 20% (default) | 20% (default) | 20% (default) |
+| Override | CONSERVATIVE | BALANCED | SMALL_ACCOUNT | AGGRESSIVE |
+|----------|-------------|----------|---------------|------------|
+| Cluster Cap | 20% (default) | 20% (default) | **25%** | **35%** |
+| Sector Cap | 25% (default) | 25% (default) | **30%** | **45%** |
+| Position Size Cap (CORE) | 16% (default) | **18%** | **20%** | **40%** |
+| Position Size Cap (ETF) | 16% (default) | 16% (default) | 16% (default) | **40%** |
+| Position Size Cap (HIGH_RISK) | 12% (default) | 12% (default) | 12% (default) | **20%** |
+| Position Size Cap (HEDGE) | 20% (default) | 20% (default) | 20% (default) | 20% (default) |
 
 ### Protection Levels
 
@@ -875,11 +875,44 @@ Certain profiles receive looser caps via `getProfileCaps()`. Add new overrides i
 | `GET /api/modules` | Run all 21 modules |
 | `POST /api/nightly` | Full 9-step nightly process |
 
+### Trading 212 Integration
+
+| Route | Purpose |
+|-------|--------|
+| `GET /api/stops/t212` | List all pending T212 stop orders (both Invest & ISA) |
+| `POST /api/stops/t212` | Set/replace a stop-loss on T212 for one position |
+| `PUT /api/stops/t212` | Bulk push all DB stops to T212 (batch) |
+| `DELETE /api/stops/t212` | Remove stop-loss orders from T212 |
+| `POST /api/trading212/connect` | Connect T212 API credentials |
+| `POST /api/trading212/sync` | Sync portfolio from T212 |
+
+### Stocks & Trade Log
+
+| Route | Purpose |
+|-------|--------|
+| `GET /api/stocks` | Stock/ticker management |
+| `GET /api/trade-log` | Trade journal entries |
+| `GET /api/trade-log/summary` | Trade log summary statistics |
+| `GET /api/portfolio/summary` | Portfolio overview |
+| `POST /api/positions/hedge` | Hedge position management |
+
+### Scan Extensions
+
+| Route | Purpose |
+|-------|--------|
+| `GET /api/scan/snapshots` | Scan snapshot data |
+| `POST /api/scan/snapshots/sync` | Snapshot sync (universe refresh) |
+| `GET /api/scan/live-prices` | Live price updates for scan results |
+| `POST /api/modules/early-bird` | Early Bird entry scan (Module 2) |
+
 ### Risk & Settings
 
 | Route | Purpose |
-|-------|---------|
+|-------|--------|
 | `GET /api/risk` | Risk summary |
 | `GET /api/settings` | User settings |
+| `PUT /api/settings` | Update user settings |
 | `GET /api/health-check` | 16-point health check |
 | `GET /api/heartbeat` | Heartbeat status |
+| `POST /api/settings/telegram-test` | Send test Telegram message |
+| `GET /api/publications` | Publication/newsletter data |

@@ -8,6 +8,8 @@
  *        Uses the 30-min quote cache so repeated calls within that window are free.
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getBatchQuotes } from '@/lib/market-data';

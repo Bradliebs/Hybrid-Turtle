@@ -3,7 +3,7 @@
  * Consumed by: nightly-task.bat
  * Consumes: health-check.ts, stop-manager.ts, telegram.ts, market-data.ts, equity-snapshot.ts, snapshot-sync.ts, laggard-detector.ts, modules/*, risk-gates.ts, position-sizer.ts, prisma.ts, @/types
  * Risk-sensitive: YES
- * Last modified: 2026-02-22
+ * Last modified: 2026-02-24
  * Notes: Nightly automation should continue on partial failures.
  */
 /**
@@ -30,8 +30,8 @@ import prisma from '@/lib/prisma';
 import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
-import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
-import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
+import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert, NightlyGapRiskAlert } from '@/lib/telegram';
+import { getBatchPrices, getBatchQuotes, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { detectLaggards } from '@/lib/laggard-detector';
@@ -40,6 +40,7 @@ import { findSwapSuggestions } from '@/lib/modules/heatmap-swap';
 import { checkWhipsawBlocks } from '@/lib/modules/whipsaw-guard';
 import { calculateBreadth, checkBreadthSafety } from '@/lib/modules/breadth-safety';
 import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
+import { computeCorrelationMatrix } from '@/lib/correlation-matrix';
 import { getRiskBudget, canPyramid } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
 import type { RiskProfileType, Sleeve } from '@/types';
@@ -191,6 +192,34 @@ async function runNightlyProcess() {
     }
     console.log(`        ${stopRecs.length} R-based, ${trailingStopChanges.length} trailing ATR`);
 
+    // Step 3c: Gap Risk detection for HIGH_RISK positions (advisory only)
+    const gapRiskAlerts: NightlyGapRiskAlert[] = [];
+    try {
+      const highRiskPositions = positions.filter((p) => p.stock.sleeve === 'HIGH_RISK');
+      if (highRiskPositions.length > 0) {
+        const hrTickers = highRiskPositions.map((p) => p.stock.ticker);
+        // getBatchQuotes hits cache populated by step 2's getBatchPrices
+        const quotes = await getBatchQuotes(hrTickers);
+        for (const pos of highRiskPositions) {
+          const quote = quotes.get(pos.stock.ticker);
+          const atr = atrMap.get(pos.stock.ticker);
+          if (!quote || !atr || quote.previousClose <= 0) continue;
+          const gapPercent = ((quote.open - quote.previousClose) / quote.previousClose) * 100;
+          const atrPercent = (atr / quote.previousClose) * 100;
+          const threshold = atrPercent * 2;
+          // Flag if absolute gap exceeds 2× ATR%
+          if (Math.abs(gapPercent) > threshold) {
+            const isUK = pos.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(pos.stock.ticker);
+            const currency = isUK ? 'GBX' : (pos.stock.currency || 'USD').toUpperCase();
+            gapRiskAlerts.push({ ticker: pos.stock.ticker, gapPercent, atrPercent, threshold, currency });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('  [3c] Gap risk detection failed:', (error as Error).message);
+    }
+    console.log(`        Gap risk: ${gapRiskAlerts.length} flagged`);
+
     // Step 4: Detect laggards + collect alerts
     console.log('  [4/9] Detecting laggards...');
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -201,6 +230,7 @@ async function runNightlyProcess() {
     if (healthReport.overall === 'YELLOW') alerts.push('Health check has warnings');
     if (stopChanges.length > 0) alerts.push(`${stopChanges.length} R-based stop-loss updates auto-applied`);
     if (trailingStopChanges.length > 0) alerts.push(`${trailingStopChanges.length} trailing ATR stops auto-applied`);
+    if (gapRiskAlerts.length > 0) alerts.push(`${gapRiskAlerts.length} HIGH_RISK position(s) with overnight gap > 2× ATR%`);
 
     let laggardAlerts: NightlyLaggardAlert[] = [];
     try {
@@ -416,7 +446,23 @@ async function runNightlyProcess() {
       hadFailure = true;
       console.warn('  [5] Momentum expansion failed:', (error as Error).message);
     }
-    console.log(`        Climax: ${climaxAlerts.length}, Swap: ${swapAlerts.length}, Whipsaw: ${whipsawAlerts.length}`);
+
+    // Correlation matrix (isolated — advisory only, no hard blocks)
+    let correlationPairCount = 0;
+    try {
+      const corrResult = await computeCorrelationMatrix();
+      correlationPairCount = corrResult.pairs.length;
+      if (corrResult.pairs.length > 0) {
+        alerts.push(`${corrResult.pairs.length} HIGH_CORR pair(s) detected (r > 0.75)`);
+      }
+      if (corrResult.tickersFailed.length > 0) {
+        console.warn(`        Correlation: ${corrResult.tickersFailed.length} tickers failed data fetch`);
+      }
+    } catch (error) {
+      // Non-critical — log and continue
+      console.warn('  [5] Correlation matrix failed:', (error as Error).message);
+    }
+    console.log(`        Climax: ${climaxAlerts.length}, Swap: ${swapAlerts.length}, Whipsaw: ${whipsawAlerts.length}, Corr pairs: ${correlationPairCount}`);
 
     // Step 6: Record equity snapshot + check pyramids
     console.log('  [6/9] Recording equity snapshot...');
@@ -630,6 +676,7 @@ async function runNightlyProcess() {
       whipsawAlerts,
       breadthAlert,
       momentumAlert,
+      gapRiskAlerts,
     });
     } catch (error) {
       hadFailure = true;

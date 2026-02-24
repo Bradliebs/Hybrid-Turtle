@@ -85,6 +85,7 @@ export default function ScoringGuide() {
               <Row label="Tailwind" max="15" desc="Market regime. Bullish+stable = 15, Neutral = 6, Bearish = 1.5." />
               <Row label="RS Score" max="15" desc="Relative strength vs benchmark. Outperformers score higher." />
               <Row label="Vol Bonus" max="5" desc="Extra credit if volume ratio &gt; 1.2× average (breakout confirmation)." />
+              <Row label="Weekly ADX" max="±10" desc="Higher-timeframe trend confirmation. ≥30 = +10, ≥25 = +5, &lt;20 = −5. No data = neutral." />
             </div>
             <div className="mt-2 text-[11px] bg-navy-800/60 rounded p-2">
               <span className="text-emerald-400 font-semibold">Green ≥ 60</span> = solid setup&ensp;•&ensp;

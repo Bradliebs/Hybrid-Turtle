@@ -34,6 +34,7 @@ interface Position {
   entryTrigger?: number;
   alerts?: number;
   pyramidAdds?: number;
+  gapRisk?: { gapPercent: number; atrPercent: number; threshold: number } | null;
 }
 
 interface PositionsTableProps {
@@ -286,6 +287,11 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                 </td>
                 <td className="text-right">
                   <StatusBadge status={pos.protectionLevel} />
+                  {pos.gapRisk && (
+                    <div className="mt-1" title={`Gap: ${pos.gapRisk.gapPercent >= 0 ? '+' : ''}${pos.gapRisk.gapPercent.toFixed(2)}% (threshold: ±${pos.gapRisk.threshold.toFixed(2)}%)`}>
+                      <StatusBadge status="GAP_RISK" />
+                    </div>
+                  )}
                 </td>
                 <td className="text-right font-mono text-sm">{pos.shares}</td>
                 <td className="text-right">

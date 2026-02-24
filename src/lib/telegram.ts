@@ -221,6 +221,17 @@ export interface NightlyPyramidAlert {
 }
 
 /**
+ * Gap risk alert for HIGH_RISK positions with overnight gap > 2× ATR%
+ */
+export interface NightlyGapRiskAlert {
+  ticker: string;
+  gapPercent: number;   // (todayOpen - prevClose) / prevClose × 100
+  atrPercent: number;   // 14-day ATR%
+  threshold: number;    // 2× ATR% threshold that was exceeded
+  currency: string;
+}
+
+/**
  * Send nightly summary via Telegram
  */
 export async function sendNightlySummary(summary: {
@@ -250,6 +261,7 @@ export async function sendNightlySummary(summary: {
   whipsawAlerts?: NightlyWhipsawAlert[];
   breadthAlert?: NightlyBreadthAlert;
   momentumAlert?: NightlyMomentumAlert;
+  gapRiskAlerts?: NightlyGapRiskAlert[];
 }): Promise<boolean> {
   const healthEmoji = summary.healthStatus === 'GREEN' ? '🟢'
     : summary.healthStatus === 'YELLOW' ? '🟡' : '🔴';
@@ -345,6 +357,14 @@ export async function sendNightlySummary(summary: {
     : '';
 
   // ── Laggard / Dead Money lines ──
+  // ── Gap Risk lines (advisory) ──
+  const gapRiskList = summary.gapRiskAlerts || [];
+  const gapRiskLines = gapRiskList.length > 0
+    ? gapRiskList.map((g) => {
+        return `  ⚡ <b>${escapeHtml(g.ticker)}</b>  Gap: ${g.gapPercent >= 0 ? '+' : ''}${g.gapPercent.toFixed(2)}%  (threshold: ±${g.threshold.toFixed(2)}%  ATR%: ${g.atrPercent.toFixed(2)}%)`;
+      }).join('\n')
+    : '';
+
   const laggardList = summary.laggards || [];
   const laggardLines = laggardList.length > 0
     ? laggardList.map((l) => {
@@ -397,6 +417,9 @@ ${whipsawLines}
 
 ` : ''}${laggardList.length > 0 ? `<b>━━━ Laggards / Dead Money (${laggardList.length}) ━━━</b>
 ${laggardLines}
+
+` : ''}${gapRiskList.length > 0 ? `<b>━━━ ⚡ Gap Risk (${gapRiskList.length}) ━━━</b>
+${gapRiskLines}
 
 ` : ''}<b>━━━ Market Conditions ━━━</b>
 ${breadthLine ? breadthLine + '\n' : ''}${momentumLine ? momentumLine + '\n' : ''}

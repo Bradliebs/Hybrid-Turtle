@@ -18,8 +18,11 @@
 import 'server-only';
 import YahooFinance from 'yahoo-finance2';
 import { z } from 'zod';
-import type { StockQuote, TechnicalData, MarketIndex, FearGreedData } from '@/types';
+import type { StockQuote, TechnicalData, MarketIndex, FearGreedData, VolRegime } from '@/types';
+import { detectVolRegime } from './regime-detector';
+import type { DetectVolRegimeResult } from './regime-detector';
 import * as eodhd from './market-data-eodhd';
+import { calcBIS } from './breakout-integrity';
 
 // ── Zod schemas for Yahoo Finance runtime validation ──
 const YahooQuoteSchema = z.object({
@@ -108,6 +111,7 @@ interface CacheEntry<T> {
 
 const quoteCache = new Map<string, CacheEntry<StockQuote>>();
 const historicalCache = new Map<string, CacheEntry<DailyBar[]>>();
+const weeklyCache = new Map<string, CacheEntry<DailyBar[]>>();
 const QUOTE_TTL = 30 * 60_000;     // 30 minutes — prices fetched once per session, manual refresh available
 const HISTORICAL_TTL = 86_400_000; // 24 hours (daily bars don't change intraday)
 const FX_TTL = 30 * 60_000;        // 30 minutes — FX rates move slowly
@@ -315,6 +319,65 @@ export async function getDailyPrices(
   }
 }
 
+// ────────────────────────────────────────────────────
+// Weekly OHLCV — for weekly ADX calculation
+// ────────────────────────────────────────────────────
+export async function getWeeklyPrices(
+  ticker: string
+): Promise<DailyBar[]> {
+  // EODHD not supported for weekly — fall back gracefully
+  if (isEodhd()) return [];
+
+  const cacheKey = `weekly:${ticker}`;
+  const cached = weeklyCache.get(cacheKey);
+  if (cached && cached.expiry > Date.now()) return cached.data;
+
+  try {
+    // 1 year of weekly candles — need 28+ weeks for ADX calculation
+    const period1 = new Date();
+    period1.setDate(period1.getDate() - 370); // ~53 weeks
+
+    const period2 = new Date();
+    period2.setDate(period2.getDate() + 1);
+
+    const yahooTicker = toYahooTicker(ticker);
+    const { quotes } = await enqueueChartCall(() =>
+      yf.chart(yahooTicker, {
+        period1: period1.toISOString().split('T')[0],
+        period2: period2.toISOString().split('T')[0],
+        interval: '1wk',
+      })
+    );
+
+    if (!quotes || quotes.length === 0) return [];
+
+    const chartParsed = YahooChartResponseSchema.safeParse({ quotes });
+    if (!chartParsed.success) {
+      console.warn(`[YF] Weekly chart validation failed for ${ticker}:`, chartParsed.error.issues.map(i => i.message).join(', '));
+      return [];
+    }
+    const validBars = chartParsed.data.quotes;
+
+    // Sort newest first (consistent with daily bars)
+    const bars: DailyBar[] = validBars
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map((bar) => ({
+        date: new Date(bar.date).toISOString().split('T')[0],
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        close: bar.adjclose ?? bar.close,
+        volume: bar.volume,
+      }));
+
+    weeklyCache.set(cacheKey, { data: bars, expiry: Date.now() + HISTORICAL_TTL });
+    return bars;
+  } catch (error) {
+    console.error(`[YF] Weekly historical failed for ${ticker}:`, (error as Error).message);
+    return [];
+  }
+}
+
 // ---- Technical Indicators ----
 export function calculateMA(prices: number[], period: number): number {
   if (prices.length < period) return 0;
@@ -448,7 +511,11 @@ export function getPriorNDayHigh(data: { high: number }[], n: number): number {
 
 // ---- Full Technical Data ----
 export async function getTechnicalData(ticker: string): Promise<TechnicalData | null> {
-  const dailyData = await getDailyPrices(ticker, 'full');
+  // Batch daily + weekly fetch together — single await per ticker
+  const [dailyData, weeklyData] = await Promise.all([
+    getDailyPrices(ticker, 'full'),
+    getWeeklyPrices(ticker),
+  ]);
   if (dailyData.length < 200) {
     console.warn(`[YF] Insufficient data for ${ticker}: ${dailyData.length} bars (need 200+)`);
     return null;
@@ -462,11 +529,45 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
     ? calculateATR(dailyData.slice(20), 14)
     : 0;
   const atrSpiking = atr20DayAgo > 0 ? atr >= atr20DayAgo * 1.3 : false;
+
+  // Median of last 14 daily ATR values — more robust spike baseline than
+  // a single point-in-time comparison. Each ATR is a 14-period ATR computed
+  // from a 1-day-shifted window.
+  let medianAtr14 = 0;
+  if (dailyData.length >= 28) {
+    const atrSeries: number[] = [];
+    for (let offset = 0; offset < 14; offset++) {
+      atrSeries.push(calculateATR(dailyData.slice(offset), 14));
+    }
+    const sorted = [...atrSeries].sort((a, b) => a - b);
+    medianAtr14 = (sorted[6] + sorted[7]) / 2;
+  }
+
   const atrPercent = closes[0] > 0 ? (atr / closes[0]) * 100 : 0;
   const { adx, plusDI, minusDI } = calculateADX(dailyData, 14);
   const efficiency = calculateTrendEfficiency(closes, 20);
   const twentyDayHigh = calculate20DayHigh(dailyData);
   const priorTwentyDayHigh = getPriorNDayHigh(dailyData, 20);
+
+  // Failed breakout detection: did price cross above the 20d high and then
+  // close back below within 3 candles? If so, record when. dailyData is
+  // newest-first, so we check days 3..7 as potential breakout candles and
+  // look at subsequent bars (lower indices) for the failure close.
+  let failedBreakoutAt: Date | null = null;
+  if (dailyData.length >= 8) {
+    for (let i = 7; i >= 3; i--) {
+      if (dailyData[i].high >= twentyDayHigh) {
+        // Breakout candle found — check next 3 candles for failure
+        for (let j = i - 1; j >= Math.max(i - 3, 0); j--) {
+          if (dailyData[j].close < twentyDayHigh) {
+            failedBreakoutAt = new Date(dailyData[j].date);
+            break;
+          }
+        }
+        if (failedBreakoutAt) break;
+      }
+    }
+  }
 
   // Relative strength vs SPY
   let relativeStrength = 50;
@@ -488,6 +589,23 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
     ? dailyData[0].volume / (dailyData.slice(1, 21).reduce((s, d) => s + d.volume, 0) / 20)
     : 1;
 
+  // Weekly ADX — requires 28+ weeks of weekly data (same min as daily ADX needs 28 candles)
+  let weeklyAdx: number | undefined;
+  if (weeklyData.length >= 29) { // 2*14+1 minimum for calculateADX
+    const weeklyResult = calculateADX(weeklyData, 14);
+    weeklyAdx = weeklyResult.adx;
+  }
+
+  // BIS — Breakout Integrity Score from latest candle vs 10-day avg volume
+  const latestBar = dailyData[0];
+  const avgVol10 = dailyData.length > 10
+    ? dailyData.slice(1, 11).reduce((s, d) => s + d.volume, 0) / 10
+    : 0;
+  const bis = calcBIS(
+    { open: latestBar.open, high: latestBar.high, low: latestBar.low, close: latestBar.close, volume: latestBar.volume },
+    avgVol10
+  );
+
   return {
     currentPrice: closes[0],
     ma200,
@@ -499,12 +617,16 @@ export async function getTechnicalData(ticker: string): Promise<TechnicalData | 
     dayLow: dailyData[0]?.low ?? closes[0],
     atr20DayAgo,
     atrSpiking,
+    medianAtr14,
     atrPercent,
     twentyDayHigh,
     priorTwentyDayHigh,
     efficiency,
     relativeStrength,
     volumeRatio,
+    failedBreakoutAt,
+    weeklyAdx,
+    bis,
   };
 }
 
@@ -853,6 +975,25 @@ export async function getMarketRegime(): Promise<'BULLISH' | 'SIDEWAYS' | 'BEARI
 export async function getQuickPrice(ticker: string): Promise<number | null> {
   const quote = await getStockQuote(ticker);
   return quote?.price || null;
+}
+
+/**
+ * Compute SPY volatility regime from 14-day ATR%.
+ * Uses cached SPY daily data — no additional Yahoo call if getMarketRegime ran first.
+ */
+export async function getVolRegime(): Promise<DetectVolRegimeResult> {
+  try {
+    const spyData = await getDailyPrices('SPY', 'compact');
+    if (spyData.length < 15) {
+      // Insufficient data — default to NORMAL_VOL
+      return { volRegime: 'NORMAL_VOL', spyAtrPercent: 0, reason: 'Insufficient SPY data for ATR — defaulting NORMAL_VOL' };
+    }
+    const atr = calculateATR(spyData, 14);
+    const spyAtrPercent = spyData[0].close > 0 ? (atr / spyData[0].close) * 100 : 0;
+    return detectVolRegime(spyAtrPercent);
+  } catch {
+    return { volRegime: 'NORMAL_VOL', spyAtrPercent: 0, reason: 'SPY fetch failed — defaulting NORMAL_VOL' };
+  }
 }
 
 // ── Batch prices — just numbers ──

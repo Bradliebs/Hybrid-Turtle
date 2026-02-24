@@ -322,15 +322,21 @@ model SnapshotTicker {
   adx14                     Float     @default(0)
   plusDi                     Float     @default(0)
   minusDi                    Float     @default(0)
+  weeklyAdx                  Float     @default(0)  // ADX on weekly candles
 
   // ── Volume ──
   volRatio                   Float     @default(1)
   dollarVol20                Float     @default(0)
   liquidityOk                Boolean   @default(true)
 
+  // ── Breakout Integrity Score ──
+  bisScore                   Float     @default(0)  // 0–15, from latest candle OHLCV
+
   // ── Market regime ──
   marketRegime               String    @default("NEUTRAL")
   marketRegimeStable         Boolean   @default(true)
+  volRegime                  String?   @default("NORMAL_VOL")   // LOW_VOL | NORMAL_VOL | HIGH_VOL
+  dualRegimeAligned          Boolean   @default(true)           // both SPY + VWRL above MA200
 
   // ── Breakout levels ──
   high20                     Float     @default(0)
@@ -378,4 +384,47 @@ model Snapshot {
   rowCount  Int               @default(0)
   createdAt DateTime          @default(now())
   tickers   SnapshotTicker[]
+}
+
+// ── EV Tracker — Expected Value Records ─────────────────────────────
+// Logs outcome data per closed trade for expectancy analysis.
+// Sliced by regime, ATR bucket, cluster, and sleeve to reveal
+// which setups actually produce +EV over time.
+// This is logging only — no actions or alerts.
+
+model EvRecord {
+  id         String   @id @default(cuid())
+  tradeId    String                         // TradeLog id that generated this record
+  regime     String                         // BULLISH | SIDEWAYS | BEARISH at entry
+  atrBucket  String                         // LOW | MEDIUM | HIGH | EXTREME
+  cluster    String?                        // Cluster name from Stock (nullable — some tickers lack cluster)
+  sleeve     String                         // CORE | HIGH_RISK | ETF | HEDGE
+  entryNCS   Float?                         // Net Composite Score at entry (nullable — pre-NCS trades)
+  outcome    String                         // WIN | LOSS | BREAKEVEN
+  rMultiple  Float                          // Final R-multiple at exit
+  closedAt   DateTime                       // When the trade was closed
+
+  @@index([regime])
+  @@index([sleeve])
+  @@index([atrBucket])
+  @@index([closedAt])
+}
+
+// ── Correlation Matrix — Pairwise Flags ─────────────────────────────
+// Nightly-computed Pearson correlation on 90 days of daily returns.
+// Pairs with correlation > 0.75 are flagged HIGH_CORR.
+// Used by Module 7 (heatmap-swap) for warnings and the /risk page widget.
+
+model CorrelationFlag {
+  id            String   @id @default(cuid())
+  tickerA       String                         // Alphabetically first ticker
+  tickerB       String                         // Alphabetically second ticker
+  correlation   Float                          // Pearson r (−1 to +1)
+  flag          String                         // HIGH_CORR
+  computedAt    DateTime @default(now())       // When this batch was computed
+
+  @@unique([tickerA, tickerB])                 // One row per pair
+  @@index([tickerA])
+  @@index([tickerB])
+  @@index([computedAt])
 }

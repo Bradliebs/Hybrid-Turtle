@@ -133,6 +133,63 @@ describe('dead money detection', () => {
     const deadMoney = results.filter(r => r.flag === 'DEAD_MONEY');
     expect(deadMoney).toHaveLength(0);
   });
+
+  it('suppresses dead money flag when showing trend recovery (price > MA20 AND ADX rising)', () => {
+    // Meets dead money criteria (35d, 0.3R) but price > MA20 and ADX is rising
+    const results = detectLaggards([
+      makePosition({
+        entryDate: daysAgo(35),
+        currentPrice: 101.5, // R = 0.3, stalled — but recovering
+        ma20: 100,           // price 101.5 > MA20 100
+        adxToday: 25,        // ADX rising
+        adxYesterday: 22,
+      }),
+    ]);
+    const deadMoney = results.filter(r => r.flag === 'DEAD_MONEY');
+    expect(deadMoney).toHaveLength(0);
+  });
+
+  it('still flags dead money when price > MA20 but ADX is falling', () => {
+    // Price above MA20 but ADX declining — trend not strengthening
+    const results = detectLaggards([
+      makePosition({
+        entryDate: daysAgo(35),
+        currentPrice: 101.5,
+        ma20: 100,
+        adxToday: 20,        // ADX falling
+        adxYesterday: 25,
+      }),
+    ]);
+    const deadMoney = results.filter(r => r.flag === 'DEAD_MONEY');
+    expect(deadMoney).toHaveLength(1);
+  });
+
+  it('still flags dead money when ADX is rising but price below MA20', () => {
+    // ADX rising but price still below MA20 — not a real recovery
+    const results = detectLaggards([
+      makePosition({
+        entryDate: daysAgo(35),
+        currentPrice: 101.5,
+        ma20: 105,           // price 101.5 < MA20 105
+        adxToday: 25,
+        adxYesterday: 22,
+      }),
+    ]);
+    const deadMoney = results.filter(r => r.flag === 'DEAD_MONEY');
+    expect(deadMoney).toHaveLength(1);
+  });
+
+  it('still flags dead money when indicator fields are missing (backwards-compatible)', () => {
+    // No ma20/adxToday/adxYesterday — exemption does not activate
+    const results = detectLaggards([
+      makePosition({
+        entryDate: daysAgo(35),
+        currentPrice: 101.5,
+      }),
+    ]);
+    const deadMoney = results.filter(r => r.flag === 'DEAD_MONEY');
+    expect(deadMoney).toHaveLength(1);
+  });
 });
 
 // ── Multiple positions ──────────────────────────────────────

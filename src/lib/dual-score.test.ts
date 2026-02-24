@@ -10,6 +10,7 @@ import {
   actionNote,
   scoreRow,
   normaliseRow,
+  calcDualRegimeScore,
   type SnapshotRow,
 } from './dual-score';
 
@@ -123,10 +124,13 @@ describe('computeBQS', () => {
     expect(close.bqs_proximity).toBeGreaterThan(far.bqs_proximity);
   });
 
-  it('tailwind highest in stable BULLISH regime', () => {
-    const bullish = computeBQS(makeRow({ market_regime: 'BULLISH', market_regime_stable: true }));
-    const bearish = computeBQS(makeRow({ market_regime: 'BEARISH', market_regime_stable: true }));
-    expect(bullish.bqs_tailwind).toBeGreaterThan(bearish.bqs_tailwind);
+  it('tailwind highest in BULLISH + LOW_VOL + aligned regime', () => {
+    const best = computeBQS(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'LOW_VOL', dual_regime_aligned: true,
+    }));
+    const bearish = computeBQS(makeRow({ market_regime: 'BEARISH' }));
+    expect(best.bqs_tailwind).toBe(20);
+    expect(best.bqs_tailwind).toBeGreaterThan(bearish.bqs_tailwind);
   });
 
   it('volume bonus triggers above 1.2x ratio', () => {
@@ -142,6 +146,17 @@ describe('computeBQS', () => {
     const tooLow = computeBQS(makeRow({ atr_pct: 0.3 }));
     expect(optimal.bqs_volatility).toBeGreaterThan(tooHigh.bqs_volatility);
     expect(optimal.bqs_volatility).toBeGreaterThan(tooLow.bqs_volatility);
+  });
+
+  it('weekly ADX bonus: +10 when >= 30, +5 when >= 25, -5 when < 20', () => {
+    const strong = computeBQS(makeRow({ weekly_adx: 35 }));
+    const moderate = computeBQS(makeRow({ weekly_adx: 27 }));
+    const weak = computeBQS(makeRow({ weekly_adx: 15 }));
+    const noData = computeBQS(makeRow({ weekly_adx: 0 }));
+    expect(strong.bqs_weekly_adx).toBe(10);
+    expect(moderate.bqs_weekly_adx).toBe(5);
+    expect(weak.bqs_weekly_adx).toBe(-5);
+    expect(noData.bqs_weekly_adx).toBe(0);
   });
 });
 
@@ -354,5 +369,68 @@ describe('normaliseRow', () => {
   it('uses ticker as name fallback', () => {
     const row = normaliseRow({ ticker: 'AAPL', name: '' });
     expect(row.name).toBe('AAPL');
+  });
+});
+
+// ── calcDualRegimeScore tests ────────────────────────────────
+
+describe('calcDualRegimeScore', () => {
+  it('BULLISH + LOW_VOL + aligned = 20 (best environment)', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'LOW_VOL', dual_regime_aligned: true,
+    }))).toBe(20);
+  });
+
+  it('BULLISH + NORMAL_VOL + aligned = 15', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'NORMAL_VOL', dual_regime_aligned: true,
+    }))).toBe(15);
+  });
+
+  it('BULLISH + HIGH_VOL = 10 regardless of alignment', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'HIGH_VOL', dual_regime_aligned: true,
+    }))).toBe(10);
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'HIGH_VOL', dual_regime_aligned: false,
+    }))).toBe(10);
+  });
+
+  it('BULLISH + LOW_VOL + NOT aligned = 10', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'LOW_VOL', dual_regime_aligned: false,
+    }))).toBe(10);
+  });
+
+  it('BULLISH + NORMAL_VOL + NOT aligned = 10', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH', vol_regime: 'NORMAL_VOL', dual_regime_aligned: false,
+    }))).toBe(10);
+  });
+
+  it('SIDEWAYS = 0 regardless of other factors', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'SIDEWAYS', vol_regime: 'LOW_VOL', dual_regime_aligned: true,
+    }))).toBe(0);
+  });
+
+  it('NEUTRAL = 0 (treated same as SIDEWAYS)', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'NEUTRAL',
+    }))).toBe(0);
+  });
+
+  it('BEARISH = -10 regardless of other factors', () => {
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BEARISH', vol_regime: 'LOW_VOL', dual_regime_aligned: true,
+    }))).toBe(-10);
+  });
+
+  it('defaults gracefully when vol_regime/dual_regime_aligned missing', () => {
+    // No vol_regime → defaults NORMAL_VOL, no dual_regime_aligned → defaults true
+    // BULLISH + NORMAL_VOL + aligned = 15
+    expect(calcDualRegimeScore(makeRow({
+      market_regime: 'BULLISH',
+    }))).toBe(15);
   });
 });

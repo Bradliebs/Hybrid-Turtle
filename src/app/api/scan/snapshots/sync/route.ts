@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { apiError } from '@/lib/api-response';

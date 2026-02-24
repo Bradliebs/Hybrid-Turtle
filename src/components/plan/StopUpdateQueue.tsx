@@ -63,6 +63,8 @@ interface StopUpdateQueueProps {
   userId: string;
   /** Called after any stop is successfully written so the parent can re-fetch positions */
   onApplied?: () => void;
+  /** Increment to force re-fetch (e.g. after T212 sync bumps a DB stop) */
+  refreshTrigger?: number;
 }
 
 interface RowState {
@@ -74,7 +76,7 @@ interface RowState {
 
 const IDLE_ROW: RowState = { status: 'idle', message: null, t212Status: 'idle', t212Message: null };
 
-export default function StopUpdateQueue({ userId, onApplied }: StopUpdateQueueProps) {
+export default function StopUpdateQueue({ userId, onApplied, refreshTrigger = 0 }: StopUpdateQueueProps) {
   const [recs, setRecs] = useState<ApiRecommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export default function StopUpdateQueue({ userId, onApplied }: StopUpdateQueuePr
     }
   }, [userId]);
 
-  useEffect(() => { fetchRecs(); }, [fetchRecs]);
+  useEffect(() => { fetchRecs(); }, [fetchRecs, refreshTrigger]);
 
   function getRow(ticker: string): RowState {
     return rowStates[ticker] ?? IDLE_ROW;

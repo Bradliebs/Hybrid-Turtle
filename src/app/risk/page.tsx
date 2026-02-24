@@ -7,6 +7,7 @@ import StopLossPanel from '@/components/risk/StopLossPanel';
 import TrailingStopPanel from '@/components/risk/TrailingStopPanel';
 import ProtectionProgress from '@/components/risk/ProtectionProgress';
 import RiskBudgetMeter from '@/components/risk/RiskBudgetMeter';
+import CorrelationPanel from '@/components/risk/CorrelationPanel';
 import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
 import { Shield, Lock, Loader2 } from 'lucide-react';
@@ -140,6 +141,7 @@ export default function RiskPage() {
             <div className="space-y-6">
               <TrailingStopPanel />
               <ProtectionProgress positions={riskSummary?.positions} />
+              <CorrelationPanel />
             </div>
           </div>
         )}

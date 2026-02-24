@@ -141,7 +141,8 @@ export type PositionStatus = 'OPEN' | 'CLOSED';
 /** Historical naming: LOCK_08R originally used a +0.8R formula. Actual formula is entry + 0.5 × initialRisk. Name kept for DB compatibility. */
 export type ProtectionLevel = 'INITIAL' | 'BREAKEVEN' | 'LOCK_08R' | 'LOCK_1R_TRAIL';
 export type MarketRegime = 'BULLISH' | 'SIDEWAYS' | 'BEARISH';
-export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'FAR';
+export type VolRegime = 'LOW_VOL' | 'NORMAL_VOL' | 'HIGH_VOL';
+export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'COOLDOWN' | 'FAR';
 export type WeeklyPhase = 'PLANNING' | 'OBSERVATION' | 'EXECUTION' | 'MAINTENANCE';
 export type HealthStatus = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -291,12 +292,16 @@ export interface TechnicalData {
   dayLow?: number;
   atr20DayAgo: number;
   atrSpiking: boolean;
+  medianAtr14: number;     // Median of last 14 daily ATR values — used for spike detection
   atrPercent: number;
   twentyDayHigh: number;
   priorTwentyDayHigh?: number;
   efficiency: number;
   relativeStrength: number;
   volumeRatio: number;
+  failedBreakoutAt: Date | null;  // Timestamp of most recent failed breakout (high crossed trigger, close fell back within 3 candles)
+  weeklyAdx?: number;             // ADX computed on weekly candles (undefined if < 28 weeks of data)
+  bis?: number;                   // Breakout Integrity Score (0–15) from latest candle OHLCV
 }
 
 // ---- Scan Candidate ----
@@ -648,6 +653,7 @@ export interface AdaptiveBufferResult {
   atrPercent: number;
   bufferPercent: number; // 5-20% scaled
   adjustedEntryTrigger: number;
+  volRegimeMultiplier: number; // 0.8 / 1.0 / 1.3 based on SPY vol regime
 }
 
 // Combined Module Dashboard Status

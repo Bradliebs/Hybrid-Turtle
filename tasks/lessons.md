@@ -54,3 +54,14 @@ The nightly API route wrapped modules 7 (Swap), 11 (Whipsaw), 10 (Breadth), and 
 ### Pattern: cancelOrder() missing 429 retry logic
 `cancelOrder()` used raw `fetch()` without the 429 retry logic that the `request()` helper provided. During bulk operations, cancel calls would fail immediately on rate limit instead of retrying.
 **Rule:** Every T212 API method that makes HTTP calls must include 429 retry logic, not just the `request()` helper. If a method uses raw `fetch()`, it needs its own retry loop.
+
+## 2026-02-24 — Stale Stop-Loss Recommendations (O at £64.24 vs £64.39)
+
+### Pattern: Missing `force-dynamic` on API routes serving live DB data
+16 API routes (including all 3 stops routes, positions, settings, scan) were missing `export const dynamic = 'force-dynamic'`. Next.js App Router can cache GET responses, serving stale stop values even after the DB was updated. 11 other routes that happened to be added later already had it. This was an inconsistency, not intentional.
+**Rule:** Every API route file that reads from the DB MUST have `export const dynamic = 'force-dynamic'` at the top. After creating any new route, check for this directive BEFORE committing.
+
+### Pattern: Sibling components on same page not refreshing after DB mutations
+StopUpdateQueue and PositionsTable are both on `/portfolio/positions`. When the stop modal opens, it calls `GET /api/stops/t212` which syncs the DB stop UP (64.24→64.39). But StopUpdateQueue only fetches on mount — it didn't know the DB changed. Result: stale "Current Stop" in the recommendation card.
+**Fix:** Added `refreshTrigger` prop to StopUpdateQueue. The parent page increments it after `handleUpdateStop()` or `handleSyncComplete()`, causing StopUpdateQueue to re-fetch fresh recommendations.
+**Rule:** When two components on the same page both depend on the same DB state, add a refresh coordination mechanism. If one component triggers a DB mutation, all sibling consumers must be notified to re-fetch.

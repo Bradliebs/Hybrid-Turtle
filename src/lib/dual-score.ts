@@ -3,8 +3,10 @@
  * Consumed by: /api/scan/scores/route.ts, /api/scan/cross-ref/route.ts
  * Consumes: (standalone — no internal imports)
  * Risk-sensitive: NO
- * Last modified: 2026-02-19
+ * Last modified: 2026-02-24
  * Notes: Weights are intentional. Do not rebalance without explicit instruction.
+ *        calcDualRegimeScore() replaces marketTailwind() — consolidates directional
+ *        regime, volRegime, and SPY/VWRL alignment into a single 0-20 BQS component.
  */
 // ============================================================
 // Dual Score Engine — TypeScript port of scoring.py
@@ -72,6 +74,10 @@ export interface SnapshotRow {
   super_cluster_exposure_pct?: number;
   max_cluster_pct?: number;
   max_super_cluster_pct?: number;
+  weekly_adx?: number;
+  vol_regime?: string;              // LOW_VOL / NORMAL_VOL / HIGH_VOL from volRegime detector
+  dual_regime_aligned?: boolean;     // true when both SPY + VWRL individually bullish
+  bis_score?: number;                // Breakout Integrity Score (0–15), pre-computed from latest candle
   [key: string]: unknown;
 }
 
@@ -83,6 +89,8 @@ export interface BQSComponents {
   bqs_tailwind: number;
   bqs_rs: number;
   bqs_vol_bonus: number;
+  bqs_weekly_adx: number;
+  bqs_bis: number;
   BQS: number;
 }
 
@@ -111,7 +119,7 @@ export interface ScoredTicker extends SnapshotRow, BQSComponents, FWSComponents,
   ActionNote: string;
 }
 
-// ── BQS Components (0–100 total across 6 sub-scores + bonus) ─────────
+// ── BQS Components (0–100 total across 6 sub-scores + bonuses) ─────
 
 function trendStrength(row: SnapshotRow): number {
   const adx = safeNum(row.adx_14);
@@ -138,13 +146,28 @@ function proximity(row: SnapshotRow): number {
   return 15 * clamp(1 - dist / 3.0, 0, 1);
 }
 
-function marketTailwind(row: SnapshotRow): number {
+// Dual Regime Score (DRS): consolidates directional regime, volRegime,
+// and SPY/VWRL dual-benchmark alignment into a single BQS component.
+// Replaces the old marketTailwind() to avoid double-counting regime credit.
+// Range: -10 to +20. Stored in bqs_tailwind for backward compatibility.
+export function calcDualRegimeScore(row: SnapshotRow): number {
   const regime = (row.market_regime || 'NEUTRAL').toUpperCase();
-  const stable = safeBool(row.market_regime_stable, true);
-  if (regime === 'BULLISH') return stable ? 15 : 9;
-  if (regime === 'SIDEWAYS' || regime === 'NEUTRAL') return 6;
-  if (regime === 'BEARISH') return 1.5;
-  return 6;
+  const volRegime = ((row.vol_regime as string) || 'NORMAL_VOL').toUpperCase();
+  const dualAligned = safeBool(row.dual_regime_aligned, true);
+
+  if (regime === 'BEARISH') return -10;
+  if (regime === 'SIDEWAYS' || regime === 'NEUTRAL') return 0;
+
+  // BULLISH path — score depends on vol regime + dual alignment
+  if (regime === 'BULLISH') {
+    if (volRegime === 'HIGH_VOL') return 10; // good trend but risky vol
+    if (dualAligned) {
+      return volRegime === 'LOW_VOL' ? 20 : 15; // LOW_VOL=20, NORMAL_VOL=15
+    }
+    return 10; // BULLISH but benchmarks not aligned — less conviction
+  }
+
+  return 0; // fallback for unknown regimes
 }
 
 function rsScore(row: SnapshotRow): number {
@@ -152,12 +175,23 @@ function rsScore(row: SnapshotRow): number {
   return 15 * clamp((rsPct + 5) / 20, 0, 1);
 }
 
+// Weekly ADX bonus: confirms the trend exists on a higher timeframe.
+// >= 30 = strong weekly trend (+10), >= 25 = moderate (+5), < 20 = no trend (-5)
+function weeklyAdxBonus(row: SnapshotRow): number {
+  const wAdx = safeNum(row.weekly_adx);
+  if (wAdx === 0) return 0; // no data available — neutral
+  if (wAdx >= 30) return 10;
+  if (wAdx >= 25) return 5;
+  if (wAdx < 20) return -5;
+  return 0;
+}
+
 export function computeBQS(row: SnapshotRow): BQSComponents {
   const trend = trendStrength(row);
   const direction = directionDominance(row);
   const vol = volatilityHealth(row);
   const prox = proximity(row);
-  const tailwind = marketTailwind(row);
+  const tailwind = calcDualRegimeScore(row);
   const rs = rsScore(row);
 
   const volRatio = safeNum(row.vol_ratio, 1.0);
@@ -165,7 +199,13 @@ export function computeBQS(row: SnapshotRow): BQSComponents {
     ? 5 * clamp((volRatio - 1.2) / 0.6, 0, 1)
     : 0;
 
-  const bqs = clamp(trend + direction + vol + prox + tailwind + rs + volBonus);
+  const wAdxBonus = weeklyAdxBonus(row);
+
+  // BIS: Breakout Integrity Score — pre-computed from latest candle OHLCV.
+  // Defaults to 0 when candle data unavailable (CSV imports, old snapshots).
+  const bis = safeNum(row.bis_score);
+
+  const bqs = clamp(trend + direction + vol + prox + tailwind + rs + volBonus + wAdxBonus + bis);
 
   return {
     bqs_trend: round2(trend),
@@ -175,6 +215,8 @@ export function computeBQS(row: SnapshotRow): BQSComponents {
     bqs_tailwind: round2(tailwind),
     bqs_rs: round2(rs),
     bqs_vol_bonus: round2(volBonus),
+    bqs_weekly_adx: round2(wAdxBonus),
+    bqs_bis: round2(bis),
     BQS: round2(bqs),
   };
 }
@@ -276,9 +318,11 @@ export function computePenalties(row: SnapshotRow): Penalties {
 
 export function computeNCS(bqs: number, fws: number, penalties: Penalties): NCSResult {
   const baseNCS = clamp(bqs - 0.8 * fws + 10);
-  const ncs = clamp(
-    baseNCS - penalties.EarningsPenalty - penalties.ClusterPenalty - penalties.SuperClusterPenalty
-  );
+  const totalPenalty = penalties.EarningsPenalty + penalties.ClusterPenalty + penalties.SuperClusterPenalty;
+  // Cap total penalty at 40 to prevent excessive stacking from killing
+  // otherwise-strong candidates (e.g. earnings + cluster + super-cluster all firing).
+  const cappedPenalty = Math.min(totalPenalty, 40);
+  const ncs = clamp(baseNCS - cappedPenalty);
   return {
     BaseNCS: round2(baseNCS),
     NCS: round2(ncs),
@@ -343,6 +387,8 @@ const COLUMN_MAP: Record<string, string> = {
   max_cluster_pct_default: 'max_cluster_pct',
   max_supercluster_pct_default: 'max_super_cluster_pct',
   t212_currency: 'currency',
+  bisScore: 'bis_score',          // DB column → canonical field
+  bis: 'bis_score',               // CSV shorthand
 };
 
 const DEFAULTS: Record<string, unknown> = {
@@ -358,12 +404,16 @@ const DEFAULTS: Record<string, unknown> = {
   cluster_name: '', super_cluster_name: '',
   cluster_exposure_pct: 0, super_cluster_exposure_pct: 0,
   max_cluster_pct: 0, max_super_cluster_pct: 0,
+  weekly_adx: 0,
+  vol_regime: 'NORMAL_VOL', dual_regime_aligned: true,
+  bis_score: 0,
 };
 
 const BOOL_COLS: string[] = [
   'liquidity_ok', 'market_regime_stable',
   'chasing_20_last5', 'chasing_55_last5',
   'atr_spiking', 'atr_collapsing', 'earnings_in_next_5d',
+  'dual_regime_aligned',
 ];
 
 const NUMERIC_COLS: string[] = [
@@ -373,6 +423,8 @@ const NUMERIC_COLS: string[] = [
   'entry_trigger', 'stop_level', 'rs_vs_benchmark_pct',
   'cluster_exposure_pct', 'super_cluster_exposure_pct',
   'max_cluster_pct', 'max_super_cluster_pct',
+  'weekly_adx',
+  'bis_score',
 ];
 
 /**

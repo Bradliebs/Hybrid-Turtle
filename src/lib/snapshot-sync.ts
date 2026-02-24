@@ -17,14 +17,17 @@
 import prisma from './prisma';
 import {
   getDailyPrices,
+  getWeeklyPrices,
   calculateMA,
   calculateATR,
   calculateADX,
   calculateTrendEfficiency,
   getMarketRegime,
+  getVolRegime,
   getFXRate,
 } from './market-data';
 import { validateTickerData } from './modules/data-validator';
+import { calcBIS } from './breakout-integrity';
 import type { Sleeve } from '@/types';
 import { ATR_STOP_MULTIPLIER, SNAPSHOT_CLUSTER_WARNING, SNAPSHOT_SUPER_CLUSTER_WARNING } from '@/types';
 
@@ -130,11 +133,31 @@ export async function syncSnapshot(
   // 2. Detect market regime
   const regime = await getMarketRegime();
 
+  // 2b. Detect volatility regime (SPY ATR%-based)
+  const volRegimeResult = await getVolRegime();
+  const volRegime = volRegimeResult.volRegime;
+
   // 3. Get SPY data for relative strength calc (fetch once)
   const spyData = await getDailyPrices('SPY', 'full');
   const spyCloses = spyData.map((d) => d.close);
   const spyMa200 = calculateMA(spyCloses, 200);
   const spyPrice = spyCloses[0] || 0;
+
+  // 3b. Get VWRL data to check dual-benchmark alignment for DRS scoring.
+  // Uses cached data from getMarketRegime() call above — no extra Yahoo request.
+  const vwrlData = await getDailyPrices('VWRL.L', 'full');
+  const hasVwrl = vwrlData.length >= 200;
+  let dualRegimeAligned = false;
+  if (hasVwrl) {
+    const vwrlCloses = vwrlData.map((d) => d.close);
+    const vwrlMa200 = calculateMA(vwrlCloses, 200);
+    const vwrlPrice = vwrlCloses[0] || 0;
+    // Both benchmarks individually above their MA200 → aligned
+    dualRegimeAligned = spyPrice > spyMa200 && vwrlPrice > vwrlMa200;
+  } else {
+    // VWRL unavailable — can't confirm alignment, default conservative
+    dualRegimeAligned = false;
+  }
 
   // Check regime stability (simple: is SPY clearly above/below MA200?)
   // Guard against division by zero when SPY data is unavailable
@@ -204,7 +227,11 @@ export async function syncSnapshot(
     const results = await Promise.allSettled(
       batch.map(async (stock) => {
         try {
-          const daily = await getDailyPrices(stock.ticker, 'full');
+          // Batch daily + weekly fetch together to avoid separate API calls
+          const [daily, weekly] = await Promise.all([
+            getDailyPrices(stock.ticker, 'full'),
+            getWeeklyPrices(stock.ticker),
+          ]);
           if (daily.length < 55) {
             throw new Error(`Insufficient data: ${daily.length} bars`);
           }
@@ -249,8 +276,19 @@ export async function syncSnapshot(
           const dVol20 = dollarVol20(daily);
           const liquidityOk = dVol20 > 500_000;
 
+          // ── Breakout Integrity Score ──
+          const avgVol10 = daily.length > 10
+            ? daily.slice(1, 11).reduce((s, d) => s + d.volume, 0) / 10
+            : 0;
+          const bisScore = calcBIS(daily[0], avgVol10);
+
           // ── Relative strength ──
           const rsPct = await rsVsBenchmark(closes, spyCloses);
+
+          // ── Weekly ADX (requires 28+ weeks) ──
+          const weeklyAdx = weekly.length >= 29
+            ? calculateADX(weekly, 14).adx
+            : 0;
 
           // ── Status classification (aligned with scan-engine spec) ──
           // READY: ≤2% to 20d high, WATCH: ≤3%, FAR: >3%
@@ -285,15 +323,17 @@ export async function syncSnapshot(
             name: stock.name,
             sleeve: stock.sleeve,
             close, atr14, atrPct, adx14: adx, plusDI, minusDI,
-            ma50, ma200, efficiency,
+            ma50, ma200, efficiency, weeklyAdx,
             high20, high55, distTo20, distTo55,
             entryTrigger, stopLevel,
             chasing20, chasing55,
             atrSpiking, atrCollapsing,
             volRatio, dVol20, liquidityOk,
             rsPct, regime, regimeStable,
+            volRegime, dualRegimeAligned,
             status, cluster, superCluster,
             clusterRiskPct, superClusterRiskPct,
+            bisScore,
           });
 
           return {
@@ -309,11 +349,14 @@ export async function syncSnapshot(
             adx14: adx,
             plusDi: plusDI,
             minusDi: minusDI,
+            weeklyAdx,
             volRatio,
             dollarVol20: dVol20,
             liquidityOk,
             marketRegime: regime,
             marketRegimeStable: regimeStable,
+            volRegime,
+            dualRegimeAligned,
             high20,
             high55,
             distanceTo20dHighPct: distTo20,
@@ -333,6 +376,7 @@ export async function syncSnapshot(
             superClusterExposurePct: superClusterRiskPct,
             maxClusterPct: maxClusterPct * 100,
             maxSuperClusterPct: maxSuperClusterPct * 100,
+            bisScore,
             rawJson,
           };
         } catch (err) {

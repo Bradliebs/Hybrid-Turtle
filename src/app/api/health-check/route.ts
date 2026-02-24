@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { runHealthCheck } from '@/lib/health-check';
 import { z } from 'zod';

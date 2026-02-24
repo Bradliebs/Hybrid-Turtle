@@ -1,10 +1,13 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { calculateRMultiple, calculateGainPercent, calculateGainDollars } from '@/lib/position-sizer';
-import { getBatchPrices, getMarketRegime, normalizeBatchPricesToGBP, getQuickPrice, getFXRate } from '@/lib/market-data';
+import { getBatchPrices, getBatchQuotes, getMarketRegime, normalizeBatchPricesToGBP, getQuickPrice, getFXRate, getDailyPrices, calculateATR } from '@/lib/market-data';
 import { buildInitialRiskFields } from '@/lib/risk-fields';
 import { validateRiskGates } from '@/lib/risk-gates';
 import { apiError } from '@/lib/api-response';
+import { logEVRecord } from '@/lib/ev-tracker';
 import { getCurrentWeeklyPhase } from '@/types';
 import type { Sleeve } from '@/types';
 import { z } from 'zod';
@@ -79,6 +82,43 @@ export async function GET(request: NextRequest) {
       ? await normalizeBatchPricesToGBP(livePrices, stockCurrencies)
       : {};
 
+    // Compute gap risk for open HIGH_RISK positions (advisory only)
+    const GAP_RISK_ATR_MULTIPLIER = 2;
+    const gapRiskMap = new Map<string, { gapPercent: number; atrPercent: number; threshold: number }>();
+    const highRiskOpen = positions.filter((p) => p.status === 'OPEN' && p.stock.sleeve === 'HIGH_RISK');
+    if (highRiskOpen.length > 0) {
+      try {
+        const hrTickers = highRiskOpen.map((p) => p.stock.ticker);
+        const quotes = await getBatchQuotes(hrTickers);
+        // Fetch daily bars and compute ATR in parallel
+        const atrResults = await Promise.allSettled(
+          hrTickers.map(async (ticker) => {
+            const bars = await getDailyPrices(ticker, 'compact');
+            return { ticker, atr: bars.length >= 15 ? calculateATR(bars, 14) : 0 };
+          })
+        );
+        const atrMap = new Map<string, number>();
+        for (const result of atrResults) {
+          if (result.status === 'fulfilled' && result.value.atr > 0) {
+            atrMap.set(result.value.ticker, result.value.atr);
+          }
+        }
+        for (const pos of highRiskOpen) {
+          const quote = quotes.get(pos.stock.ticker);
+          const atr = atrMap.get(pos.stock.ticker);
+          if (!quote || !atr || quote.previousClose <= 0) continue;
+          const gapPercent = ((quote.open - quote.previousClose) / quote.previousClose) * 100;
+          const atrPercent = (atr / quote.previousClose) * 100;
+          const threshold = atrPercent * GAP_RISK_ATR_MULTIPLIER;
+          if (Math.abs(gapPercent) > threshold) {
+            gapRiskMap.set(pos.stock.ticker, { gapPercent, atrPercent, threshold });
+          }
+        }
+      } catch {
+        // Gap risk is advisory — failure doesn't block positions
+      }
+    }
+
     // Count pyramid adds per position from TradeLog
     const addCounts = await prisma.tradeLog.groupBy({
       by: ['positionId'],
@@ -151,6 +191,7 @@ export async function GET(request: NextRequest) {
         // Deprecated: use initialRiskGBP instead
         riskGBP,
         pyramidAdds: addsMap.get(p.id) ?? 0,
+        gapRisk: gapRiskMap.get(p.stock.ticker) ?? null,
       };
     });
 
@@ -495,6 +536,28 @@ export async function PATCH(request: NextRequest) {
 
       return upd;
     });
+
+    // Best-effort EV record logging — outside transaction, non-blocking
+    const initialR = updated.initial_R ?? updated.initialRisk ?? null;
+    const evRMultiple = initialR ? (exitPrice - updated.entryPrice) / initialR : 0;
+
+    // Pull regime from the TradeLog entry record (set at trade open)
+    const entryLog = await prisma.tradeLog.findFirst({
+      where: { positionId: updated.id, tradeType: { in: ['ENTRY', 'STOP_HIT', 'EXIT'] } },
+      orderBy: { tradeDate: 'asc' },
+      select: { id: true, regime: true, ncsScore: true },
+    });
+
+    logEVRecord({
+      tradeId: entryLog?.id ?? updated.id,
+      regime: entryLog?.regime,
+      atrAtEntry: updated.atr_at_entry,
+      cluster: updated.stock.cluster,
+      sleeve: updated.stock.sleeve,
+      entryNCS: entryLog?.ncsScore ?? null,
+      rMultiple: evRMultiple,
+      closedAt: updated.exitDate ?? new Date(),
+    }).catch(() => { /* already logged inside logEVRecord */ });
 
     return NextResponse.json({ success: true, position: updated });
   } catch (error) {

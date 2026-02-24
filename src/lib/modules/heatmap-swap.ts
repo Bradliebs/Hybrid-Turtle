@@ -8,11 +8,15 @@
 //   - Weak position must be < 0.5R AND negative
 //   - Strong candidate must have rank ≥ 50
 //   - Only suggests if the upgrade is meaningful
+//
+// Also surfaces correlation warnings (advisory, not blocking)
+// when a candidate has HIGH_CORR with an existing position.
 // ============================================================
 
 import 'server-only';
 import type { SwapSuggestion, Sleeve } from '@/types';
 import { CLUSTER_CAP, getProfileCaps, type RiskProfileType } from '@/types';
+import { checkCorrelationWarnings } from '@/lib/correlation-matrix';
 
 const WEAK_R_THRESHOLD = 0.5;        // Weak side must be below this R
 const WEAK_MUST_BE_NEGATIVE = true;  // Only suggest if weak pos is underwater
@@ -91,4 +95,28 @@ export function findSwapSuggestions(
   }
 
   return suggestions;
+}
+
+export interface CorrelationWarning {
+  candidateTicker: string;
+  correlatedWith: string;
+  correlation: number;
+  message: string;
+}
+
+/**
+ * Check if a candidate ticker has HIGH_CORR with any existing open position.
+ * Returns warnings (not blocks) — the trader decides whether to proceed.
+ */
+export async function getSwapCorrelationWarnings(
+  candidateTicker: string,
+  openTickers: string[]
+): Promise<CorrelationWarning[]> {
+  const warnings = await checkCorrelationWarnings(candidateTicker, openTickers);
+  return warnings.map((w) => ({
+    candidateTicker,
+    correlatedWith: w.ticker,
+    correlation: w.correlation,
+    message: `⚠️ ${candidateTicker} is highly correlated (r=${w.correlation.toFixed(2)}) with open position ${w.ticker}`,
+  }));
 }

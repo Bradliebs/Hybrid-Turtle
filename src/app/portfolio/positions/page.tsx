@@ -75,6 +75,7 @@ export default function PositionsPage() {
   const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [currency, setCurrency] = useState<string>('GBP');
+  const [stopRefreshKey, setStopRefreshKey] = useState(0);
 
   // Fetch T212 positions from the database (enriched with live Yahoo prices)
   const fetchPositions = useCallback(async () => {
@@ -141,9 +142,10 @@ export default function PositionsPage() {
     load();
   }, [fetchPositions, fetchAccount]);
 
-  // When T212 sync completes, refetch positions and account
+  // When T212 sync completes, refetch positions and account + refresh stop recs
   const handleSyncComplete = useCallback(async () => {
     await Promise.all([fetchPositions(), fetchAccount()]);
+    setStopRefreshKey((k) => k + 1);
   }, [fetchPositions, fetchAccount]);
 
   // ── Action handlers for PositionsTable ──
@@ -155,6 +157,7 @@ export default function PositionsPage() {
         body: JSON.stringify({ positionId, newStop, reason }),
       });
       await fetchPositions();
+      setStopRefreshKey((k) => k + 1);
       return true;
     } catch {
       return false;
@@ -236,7 +239,7 @@ export default function PositionsPage() {
         <T212SyncPanel onSyncComplete={handleSyncComplete} />
 
         {/* Stop-Loss Recommendations — fetches live from /api/stops */}
-        <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} />
+        <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} refreshTrigger={stopRefreshKey} />
 
         {/* Loading state */}
         {loading ? (

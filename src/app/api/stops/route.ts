@@ -3,10 +3,12 @@
  * Consumed by: StopUpdateQueue (plan + portfolio), nightly via direct import
  * Consumes: stop-manager.ts, market-data.ts, prisma.ts
  * Risk-sensitive: YES — generates and applies stop updates
- * Last modified: 2026-02-23
+ * Last modified: 2026-02-24
  * Notes: GET merges R-based AND trailing ATR recommendations into one list,
  *        picking the higher stop per position. Matches nightly Step 3 + 3b.
  */
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import {

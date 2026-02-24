@@ -12,6 +12,7 @@ const statusStyles: Record<string, string> = {
   READY: 'bg-profit/20 text-profit border border-profit/30',
   WATCH: 'bg-warning/20 text-warning border border-warning/30',
   WAIT_PULLBACK: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
+  COOLDOWN: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
   FAR: 'bg-loss/20 text-loss border border-loss/30',
   TRIGGERED: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
   // Position Status
@@ -33,6 +34,8 @@ const statusStyles: Record<string, string> = {
   BREAKEVEN: 'bg-warning/20 text-warning border border-warning/30',
   LOCK_08R: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
   LOCK_1R_TRAIL: 'bg-profit/20 text-profit border border-profit/30',
+  // Advisory flags
+  GAP_RISK: 'bg-orange-500/20 text-orange-400 border border-orange-500/30',
 };
 
 const statusLabels: Record<string, string> = {
@@ -40,6 +43,7 @@ const statusLabels: Record<string, string> = {
   LOCK_1R_TRAIL: 'Lock +1R Trail',
   SMALL_ACCOUNT: 'Small Account',
   HIGH_RISK: 'High Risk',
+  GAP_RISK: '⚡ Gap Risk',
 };
 
 function StatusBadge({ status, className }: StatusBadgeProps) {

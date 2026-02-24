@@ -11,8 +11,22 @@
 // Additional "stalled" check (no movement):
 //   4. R-multiple < 0.5R after 30+ days  →  dead money flag
 //
+// Dead Money recovery exemption:
+//   If price > 20-day MA AND today's ADX > yesterday's ADX, the position
+//   is showing trend recovery — suppress the DEAD_MONEY flag.
+//   (MA20 + dual ADX fields are optional; when absent, exemption is skipped.)
+//
 // This is a SUGGESTION, not auto-sell. User decides to keep, trim, or close.
 // ============================================================
+
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/scan/route.ts, nightly.ts, modules/laggard-purge.ts
+ * Consumes: (standalone — no imports)
+ * Risk-sensitive: NO — flags only, no auto-action
+ * Last modified: 2026-02-24
+ * Notes: MA20 + ADX fields are optional; callers must supply them for recovery exemption to activate
+ */
 
 export const LAGGARD_CONFIG = {
   enabled: true,
@@ -49,6 +63,12 @@ export function detectLaggards(
     currentPrice: number;
     currency: string;
     sleeve: string;
+    // Optional technical indicators for dead-money recovery exemption.
+    // When all three are supplied and price > MA20 + ADX rising, the
+    // DEAD_MONEY flag is suppressed (position is showing trend recovery).
+    ma20?: number;
+    adxToday?: number;
+    adxYesterday?: number;
   }[]
 ): LaggardResult[] {
   if (!LAGGARD_CONFIG.enabled) return [];
@@ -101,6 +121,20 @@ export function detectLaggards(
       rMultiple < LAGGARD_CONFIG.deadMoneyMaxR &&
       rMultiple > -1.0 // Not in freefall (that's a stop issue)
     ) {
+      // Dead Money recovery exemption: if price is above the 20-day MA
+      // AND ADX is rising (today > yesterday), the position is regaining
+      // trend momentum — don't flag it as dead money. This prevents
+      // prematurely flagging positions that are starting to move again.
+      // All three indicator fields must be present to activate this check.
+      const hasIndicators =
+        pos.ma20 != null && pos.adxToday != null && pos.adxYesterday != null;
+      const isRecovering =
+        hasIndicators &&
+        pos.currentPrice > pos.ma20! &&
+        pos.adxToday! > pos.adxYesterday!;
+
+      if (isRecovering) continue; // Trend recovery — suppress DEAD_MONEY flag
+
       results.push({
         positionId: pos.id,
         ticker: pos.ticker,

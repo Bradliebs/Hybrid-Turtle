@@ -3,17 +3,51 @@
  * Consumed by: /api/modules/route.ts, market-data.ts (via getMarketRegime)
  * Consumes: @/types
  * Risk-sensitive: YES
- * Last modified: 2026-02-19
+ * Last modified: 2026-02-24
  * Notes: Requires 3 consecutive days same regime for BULLISH confirmation. Do not reduce.
+ *        detectVolRegime() is separate from directional regime — SPY ATR% based.
  */
 // ============================================================
 // Market Regime Detector — with CHOP, ±2% Band, Dual Benchmark
 // ============================================================
 // Modules: #9 Regime Stability, #10 ±2% CHOP Band, #19 Dual Benchmark
 
-import type { MarketRegime, DualRegimeResult, RegimeStabilityResult } from '@/types';
+import type { MarketRegime, VolRegime, DualRegimeResult, RegimeStabilityResult } from '@/types';
 
 const CHOP_BAND_PCT = 0.02; // ±2% band around 200MA for CHOP zone
+
+// ── Volatility Regime Thresholds (SPY 14-day ATR%) ──
+const VOL_LOW_THRESHOLD = 1.0;   // ATR% < 1% → LOW_VOL
+const VOL_HIGH_THRESHOLD = 2.0;  // ATR% > 2% → HIGH_VOL
+
+export interface DetectVolRegimeResult {
+  volRegime: VolRegime;
+  spyAtrPercent: number;
+  reason: string;
+}
+
+/**
+ * Detect volatility regime from SPY 14-day ATR%.
+ * Separate from directional regime — does not affect BULLISH/BEARISH/SIDEWAYS.
+ * Pure function: caller supplies pre-computed ATR%.
+ */
+export function detectVolRegime(spyAtrPercent: number): DetectVolRegimeResult {
+  let volRegime: VolRegime;
+  let reason: string;
+
+  if (spyAtrPercent < VOL_LOW_THRESHOLD) {
+    volRegime = 'LOW_VOL';
+    reason = `SPY ATR% ${spyAtrPercent.toFixed(2)}% < ${VOL_LOW_THRESHOLD}% — low volatility`;
+  } else if (spyAtrPercent > VOL_HIGH_THRESHOLD) {
+    volRegime = 'HIGH_VOL';
+    reason = `SPY ATR% ${spyAtrPercent.toFixed(2)}% > ${VOL_HIGH_THRESHOLD}% — high volatility`;
+  } else {
+    volRegime = 'NORMAL_VOL';
+    reason = `SPY ATR% ${spyAtrPercent.toFixed(2)}% within ${VOL_LOW_THRESHOLD}–${VOL_HIGH_THRESHOLD}% — normal volatility`;
+  }
+
+  return { volRegime, spyAtrPercent, reason };
+}
 
 // ── Multi-Signal Regime Detection (SPY-only, pure function) ──
 // Uses a bull/bear scoring model across 5 signals:

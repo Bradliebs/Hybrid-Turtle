@@ -126,10 +126,16 @@ function WhyCard({ ticker }: WhyCardProps) {
           <ComponentRow label="Direction (DI)" value={ticker.bqs_direction} max={10} />
           <ComponentRow label="Volatility" value={ticker.bqs_volatility} max={15} />
           <ComponentRow label="Proximity" value={ticker.bqs_proximity} max={15} />
-          <ComponentRow label="Tailwind" value={ticker.bqs_tailwind} max={15} />
+          <ComponentRow label="Regime Tailwind" value={ticker.bqs_tailwind} max={20} />
           <ComponentRow label="RS Score" value={ticker.bqs_rs} max={15} />
           {ticker.bqs_vol_bonus > 0 && (
             <ComponentRow label="Vol Bonus" value={ticker.bqs_vol_bonus} max={5} />
+          )}
+          {ticker.bqs_weekly_adx !== 0 && (
+            <ComponentRow label="Weekly ADX" value={ticker.bqs_weekly_adx} max={10} />
+          )}
+          {ticker.bqs_bis > 0 && (
+            <ComponentRow label="Breakout Integrity" value={ticker.bqs_bis} max={15} />
           )}
         </div>
       </div>

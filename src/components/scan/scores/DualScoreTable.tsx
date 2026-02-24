@@ -11,7 +11,7 @@ interface DualScoreTableProps {
   onSelect: (ticker: string | null) => void;
 }
 
-type SortKey = 'ticker' | 'name' | 'sleeve' | 'status' | 'close' | 'BQS' | 'FWS' | 'NCS' | 'adx_14' | 'atr_pct' | 'entry_trigger' | 'stop_level';
+type SortKey = 'ticker' | 'name' | 'sleeve' | 'status' | 'close' | 'BQS' | 'FWS' | 'NCS' | 'adx_14' | 'weekly_adx' | 'atr_pct' | 'entry_trigger' | 'stop_level';
 type SortDir = 'asc' | 'desc';
 
 const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
@@ -26,6 +26,7 @@ const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
   { key: 'entry_trigger', label: 'entry_trigger', align: 'right' },
   { key: 'stop_level', label: 'stop_level', align: 'right' },
   { key: 'adx_14', label: 'adx_14', align: 'right' },
+  { key: 'weekly_adx', label: 'wk_adx', align: 'right' },
   { key: 'atr_pct', label: 'atr_pct', align: 'right' },
 ];
 
@@ -148,6 +149,7 @@ export default function DualScoreTable({ tickers, selectedTicker, onSelect }: Du
               <td className="text-right font-mono text-sm">{safeNum(row.entry_trigger).toFixed(2)}</td>
               <td className="text-right font-mono text-sm">{safeNum(row.stop_level).toFixed(2)}</td>
               <td className="text-right font-mono text-sm">{safeNum(row.adx_14).toFixed(1)}</td>
+              <td className="text-right font-mono text-sm">{safeNum(row.weekly_adx).toFixed(1)}</td>
               <td className="text-right font-mono text-sm">{safeNum(row.atr_pct).toFixed(2)}</td>
               <td>{actionBadge(row.ActionNote)}</td>
             </tr>
