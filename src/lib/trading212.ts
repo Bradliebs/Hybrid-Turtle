@@ -179,15 +179,22 @@ export class Trading212Client {
         let errorDetail = '';
         try {
           const errorBody = await response.text();
-          // T212 often returns JSON with a message/code field
+          // T212 returns JSON with varying field names: message, code, type, title
           try {
             const parsed = JSON.parse(errorBody);
-            errorDetail = parsed.message || parsed.code || parsed.errorMessage || errorBody;
+            errorDetail = parsed.message || parsed.code || parsed.errorMessage
+              || (parsed.title ? `${parsed.title}${parsed.type ? ` (${parsed.type})` : ''}` : '')
+              || errorBody;
           } catch {
             errorDetail = errorBody;
           }
         } catch {
           errorDetail = response.statusText;
+        }
+
+        // Add diagnostic hints for known T212 error types
+        if (errorDetail.includes('price-too-far')) {
+          errorDetail += '. This usually means the stop price is too far from the current market price. For UK stocks (.L), check that your stop is in pence (GBX), not pounds (GBP) — e.g. 1350 not 13.50.';
         }
 
         throw new Trading212Error(

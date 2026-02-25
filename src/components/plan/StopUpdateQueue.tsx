@@ -147,10 +147,11 @@ export default function StopUpdateQueue({ userId, onApplied, refreshTrigger = 0 
             t212Status: 'success',
             t212Message: t212Data.message || 'Stop placed on Trading 212',
           });
-        } catch {
+        } catch (t212Err) {
+          const t212Msg = t212Err instanceof Error ? t212Err.message : 'Unknown error';
           patchRow(rec.ticker, {
             t212Status: 'error',
-            t212Message: 'T212 push failed — update your T212 app manually',
+            t212Message: `T212 push failed: ${t212Msg}`,
           });
         }
       }
@@ -228,11 +229,12 @@ export default function StopUpdateQueue({ userId, onApplied, refreshTrigger = 0 
             });
           }
         }
-      } catch {
+      } catch (bulkErr) {
+        const bulkMsg = bulkErr instanceof Error ? bulkErr.message : 'Unknown error';
         for (const rec of t212Candidates) {
           patchRow(rec.ticker, {
             t212Status: 'error',
-            t212Message: 'T212 bulk push failed — update your T212 app manually',
+            t212Message: `T212 bulk push failed: ${bulkMsg}`,
           });
         }
       }
