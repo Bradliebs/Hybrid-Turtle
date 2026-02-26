@@ -14,6 +14,7 @@ interface Position {
   name: string;
   sleeve: string;
   status: string;
+  source?: string;
   entryPrice: number;
   entryDate: string;
   shares: number;
@@ -73,6 +74,10 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   const [exitError, setExitError] = useState<string | null>(null);
   const [exitSubmitting, setExitSubmitting] = useState(false);
   const [exitConfirmStep, setExitConfirmStep] = useState(false); // Two-step exit confirmation
+
+  // Reset from T212 state
+  const [resettingId, setResettingId] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{ id: string; message: string; success: boolean } | null>(null);
 
   const filtered = positions.filter((p) => {
     if (tab === 'all') return true;
@@ -405,6 +410,38 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                         >
                           Exit
                         </button>
+                        {pos.source === 'trading212' && (
+                          <button
+                            disabled={resettingId === pos.id}
+                            onClick={async () => {
+                              if (!confirm(`Reset ${pos.ticker} entry price & stop from T212? This overwrites current values.`)) return;
+                              setResettingId(pos.id);
+                              setResetResult(null);
+                              try {
+                                const data = await apiRequest<{ success: boolean; message: string }>('/api/positions/reset-from-t212', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ positionId: pos.id }),
+                                });
+                                setResetResult({ id: pos.id, message: data.message, success: true });
+                                setTimeout(() => setResetResult(null), 8000);
+                              } catch (err) {
+                                setResetResult({ id: pos.id, message: (err as Error).message || 'Reset failed', success: false });
+                                setTimeout(() => setResetResult(null), 8000);
+                              }
+                              setResettingId(null);
+                            }}
+                            className="px-2 py-1 text-xs bg-warning/20 text-warning rounded hover:bg-warning/30 transition-colors disabled:opacity-50"
+                            title="Pull entry price from T212 and recalculate stops"
+                          >
+                            {resettingId === pos.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                          </button>
+                        )}
+                        {resetResult?.id === pos.id && (
+                          <span className={cn('text-[10px]', resetResult.success ? 'text-profit' : 'text-loss')}>
+                            {resetResult.message}
+                          </span>
+                        )}
                       </>
                     )}
                   </div>
