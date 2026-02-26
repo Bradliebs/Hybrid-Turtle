@@ -65,3 +65,11 @@ The nightly API route wrapped modules 7 (Swap), 11 (Whipsaw), 10 (Breadth), and 
 StopUpdateQueue and PositionsTable are both on `/portfolio/positions`. When the stop modal opens, it calls `GET /api/stops/t212` which syncs the DB stop UP (64.24→64.39). But StopUpdateQueue only fetches on mount — it didn't know the DB changed. Result: stale "Current Stop" in the recommendation card.
 **Fix:** Added `refreshTrigger` prop to StopUpdateQueue. The parent page increments it after `handleUpdateStop()` or `handleSyncComplete()`, causing StopUpdateQueue to re-fetch fresh recommendations.
 **Rule:** When two components on the same page both depend on the same DB state, add a refresh coordination mechanism. If one component triggers a DB mutation, all sibling consumers must be notified to re-fetch.
+
+## 2026-02-26 — T212 selling-equity-not-owned on Stop Push
+
+### Pattern: Wrong accountType causes stop push to wrong T212 account
+When a position's `accountType` is incorrect (e.g., tagged `'invest'` but shares are actually in ISA), the stop push sends the order to the wrong T212 API key. The pre-validation (`getPositionPrices()`) can also be skipped silently on rate-limit errors, letting the order through to T212 which returns `selling-equity-not-owned`.
+**Root causes:** (1) positions created manually don't set `accountType` (defaults to `'invest'`), (2) positions synced before ISA support was added have `accountType = null` → defaults to `'invest'`, (3) `getPositionPrices()` failure silently disables ownership check.
+**Fix:** Added auto-fallback in both POST (single) and PUT (bulk) `/api/stops/t212` handlers. When T212 returns `selling-equity-not-owned` or pre-validation returns `SKIPPED_NOT_OWNED`, the system automatically retries on the OTHER account (ISA↔Invest). If the fallback succeeds, the position's `accountType` is corrected in the DB.
+**Rule:** Any T212 operation that routes by `accountType` should have a fallback-to-other-account mechanism. The `accountType` in the DB cannot be trusted for positions created before dual-account support or created manually.

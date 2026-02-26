@@ -204,6 +204,10 @@ export async function GET(request: NextRequest) {
  * 2. Cancels existing stop orders for that ticker
  * 3. Places a new STOP SELL order at stopPrice (GTC)
  * 4. Updates local DB stop
+ *
+ * If the primary account returns "selling-equity-not-owned", automatically
+ * tries the OTHER account (ISA↔Invest). If the fallback succeeds, the
+ * position's accountType is corrected in the DB so future calls route correctly.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -237,11 +241,46 @@ export async function POST(request: NextRequest) {
       return apiError(400, 'INVALID_STOP_PRICE', 'Stop price must be positive');
     }
 
+    const primaryAcctType: T212AccountType = position.accountType === 'isa' ? 'isa' : 'invest';
     const client = await getT212ClientForPosition(position);
 
-    // setStopLoss handles: fetch pending orders, monotonic check, cancel old, place new
-    // — no need to call getPendingOrders() separately (avoids 1-req/5s rate limit)
-    const order = await client.setStopLoss(t212Ticker, position.shares, stopPrice);
+    let order: Awaited<ReturnType<Trading212Client['setStopLoss']>>;
+    let usedAcctType = primaryAcctType;
+
+    try {
+      // setStopLoss handles: fetch pending orders, monotonic check, cancel old, place new
+      order = await client.setStopLoss(t212Ticker, position.shares, stopPrice);
+    } catch (primaryErr) {
+      // If T212 says "you don't own this equity", try the OTHER account automatically.
+      // This catches the common misconfiguration where accountType is wrong in the DB.
+      const isNotOwned = primaryErr instanceof Trading212Error
+        && (primaryErr.message.includes('selling-equity-not-owned')
+          || primaryErr.message.includes('not found in T212 positions'));
+
+      if (!isNotOwned) throw primaryErr;
+
+      const fallbackAcctType: T212AccountType = primaryAcctType === 'invest' ? 'isa' : 'invest';
+      let fallbackClient: Trading212Client;
+      try {
+        fallbackClient = await getT212Client(position.userId, fallbackAcctType);
+      } catch {
+        // Other account not connected — re-throw the original error
+        throw primaryErr;
+      }
+
+      // Try the other account
+      order = await fallbackClient.setStopLoss(t212Ticker, position.shares, stopPrice);
+      usedAcctType = fallbackAcctType;
+
+      // Fix the position's accountType in the DB so future calls route correctly
+      await prisma.position.update({
+        where: { id: positionId },
+        data: { accountType: fallbackAcctType },
+      });
+      console.warn(
+        `[T212 Stop] ${position.stock.ticker}: accountType auto-corrected from '${primaryAcctType}' to '${fallbackAcctType}'`
+      );
+    }
 
     // Also update local DB stop (respecting monotonic rule)
     let dbUpdated = false;
@@ -250,7 +289,7 @@ export async function POST(request: NextRequest) {
         await updateStopLoss(
           positionId,
           stopPrice,
-          `T212 stop order placed: ${position.currentStop.toFixed(2)} → ${stopPrice.toFixed(2)}`
+          `T212 stop order placed (${usedAcctType.toUpperCase()}): ${position.currentStop.toFixed(2)} → ${stopPrice.toFixed(2)}`
         );
         dbUpdated = true;
       } catch (e) {
@@ -261,6 +300,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const accountCorrected = usedAcctType !== primaryAcctType;
+
     return NextResponse.json({
       success: true,
       ticker: position.stock.ticker,
@@ -269,7 +310,10 @@ export async function POST(request: NextRequest) {
       orderId: order?.id ?? null,
       orderStatus: order?.status ?? null,
       dbUpdated,
-      message: `Stop-loss ${order ? 'placed' : 'cleared'} on Trading 212 at ${stopPrice.toFixed(2)}`,
+      accountType: usedAcctType,
+      ...(accountCorrected ? { accountCorrected: true, previousAccountType: primaryAcctType } : {}),
+      message: `Stop-loss ${order ? 'placed' : 'cleared'} on Trading 212 (${usedAcctType.toUpperCase()}) at ${stopPrice.toFixed(2)}`
+        + (accountCorrected ? ` — account type auto-corrected from ${primaryAcctType} to ${usedAcctType}` : ''),
     });
   } catch (error) {
     if (error instanceof Trading212Error) {
@@ -334,6 +378,9 @@ export async function DELETE(request: NextRequest) {
  * PUT — Bulk push all DB stops to Trading 212
  * Uses setStopLossBatch to fetch pending orders ONCE per account, then process all positions.
  * Much faster than individual setStopLoss calls (seconds vs minutes for many positions).
+ *
+ * When a position is SKIPPED_NOT_OWNED or fails with selling-equity-not-owned,
+ * retries on the OTHER account. If the retry succeeds, auto-corrects accountType in the DB.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -375,6 +422,13 @@ export async function PUT(request: NextRequest) {
       ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string; orderId?: number;
     }> = [...skippedResults];
 
+    // Track positions that need retry on the other account (SKIPPED_NOT_OWNED or selling-equity-not-owned)
+    const retryOnOtherAccount: Array<{
+      position: (typeof positions)[number];
+      t212Ticker: string;
+      originalAcctType: T212AccountType;
+    }> = [];
+
     for (const [acctType, acctPositions] of Array.from(byAccount.entries())) {
       try {
         const client = await getT212Client(userId, acctType);
@@ -385,12 +439,25 @@ export async function PUT(request: NextRequest) {
           stopPrice: pos.currentStop,
         }));
 
-        // Ticker lookup for results
+        // Ticker lookup for results + position lookup for retries
         const tickerMap = new Map(acctPositions.map((p) => [p.t212Ticker || p.stock.t212Ticker, p.stock.ticker]));
+        const posMap = new Map(acctPositions.map((p) => [p.t212Ticker || p.stock.t212Ticker, p]));
 
         const batchResults = await client.setStopLossBatch(batchInput);
 
         for (const r of batchResults) {
+          // Check if this position should be retried on the other account
+          const isNotOwned = r.action === 'SKIPPED_NOT_OWNED'
+            || (r.action === 'FAILED' && r.error?.includes('selling-equity-not-owned'));
+
+          if (isNotOwned) {
+            const pos = posMap.get(r.t212Ticker);
+            if (pos) {
+              retryOnOtherAccount.push({ position: pos, t212Ticker: r.t212Ticker, originalAcctType: acctType });
+              continue; // Don't add to results yet — will be retried below
+            }
+          }
+
           results.push({
             ticker: tickerMap.get(r.t212Ticker) || r.t212Ticker,
             t212Ticker: r.t212Ticker,
@@ -416,13 +483,95 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // Retry NOT_OWNED positions on the other account
+    if (retryOnOtherAccount.length > 0) {
+      // Group retries by their fallback account type
+      const retryByAccount = new Map<T212AccountType, typeof retryOnOtherAccount>();
+      for (const item of retryOnOtherAccount) {
+        const fallbackAcctType: T212AccountType = item.originalAcctType === 'invest' ? 'isa' : 'invest';
+        const group = retryByAccount.get(fallbackAcctType) ?? [];
+        group.push(item);
+        retryByAccount.set(fallbackAcctType, group);
+      }
+
+      for (const [fallbackAcctType, items] of Array.from(retryByAccount.entries())) {
+        let fallbackClient: Trading212Client;
+        try {
+          fallbackClient = await getT212Client(userId, fallbackAcctType);
+        } catch {
+          // Other account not connected — mark all as failed
+          for (const item of items) {
+            results.push({
+              ticker: item.position.stock.ticker,
+              t212Ticker: item.t212Ticker,
+              accountType: item.originalAcctType,
+              stopPrice: item.position.currentStop,
+              action: `SKIPPED_NOT_OWNED`,
+            });
+          }
+          continue;
+        }
+
+        const batchInput = items.map((item) => ({
+          t212Ticker: item.t212Ticker,
+          shares: item.position.shares,
+          stopPrice: item.position.currentStop,
+        }));
+
+        try {
+          const retryResults = await fallbackClient.setStopLossBatch(batchInput);
+
+          for (let i = 0; i < retryResults.length; i++) {
+            const r = retryResults[i];
+            const item = items[i];
+
+            if (r.action === 'PLACED') {
+              // Fix accountType in DB so future calls route correctly
+              await prisma.position.update({
+                where: { id: item.position.id },
+                data: { accountType: fallbackAcctType },
+              });
+              console.warn(
+                `[T212 Bulk] ${item.position.stock.ticker}: accountType auto-corrected from '${item.originalAcctType}' to '${fallbackAcctType}'`
+              );
+            }
+
+            results.push({
+              ticker: item.position.stock.ticker,
+              t212Ticker: r.t212Ticker,
+              accountType: r.action === 'PLACED' ? fallbackAcctType : item.originalAcctType,
+              stopPrice: r.stopPrice,
+              action: r.action === 'PLACED' ? 'PLACED_ACCOUNT_CORRECTED'
+                : r.action === 'FAILED' ? `FAILED: ${r.error}`
+                : r.action,
+              orderId: r.orderId,
+            });
+          }
+        } catch {
+          // Batch retry failed entirely — mark all as original failure
+          for (const item of items) {
+            results.push({
+              ticker: item.position.stock.ticker,
+              t212Ticker: item.t212Ticker,
+              accountType: item.originalAcctType,
+              stopPrice: item.position.currentStop,
+              action: 'SKIPPED_NOT_OWNED',
+            });
+          }
+        }
+      }
+    }
+
+    const accountCorrectedCount = results.filter((r) => r.action === 'PLACED_ACCOUNT_CORRECTED').length;
+
     return NextResponse.json({
       total: positions.length,
-      placed: results.filter((r) => r.action === 'PLACED').length,
+      placed: results.filter((r) => r.action === 'PLACED' || r.action === 'PLACED_ACCOUNT_CORRECTED').length,
       skipped: results.filter((r) => r.action.startsWith('SKIPPED')).length,
       priceTooFar: results.filter((r) => r.action.startsWith('SKIPPED_PRICE_TOO_FAR') || r.action.startsWith('FAILED_PRICE_TOO_FAR')).length,
       notOwned: results.filter((r) => r.action === 'SKIPPED_NOT_OWNED').length,
       failed: results.filter((r) => r.action.startsWith('FAILED')).length,
+      ...(accountCorrectedCount > 0 ? { accountCorrected: accountCorrectedCount } : {}),
       results,
       timestamp: new Date().toISOString(),
     });
