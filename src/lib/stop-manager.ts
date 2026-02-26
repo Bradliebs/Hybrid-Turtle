@@ -275,6 +275,19 @@ export async function calculateTrailingATRStop(
     // bars are sorted newest-first; reverse for chronological processing
     const chronological = [...bars].reverse();
 
+    // Sanity check: if the DB entry price is wildly different from recent Yahoo prices,
+    // the position data is likely corrupted (e.g. currency mismatch on import).
+    // Skip trailing ATR calculation to avoid producing nonsensical stop values.
+    const recentClose = bars[0]?.close;
+    if (recentClose && recentClose > 0) {
+      const priceDivergence = Math.abs(entryPrice - recentClose) / recentClose;
+      if (priceDivergence > 5) {
+        // Entry price is >500% different from current market — data integrity issue
+        console.warn(`[TrailingATR] ${ticker}: entry price ${entryPrice.toFixed(2)} diverges ${(priceDivergence * 100).toFixed(0)}% from Yahoo close ${recentClose.toFixed(2)} — skipping (likely data corruption)`);
+        return null;
+      }
+    }
+
     // Find bars since entry date
     const entryDateStr = entryDate.toISOString().split('T')[0];
     const entryIdx = chronological.findIndex(b => b.date >= entryDateStr);

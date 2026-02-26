@@ -1,3 +1,11 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: /api/stops/t212/route.ts, /api/trading212/*, T212SyncPanel.tsx
+ * Consumes: fetch (T212 REST API)
+ * Risk-sensitive: YES
+ * Last modified: 2026-02-26
+ * Notes: isStopTooFar() pre-validates stop distance before T212 API call (instrument-specific, ~50% heuristic)
+ */
 // ============================================================
 // Trading 212 API Client — HybridTurtle Integration
 // ============================================================
@@ -194,7 +202,7 @@ export class Trading212Client {
 
         // Add diagnostic hints for known T212 error types
         if (errorDetail.includes('price-too-far')) {
-          errorDetail += '. This usually means the stop price is too far from the current market price. For UK stocks (.L), check that your stop is in pence (GBX), not pounds (GBP) — e.g. 1350 not 13.50.';
+          errorDetail += '. T212 rejected this stop because it is outside the instrument\'s acceptable price range (typically ~50% from the current market price, but varies per instrument). For UK stocks (.L), also check that your stop is in pence (GBX), not pounds (GBP) — e.g. 1350 not 13.50. Consider using a tighter stop or setting it manually in the T212 app.';
         }
 
         throw new Trading212Error(
@@ -331,9 +339,29 @@ export class Trading212Client {
   async setStopLoss(
     t212Ticker: string,
     shares: number,
-    stopPrice: number
+    stopPrice: number,
+    /** Optional current price for pre-validation; if not supplied, fetched from T212 positions */
+    currentPrice?: number
   ): Promise<T212PendingOrder | null> {
     if (shares <= 0) return null;
+
+    // Pre-validate stop distance against current market price
+    let livePrice = currentPrice;
+    if (!livePrice) {
+      try {
+        const prices = await this.getPositionPrices();
+        livePrice = prices.get(t212Ticker);
+      } catch { /* proceed without validation */ }
+    }
+    if (livePrice && livePrice > 0) {
+      const { tooFar, distancePct } = Trading212Client.isStopTooFar(stopPrice, livePrice);
+      if (tooFar) {
+        throw new Trading212Error(
+          `Stop price ${stopPrice.toFixed(2)} is ${distancePct.toFixed(1)}% from current price ${livePrice.toFixed(2)} — T212 will reject this (instrument-specific limit, typically ~50%). Consider a tighter stop or set it manually in the T212 app.`,
+          400
+        );
+      }
+    }
 
     // 1. Find existing stop orders for this ticker
     const pending = await this.getPendingOrders();
@@ -425,6 +453,14 @@ export class Trading212Client {
       (o) => o.type === 'STOP' && o.side === 'SELL'
     );
 
+    // Pre-fetch current prices for stop distance validation
+    let livePrices = new Map<string, number>();
+    try {
+      livePrices = await this.getPositionPrices();
+    } catch {
+      console.warn('[T212] Could not fetch live prices for stop range validation — proceeding without pre-check');
+    }
+
     // Index by ticker for O(1) lookup
     const stopsByTicker = new Map<string, T212PendingOrder[]>();
     for (const order of allStopOrders) {
@@ -442,6 +478,19 @@ export class Trading212Client {
       }
 
       const existingStops = stopsByTicker.get(t212Ticker) ?? [];
+
+      // Pre-validate stop distance against current market price
+      const livePrice = livePrices.get(t212Ticker);
+      if (livePrice && livePrice > 0) {
+        const { tooFar, distancePct } = Trading212Client.isStopTooFar(stopPrice, livePrice);
+        if (tooFar) {
+          results.push({
+            t212Ticker, stopPrice, action: 'SKIPPED_PRICE_TOO_FAR',
+            error: `Stop ${stopPrice.toFixed(2)} is ${distancePct.toFixed(1)}% from live price ${livePrice.toFixed(2)} — exceeds T212 acceptable range`,
+          });
+          continue;
+        }
+      }
 
       // Monotonic enforcement
       const highestExisting = existingStops.reduce(
@@ -492,9 +541,12 @@ export class Trading212Client {
         // Rate limit: 2.5s between positions (place order limit is 1 req/2s, extra buffer for safety)
         await new Promise((r) => setTimeout(r, 2500));
       } catch (error) {
+        const errMsg = (error as Error).message;
+        // Distinguish price-too-far rejections from other failures
+        const action = errMsg.includes('price-too-far') ? 'FAILED_PRICE_TOO_FAR' : 'FAILED';
         results.push({
-          t212Ticker, stopPrice, action: 'FAILED',
-          error: (error as Error).message,
+          t212Ticker, stopPrice, action,
+          error: errMsg,
         });
         // Still wait even on failure to avoid burning rate limit
         await new Promise((r) => setTimeout(r, 1500));
@@ -502,6 +554,40 @@ export class Trading212Client {
     }
 
     return results;
+  }
+
+  // ---- Stop Price Range Validation ----
+
+  /**
+   * Check if a stop price is likely too far from the current market price for T212 to accept.
+   * T212 enforces instrument-specific acceptable ranges (~50% from live price is a common ceiling,
+   * but individual instruments may have tighter limits).
+   * Returns { tooFar, distancePct } so callers can decide whether to skip or warn.
+   */
+  static isStopTooFar(
+    stopPrice: number,
+    currentPrice: number,
+    /** Conservative max distance — default 50%. Some instruments reject at ~20-30%. */
+    maxDistancePct: number = 50
+  ): { tooFar: boolean; distancePct: number } {
+    if (currentPrice <= 0 || stopPrice <= 0) return { tooFar: false, distancePct: 0 };
+    const distancePct = Math.abs((currentPrice - stopPrice) / currentPrice) * 100;
+    return { tooFar: distancePct > maxDistancePct, distancePct };
+  }
+
+  /**
+   * Fetch current prices for all T212 positions, keyed by T212 ticker.
+   * Useful for pre-validating stop distances before placing orders.
+   */
+  async getPositionPrices(): Promise<Map<string, number>> {
+    const positions = await this.getPositions();
+    const prices = new Map<string, number>();
+    for (const pos of positions) {
+      if (pos.currentPrice > 0) {
+        prices.set(pos.instrument.ticker, pos.currentPrice);
+      }
+    }
+    return prices;
   }
 
   // ---- Connection Test ----
