@@ -294,7 +294,7 @@ export async function getDailyPrices(
     // Yahoo returns null bars for holidays/gaps — strip them before Zod
     // validation so one null bar doesn't reject the entire response
     const nonNullQuotes = quotes.filter(
-      (q: Record<string, unknown>) => q.close != null && q.high != null && q.low != null && q.open != null
+      (q) => q.close != null && q.high != null && q.low != null && q.open != null
     );
 
     // Runtime validation — rejects malformed chart responses
@@ -359,7 +359,7 @@ export async function getWeeklyPrices(
 
     // Yahoo returns null bars for holidays/gaps — strip before validation
     const nonNullQuotes = quotes.filter(
-      (q: Record<string, unknown>) => q.close != null && q.high != null && q.low != null && q.open != null
+      (q) => q.close != null && q.high != null && q.low != null && q.open != null
     );
 
     const chartParsed = YahooChartResponseSchema.safeParse({ quotes: nonNullQuotes });

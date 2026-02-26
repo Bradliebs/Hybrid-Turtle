@@ -1,9 +1,9 @@
 /**
  * DEPENDENCIES
  * Consumed by: nightly.ts, /api/nightly/route.ts, /api/snapshot/route.ts (if present)
- * Consumes: market-data.ts, prisma.ts, @/types
+ * Consumes: market-data.ts, modules/adaptive-atr-buffer.ts, breakout-integrity.ts, modules/data-validator.ts, prisma.ts, @/types
  * Risk-sensitive: YES
- * Last modified: 2026-02-22
+ * Last modified: 2026-02-26
  * Notes: Snapshot sync should reject stale/invalid data.
  */
 // ============================================================
@@ -27,6 +27,7 @@ import {
   getFXRate,
 } from './market-data';
 import { validateTickerData } from './modules/data-validator';
+import { calculateAdaptiveBuffer } from './modules/adaptive-atr-buffer';
 import { calcBIS } from './breakout-integrity';
 import type { Sleeve } from '@/types';
 import { ATR_STOP_MULTIPLIER, SNAPSHOT_CLUSTER_WARNING, SNAPSHOT_SUPER_CLUSTER_WARNING } from '@/types';
@@ -255,11 +256,16 @@ export async function syncSnapshot(
           // ── Highs / distances ──
           const high20 = nDayHigh(daily, 20);
           const high55 = nDayHigh(daily, 55);
+          // Prior 20d high (excl today) — for USE_PRIOR_20D_HIGH_FOR_TRIGGER env var
+          const priorHigh20 = daily.length > 1 ? nDayHigh(daily.slice(1), 20) : high20;
           const distTo20 = high20 > 0 ? ((high20 - close) / close) * 100 : 0;
           const distTo55 = high55 > 0 ? ((high55 - close) / close) * 100 : 0;
 
-          // ── Entry / Stop levels ──
-          const entryTrigger = high20 + atr14 * 0.1;
+          // ── Entry / Stop levels (adaptive buffer — aligned with scan engine) ──
+          const adaptiveBuffer = calculateAdaptiveBuffer(
+            stock.ticker, high20, atr14, atrPct, priorHigh20, volRegime
+          );
+          const entryTrigger = adaptiveBuffer.adjustedEntryTrigger;
           const stopLevel = entryTrigger - atr14 * ATR_STOP_MULTIPLIER;
 
           // ── Chasing detection ──
@@ -290,17 +296,18 @@ export async function syncSnapshot(
             ? calculateADX(weekly, 14).adx
             : 0;
 
-          // ── Status classification (aligned with scan-engine spec) ──
-          // READY: ≤2% to 20d high, WATCH: ≤3%, FAR: >3%
+          // ── Status classification (aligned with scan-engine classifyCandidate) ──
+          // Uses distance to ENTRY TRIGGER (not raw 20d high) to match scan engine
+          const distToTrigger = entryTrigger > 0 ? ((entryTrigger - close) / close) * 100 : 0;
           let status: string;
           const priceAboveMa200 = ma200 > 0 && close > ma200;
           const bullishDI = plusDI > minusDI;
 
           if (!priceAboveMa200 || !bullishDI) {
             status = 'IGNORE';
-          } else if (distTo20 <= 2) {
+          } else if (distToTrigger <= 2) {
             status = 'READY';
-          } else if (distTo20 <= 3) {
+          } else if (distToTrigger <= 3) {
             status = 'WATCH';
           } else {
             status = 'FAR';

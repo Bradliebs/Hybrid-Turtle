@@ -562,7 +562,7 @@ export async function POST(request: NextRequest) {
         });
 
         readyToBuy = readyRows
-          .filter((r) => !heldTickers.has(r.ticker))
+          .filter((r) => !heldTickers.has(r.ticker) && r.adx14 >= 20)
           .map((r) => ({
             ticker: r.ticker,
             name: r.name || r.ticker,
@@ -570,7 +570,10 @@ export async function POST(request: NextRequest) {
             close: r.close,
             entryTrigger: r.entryTrigger,
             stopLevel: r.stopLevel,
-            distancePct: r.distanceTo20dHighPct,
+            // Distance to entry trigger (not raw 20d high) — matches classifyCandidate
+            distancePct: r.close > 0 && r.entryTrigger > 0
+              ? ((r.entryTrigger - r.close) / r.close) * 100
+              : r.distanceTo20dHighPct,
             atr14: r.atr14,
             adx14: r.adx14,
             currency: r.currency || 'USD',
@@ -585,7 +588,7 @@ export async function POST(request: NextRequest) {
           orderBy: { distanceTo20dHighPct: 'asc' },
         });
         triggerMetCandidates = allTriggeredRows
-          .filter((r) => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0)
+          .filter((r) => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0 && r.adx14 >= 20)
           .map((r) => ({
             ticker: r.ticker,
             name: r.name || r.ticker,

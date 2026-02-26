@@ -305,7 +305,7 @@ export async function GET(request: NextRequest) {
             orderBy: { distanceTo20dHighPct: 'asc' },
           });
           return triggeredRows
-            .filter(r => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0)
+            .filter(r => !heldTickers.has(r.ticker) && r.close >= r.entryTrigger && r.entryTrigger > 0 && r.adx14 >= 20)
             .map(r => ({
               ticker: r.ticker,
               name: r.name || r.ticker,
