@@ -66,7 +66,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
 
   // T212 bulk sync state
   const [bulkSyncing, setBulkSyncing] = useState(false);
-  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; skipped: number; priceTooFar: number; total: number; failedDetails?: string[] } | null>(null);
+  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; skipped: number; priceTooFar: number; notOwned: number; total: number; failedDetails?: string[] } | null>(null);
 
   // Exit modal state
   const [exitModal, setExitModal] = useState<Position | null>(null);
@@ -141,20 +141,21 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
             setBulkSyncing(true);
             setBulkSyncResult(null);
             try {
-              const data = await apiRequest<{ placed: number; failed: number; skipped: number; priceTooFar: number; total: number; results?: { ticker: string; action: string }[] }>('/api/stops/t212', {
+              const data = await apiRequest<{ placed: number; failed: number; skipped: number; priceTooFar: number; notOwned: number; total: number; results?: { ticker: string; action: string }[] }>('/api/stops/t212', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
               });
               // Extract failure details for display (include price-too-far)
               const failedDetails = (data.results ?? [])
-                .filter((r) => r.action.startsWith('FAILED') || r.action === 'SKIPPED_PRICE_TOO_FAR')
-                .map((r) => `${r.ticker}: ${r.action.replace('FAILED: ', '').replace('SKIPPED_PRICE_TOO_FAR', 'Stop too far from market price')}`);
+                .filter((r) => r.action.startsWith('FAILED') || r.action === 'SKIPPED_PRICE_TOO_FAR' || r.action === 'SKIPPED_NOT_OWNED')
+                .map((r) => `${r.ticker}: ${r.action.replace('FAILED: ', '').replace('SKIPPED_PRICE_TOO_FAR', 'Stop too far from market price').replace('SKIPPED_NOT_OWNED', 'Not found on T212 account (wrong ISA/Invest?)')}`);
               setBulkSyncResult({
                 placed: data.placed,
                 failed: data.failed,
                 skipped: data.skipped ?? 0,
                 priceTooFar: data.priceTooFar ?? 0,
+                notOwned: data.notOwned ?? 0,
                 total: data.total,
                 failedDetails,
               });
@@ -175,6 +176,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
             {bulkSyncResult.placed}/{bulkSyncResult.total} placed
             {bulkSyncResult.skipped > 0 && <span className="text-muted-foreground">({bulkSyncResult.skipped} skipped)</span>}
             {bulkSyncResult.priceTooFar > 0 && <span className="text-warning">({bulkSyncResult.priceTooFar} price too far)</span>}
+            {bulkSyncResult.notOwned > 0 && <span className="text-warning">({bulkSyncResult.notOwned} not on T212)</span>}
             {(bulkSyncResult.failed - bulkSyncResult.priceTooFar) > 0 && <span className="text-loss">({bulkSyncResult.failed - bulkSyncResult.priceTooFar} failed)</span>}
           </span>
         )}

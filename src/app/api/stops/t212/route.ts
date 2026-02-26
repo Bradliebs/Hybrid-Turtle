@@ -421,6 +421,7 @@ export async function PUT(request: NextRequest) {
       placed: results.filter((r) => r.action === 'PLACED').length,
       skipped: results.filter((r) => r.action.startsWith('SKIPPED')).length,
       priceTooFar: results.filter((r) => r.action.startsWith('SKIPPED_PRICE_TOO_FAR') || r.action.startsWith('FAILED_PRICE_TOO_FAR')).length,
+      notOwned: results.filter((r) => r.action === 'SKIPPED_NOT_OWNED').length,
       failed: results.filter((r) => r.action.startsWith('FAILED')).length,
       results,
       timestamp: new Date().toISOString(),

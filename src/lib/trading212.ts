@@ -204,6 +204,9 @@ export class Trading212Client {
         if (errorDetail.includes('price-too-far')) {
           errorDetail += '. T212 rejected this stop because it is outside the instrument\'s acceptable price range (typically ~50% from the current market price, but varies per instrument). For UK stocks (.L), also check that your stop is in pence (GBX), not pounds (GBP) — e.g. 1350 not 13.50. Consider using a tighter stop or setting it manually in the T212 app.';
         }
+        if (errorDetail.includes('selling-equity-not-owned')) {
+          errorDetail += '. T212 says you don\'t own this equity on this account. This usually means the position is in a different account (ISA vs Invest) — check the accountType on the position matches where the shares are actually held.';
+        }
 
         throw new Trading212Error(
           `Trading 212 API error ${response.status}: ${errorDetail}`,
@@ -345,13 +348,27 @@ export class Trading212Client {
   ): Promise<T212PendingOrder | null> {
     if (shares <= 0) return null;
 
-    // Pre-validate stop distance against current market price
+    // Pre-validate ownership and stop distance against T212 positions
     let livePrice = currentPrice;
     if (!livePrice) {
       try {
         const prices = await this.getPositionPrices();
         livePrice = prices.get(t212Ticker);
-      } catch { /* proceed without validation */ }
+        // If we successfully fetched positions but this ticker isn't there,
+        // the position doesn't exist on this T212 account
+        if (!livePrice && prices.size > 0) {
+          throw new Trading212Error(
+            `Ticker ${t212Ticker} not found in T212 positions for this account. ` +
+            `The position may be in a different account (ISA vs Invest) or was already sold on T212. ` +
+            `Check the position's account type in the portfolio page.`,
+            400
+          );
+        }
+      } catch (e) {
+        // Re-throw our ownership check error; swallow network errors
+        if (e instanceof Trading212Error && e.statusCode === 400) throw e;
+        /* proceed without validation on network errors */
+      }
     }
     if (livePrice && livePrice > 0) {
       const { tooFar, distancePct } = Trading212Client.isStopTooFar(stopPrice, livePrice);
@@ -479,8 +496,18 @@ export class Trading212Client {
 
       const existingStops = stopsByTicker.get(t212Ticker) ?? [];
 
-      // Pre-validate stop distance against current market price
+      // Pre-validate ownership: if we fetched prices successfully but this ticker isn't there,
+      // the position doesn't exist on this T212 account (wrong account type or already sold)
       const livePrice = livePrices.get(t212Ticker);
+      if (livePrices.size > 0 && !livePrice) {
+        results.push({
+          t212Ticker, stopPrice, action: 'SKIPPED_NOT_OWNED',
+          error: `Ticker ${t212Ticker} not found in T212 positions — may be in wrong account (ISA vs Invest) or already sold`,
+        });
+        continue;
+      }
+
+      // Pre-validate stop distance against current market price
       if (livePrice && livePrice > 0) {
         const { tooFar, distancePct } = Trading212Client.isStopTooFar(stopPrice, livePrice);
         if (tooFar) {
