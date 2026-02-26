@@ -291,8 +291,14 @@ export async function getDailyPrices(
 
     if (!quotes || quotes.length === 0) return [];
 
+    // Yahoo returns null bars for holidays/gaps — strip them before Zod
+    // validation so one null bar doesn't reject the entire response
+    const nonNullQuotes = quotes.filter(
+      (q: Record<string, unknown>) => q.close != null && q.high != null && q.low != null && q.open != null
+    );
+
     // Runtime validation — rejects malformed chart responses
-    const chartParsed = YahooChartResponseSchema.safeParse({ quotes });
+    const chartParsed = YahooChartResponseSchema.safeParse({ quotes: nonNullQuotes });
     if (!chartParsed.success) {
       console.warn(`[YF] Chart validation failed for ${ticker}:`, chartParsed.error.issues.map(i => i.message).join(', '));
       return [];
@@ -351,7 +357,12 @@ export async function getWeeklyPrices(
 
     if (!quotes || quotes.length === 0) return [];
 
-    const chartParsed = YahooChartResponseSchema.safeParse({ quotes });
+    // Yahoo returns null bars for holidays/gaps — strip before validation
+    const nonNullQuotes = quotes.filter(
+      (q: Record<string, unknown>) => q.close != null && q.high != null && q.low != null && q.open != null
+    );
+
+    const chartParsed = YahooChartResponseSchema.safeParse({ quotes: nonNullQuotes });
     if (!chartParsed.success) {
       console.warn(`[YF] Weekly chart validation failed for ${ticker}:`, chartParsed.error.issues.map(i => i.message).join(', '));
       return [];
