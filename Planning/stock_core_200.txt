@@ -85,6 +85,7 @@ CRWD
 PANW
 NOW
 WDAY
+RDDT
 
 # ========== CONSUMER ==========
 PG
@@ -94,6 +95,7 @@ WMT
 COST
 CL
 HD
+LOW
 NKE
 SBUX
 MCD
@@ -230,6 +232,7 @@ IDXX
 ZTS
 SYK
 EW
+ADMA
 
 # ========== DEFENSE/AEROSPACE (additions) ==========
 GD
@@ -251,6 +254,9 @@ CMG
 CAVA
 ONON
 WING
+TJX
+WHR
+HPQ
 
 # ========== REITS ==========
 O
@@ -268,6 +274,8 @@ MKTX
 
 # ========== FINTECH ==========
 XYZ
+CRCL
+FIGR
 
 # ========== ENERGY (additions) ==========
 EOG
@@ -277,6 +285,7 @@ MPC
 # ========== MATERIALS (additions) ==========
 SCCO
 GOLD
+ARIS
 
 # ========== TRAVEL/LEISURE ==========
 MAR
