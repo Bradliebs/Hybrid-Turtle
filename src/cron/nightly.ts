@@ -39,7 +39,8 @@ import { scanClimaxSignals } from '@/lib/modules/climax-detector';
 import { findSwapSuggestions } from '@/lib/modules/heatmap-swap';
 import { checkWhipsawBlocks } from '@/lib/modules/whipsaw-guard';
 import { calculateBreadth, checkBreadthSafety } from '@/lib/modules/breadth-safety';
-import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
+// Module 13 disabled — import preserved for reference
+// import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
 import { computeCorrelationMatrix } from '@/lib/correlation-matrix';
 import { getRiskBudget, canPyramid } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
@@ -422,30 +423,9 @@ async function runNightlyProcess() {
       console.warn('  [5] Breadth safety failed:', (error as Error).message);
     }
 
-    // Momentum expansion (isolated)
-    try {
-      let spyAdx = 20;
-      try {
-        const spyBars = await getDailyPrices('SPY', 'compact');
-        if (spyBars.length >= 28) {
-          const adxResult = calculateADX(spyBars, 14);
-          spyAdx = adxResult.adx;
-        }
-      } catch { /* default */ }
-      const momentumResult = checkMomentumExpansion(spyAdx, riskProfile);
-      momentumAlert = {
-        adx: momentumResult.adx,
-        isExpanded: momentumResult.isExpanded,
-        expandedMaxRisk: momentumResult.expandedMaxRisk,
-        reason: momentumResult.reason,
-      };
-      if (momentumResult.isExpanded) {
-        alerts.push(`Momentum expansion active — ADX ${spyAdx.toFixed(1)}, risk cap raised`);
-      }
-    } catch (error) {
-      hadFailure = true;
-      console.warn('  [5] Momentum expansion failed:', (error as Error).message);
-    }
+    // Momentum expansion — DISABLED: procyclical risk expansion, adds risk near end of moves not middle
+    // Module 13 permanently disabled. Code preserved but skipped.
+    console.log('  [5] Module 13 (Momentum Expansion) — DISABLED, skipping');
 
     // Correlation matrix (isolated — advisory only, no hard blocks)
     let correlationPairCount = 0;

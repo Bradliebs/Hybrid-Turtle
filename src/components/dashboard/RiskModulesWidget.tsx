@@ -45,21 +45,12 @@ export default function RiskModulesWidget() {
           )}
         </div>
 
-        {/* Momentum Expansion */}
-        <div className={cn(
-          'rounded-lg border p-3 text-center',
-          momentum?.isExpanded ? 'border-profit/20 bg-profit/5' : 'border-border/50'
-        )}>
-          <TrendingUp className={cn('w-5 h-5 mx-auto mb-1', momentum?.isExpanded ? 'text-profit' : 'text-muted-foreground')} />
-          <div className={cn('text-xl font-bold', momentum?.isExpanded ? 'text-profit' : 'text-foreground')}>
-            {momentum?.adx.toFixed(0) || '—'}
-          </div>
-          <div className="text-[10px] text-muted-foreground">SPY ADX</div>
-          {momentum?.isExpanded && momentum.expandedMaxRisk && (
-            <div className="text-[10px] text-profit mt-1 font-medium">
-              Risk → {momentum.expandedMaxRisk}%
-            </div>
-          )}
+        {/* Momentum Expansion — DISABLED */}
+        <div className="rounded-lg border border-muted/10 bg-muted/5 p-3 text-center opacity-50">
+          <TrendingUp className="w-5 h-5 mx-auto mb-1 text-muted-foreground" />
+          <div className="text-xl font-bold text-muted-foreground">OFF</div>
+          <div className="text-[10px] text-muted-foreground">Momentum Exp.</div>
+          <div className="text-[10px] text-muted-foreground mt-1">Disabled</div>
         </div>
 
         {/* Turnover */}

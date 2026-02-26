@@ -39,6 +39,7 @@ const STATUS_CONFIG = {
   YELLOW: { color: 'text-warning', bg: 'bg-warning/10', border: 'border-warning/20', icon: AlertTriangle },
   RED: { color: 'text-loss', bg: 'bg-loss/10', border: 'border-loss/20', icon: XCircle },
   INACTIVE: { color: 'text-muted-foreground', bg: 'bg-muted/10', border: 'border-muted/20', icon: MinusCircle },
+  DISABLED: { color: 'text-muted-foreground/50', bg: 'bg-muted/5', border: 'border-muted/10', icon: MinusCircle },
 };
 
 export default function ModuleStatusPanel() {
@@ -89,7 +90,7 @@ export default function ModuleStatusPanel() {
 
   // Show critical (RED/YELLOW) first, then GREEN, then INACTIVE
   const sortedStatuses = [...statuses].sort((a, b) => {
-    const order = { RED: 0, YELLOW: 1, GREEN: 2, INACTIVE: 3 };
+    const order = { RED: 0, YELLOW: 1, GREEN: 2, INACTIVE: 3, DISABLED: 4 };
     return (order[a.status] ?? 4) - (order[b.status] ?? 4);
   });
 

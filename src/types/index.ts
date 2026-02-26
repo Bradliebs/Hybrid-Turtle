@@ -660,7 +660,7 @@ export interface AdaptiveBufferResult {
 export interface ModuleStatus {
   id: number;
   name: string;
-  status: 'GREEN' | 'YELLOW' | 'RED' | 'INACTIVE';
+  status: 'GREEN' | 'YELLOW' | 'RED' | 'INACTIVE' | 'DISABLED';
   summary: string;
   details?: unknown;
 }

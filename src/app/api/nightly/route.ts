@@ -22,7 +22,8 @@ import { scanClimaxSignals } from '@/lib/modules/climax-detector';
 import { findSwapSuggestions } from '@/lib/modules/heatmap-swap';
 import { checkWhipsawBlocks } from '@/lib/modules/whipsaw-guard';
 import { calculateBreadth, checkBreadthSafety } from '@/lib/modules/breadth-safety';
-import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
+// Module 13 disabled — import preserved for reference
+// import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
 import { getRiskBudget } from '@/lib/risk-gates';
 import { canPyramid } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
@@ -398,30 +399,9 @@ export async function POST(request: NextRequest) {
       console.warn('[Nightly] Breadth module failed:', (error as Error).message);
     }
 
-    // Module 13: Momentum Expansion — isolated try-catch
-    try {
-      let spyAdx = 20;
-      try {
-        const spyBars = await getDailyPrices('SPY', 'compact');
-        if (spyBars.length >= 28) {
-          const adxResult = calculateADX(spyBars, 14);
-          spyAdx = adxResult.adx;
-        }
-      } catch { /* default */ }
-      const momentumResult = checkMomentumExpansion(spyAdx, riskProfile);
-      momentumAlert = {
-        adx: momentumResult.adx,
-        isExpanded: momentumResult.isExpanded,
-        expandedMaxRisk: momentumResult.expandedMaxRisk,
-        reason: momentumResult.reason,
-      };
-      if (momentumResult.isExpanded) {
-        alerts.push(`🚀 Momentum expansion active — ADX ${spyAdx.toFixed(1)}, risk cap raised`);
-      }
-    } catch (error) {
-      hadFailure = true;
-      console.warn('[Nightly] Momentum module failed:', (error as Error).message);
-    }
+    // Module 13: Momentum Expansion — DISABLED: procyclical risk expansion, adds risk near end of moves not middle
+    // Code preserved but skipped permanently.
+    console.log('[Nightly] Module 13 (Momentum Expansion) — DISABLED, skipping');
 
     // Step 5: Record equity snapshot with open risk percent
     let openRiskPercent = 0;

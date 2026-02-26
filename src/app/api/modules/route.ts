@@ -28,14 +28,16 @@ import {
   calculateBreadth,
   checkBreadthSafety,
   checkSuperClusterCaps,
-  checkMomentumExpansion,
+  // Module 13 disabled — import preserved for reference
+  // checkMomentumExpansion,
   calculateTurnover,
   generateActionCard,
   getTradeLog,
-  scanFastFollowers,
+  // Module 9 disabled — import preserved for reference
+  // scanFastFollowers,
   scanReEntrySignals,
 } from '@/lib/modules';
-import type { RiskProfileType, Sleeve, MarketRegime, ModuleStatus, AllModulesResult, FastFollowerSignal, ReEntrySignal, PyramidAlert, TradeLogEntry } from '@/types';
+import type { RiskProfileType, Sleeve, MarketRegime, ModuleStatus, AllModulesResult, FastFollowerSignal, ReEntrySignal, PyramidAlert, TradeLogEntry, MomentumExpansionResult } from '@/types';
 import { apiError } from '@/lib/api-response';
 
 export const dynamic = 'force-dynamic';
@@ -228,17 +230,8 @@ export async function GET(request: NextRequest) {
       getDailyPrices('SPY', 'full'),
       // 4: VWRL full (for dual regime)
       getDailyPrices('VWRL.L', 'full'),
-      // 5: Fast followers — exclude tickers blocked by whipsaw guard
-      scanFastFollowers(
-        closedPositions
-          .filter(p => p.exitReason === 'STOP_HIT')
-          .map(p => ({
-            ticker: p.stock.ticker,
-            exitDate: p.exitDate || new Date(),
-            exitReason: p.exitReason,
-          })),
-        new Set(whipsawBlocks.filter(w => w.blocked).map(w => w.ticker))
-      ),
+      // 5: Fast followers — DISABLED: re-entry after stop-hit fights the tape at 4-position account size
+      Promise.resolve([] as FastFollowerSignal[]),
       // 6: Re-entry signals
       scanReEntrySignals(
         closedPositions
@@ -355,7 +348,14 @@ export async function GET(request: NextRequest) {
       const adxResult = calculateADX(spyBars, 14);
       spyAdx = adxResult.adx;
     }
-    const momentumExpansion = checkMomentumExpansion(spyAdx, riskProfile);
+    // Module 13: Momentum Expansion — DISABLED: procyclical risk expansion, adds risk near end of moves not middle
+    const momentumExpansion: MomentumExpansionResult = {
+      adx: spyAdx,
+      threshold: 25,
+      expandedMaxRisk: null,
+      isExpanded: false,
+      reason: 'Disabled — procyclical risk expansion, adds risk near end of moves not middle',
+    };
 
     // ── Regime Stability ──
     const regimeStability = checkRegimeStability(regime, regimeHistoryRecords);
@@ -535,11 +535,11 @@ export async function GET(request: NextRequest) {
       { id: 5, name: 'Climax Top Exit', status: climaxSignals.length > 0 ? 'RED' : 'GREEN', summary: climaxSignals.length > 0 ? `${climaxSignals.length} climax signal(s)` : 'No climax detected' },
       { id: 7, name: 'Heat-Map Swap', status: swapSuggestions.length > 0 ? 'YELLOW' : 'GREEN', summary: swapSuggestions.length > 0 ? `${swapSuggestions.length} swap(s) suggested` : 'No swaps needed' },
       { id: 8, name: 'Heat Check', status: heatChecks.some(h => h.blocked) ? 'RED' : 'GREEN', summary: heatChecks.some(h => h.blocked) ? 'Some entries blocked' : 'No concentration issues' },
-      { id: 9, name: 'Fast-Follower Re-Entry', status: 'GREEN', summary: 'Monitoring recent exits' },
+      { id: 9, name: 'Fast-Follower Re-Entry', status: 'DISABLED', summary: 'Disabled — re-entry after stop-hit fights the tape at 4-position account size' },
       { id: 10, name: 'Breadth Safety Valve', status: breadthSafety.isRestricted ? 'RED' : 'GREEN', summary: breadthSafety.reason },
       { id: 11, name: 'Whipsaw Kill Switch', status: whipsawBlocks.length > 0 ? 'RED' : 'GREEN', summary: whipsawBlocks.length > 0 ? `${whipsawBlocks.length} ticker(s) blocked` : 'No blocks active' },
       { id: 12, name: 'Super-Cluster Cap', status: superClusterResults.some(s => s.breached) ? 'RED' : 'GREEN', summary: superClusterResults.some(s => s.breached) ? 'Breach detected' : 'Within limits' },
-      { id: 13, name: 'Momentum Expansion', status: momentumExpansion.isExpanded ? 'GREEN' : 'INACTIVE', summary: momentumExpansion.reason },
+      { id: 13, name: 'Momentum Expansion', status: 'DISABLED', summary: 'Disabled — procyclical risk expansion, adds risk near end of moves not middle' },
       { id: 14, name: 'Climax Trim/Tighten', status: climaxSignals.length > 0 ? 'YELLOW' : 'GREEN', summary: climaxSignals.length > 0 ? 'Action needed' : 'No action' },
       { id: 15, name: 'Trades Log', status: 'GREEN', summary: `${recentTrades.length} recent trades` },
       { id: 16, name: 'Turnover Monitor', status: turnover.avgHoldingPeriod < 5 ? 'YELLOW' : 'GREEN', summary: `Avg hold: ${turnover.avgHoldingPeriod}d, ${turnover.tradesLast30Days} trades/30d` },
