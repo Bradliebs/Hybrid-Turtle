@@ -19,12 +19,14 @@ export interface ManualPositionData {
   stopLoss: number;
   entryDate: string;
   notes: string;
+  accountType: 'invest' | 'isa';
 }
 
 export default function AddPositionModal({ isOpen, onClose, onSubmit }: AddPositionModalProps) {
   const [ticker, setTicker] = useState('');
   const [name, setName] = useState('');
   const [sleeve, setSleeve] = useState<'CORE' | 'HIGH_RISK' | 'ETF' | 'HEDGE'>('CORE');
+  const [accountType, setAccountType] = useState<'invest' | 'isa'>('invest');
   const [entryPrice, setEntryPrice] = useState('');
   const [shares, setShares] = useState('');
   const [stopLoss, setStopLoss] = useState('');
@@ -79,12 +81,14 @@ export default function AddPositionModal({ isOpen, onClose, onSubmit }: AddPosit
       stopLoss: stop,
       entryDate,
       notes: notes.trim(),
+      accountType,
     });
 
     // Reset form
     setTicker('');
     setName('');
     setSleeve('CORE');
+    setAccountType('invest');
     setEntryPrice('');
     setShares('');
     setStopLoss('');
@@ -150,8 +154,8 @@ export default function AddPositionModal({ isOpen, onClose, onSubmit }: AddPosit
             </div>
           </div>
 
-          {/* Sleeve & Date */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Sleeve, Account & Date */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-sm text-muted-foreground mb-1">
                 <span className="flex items-center gap-1"><Layers className="w-3 h-3" /> Sleeve</span>
@@ -165,6 +169,19 @@ export default function AddPositionModal({ isOpen, onClose, onSubmit }: AddPosit
                 <option value="ETF">ETF</option>
                 <option value="HIGH_RISK">High Risk</option>
                 <option value="HEDGE">Hedge</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-muted-foreground mb-1">
+                T212 Account
+              </label>
+              <select
+                value={accountType}
+                onChange={(e) => setAccountType(e.target.value as 'invest' | 'isa')}
+                className="input-field w-full"
+              >
+                <option value="invest">Invest</option>
+                <option value="isa">ISA</option>
               </select>
             </div>
             <div>
