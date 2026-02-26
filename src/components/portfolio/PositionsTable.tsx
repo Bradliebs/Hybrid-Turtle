@@ -65,7 +65,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
 
   // T212 bulk sync state
   const [bulkSyncing, setBulkSyncing] = useState(false);
-  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; total: number; failedDetails?: string[] } | null>(null);
+  const [bulkSyncResult, setBulkSyncResult] = useState<{ placed: number; failed: number; skipped: number; priceTooFar: number; total: number; failedDetails?: string[] } | null>(null);
 
   // Exit modal state
   const [exitModal, setExitModal] = useState<Position | null>(null);
@@ -136,17 +136,25 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
             setBulkSyncing(true);
             setBulkSyncResult(null);
             try {
-              const data = await apiRequest<{ placed: number; failed: number; total: number; results?: { ticker: string; action: string }[] }>('/api/stops/t212', {
+              const data = await apiRequest<{ placed: number; failed: number; skipped: number; priceTooFar: number; total: number; results?: { ticker: string; action: string }[] }>('/api/stops/t212', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
               });
-              // Extract failure details for display
+              // Extract failure details for display (include price-too-far)
               const failedDetails = (data.results ?? [])
-                .filter((r) => r.action.startsWith('FAILED'))
-                .map((r) => `${r.ticker}: ${r.action.replace('FAILED: ', '')}`);
-              setBulkSyncResult({ placed: data.placed, failed: data.failed, total: data.total, failedDetails });
-              setTimeout(() => setBulkSyncResult(null), 5000);
+                .filter((r) => r.action.startsWith('FAILED') || r.action === 'SKIPPED_PRICE_TOO_FAR')
+                .map((r) => `${r.ticker}: ${r.action.replace('FAILED: ', '').replace('SKIPPED_PRICE_TOO_FAR', 'Stop too far from market price')}`);
+              setBulkSyncResult({
+                placed: data.placed,
+                failed: data.failed,
+                skipped: data.skipped ?? 0,
+                priceTooFar: data.priceTooFar ?? 0,
+                total: data.total,
+                failedDetails,
+              });
+              // Keep result visible longer for large portfolios
+              setTimeout(() => setBulkSyncResult(null), failedDetails.length > 3 ? 15000 : 8000);
             } catch { /* ignore */ }
             setBulkSyncing(false);
           }}
@@ -160,7 +168,9 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
           <span className="text-xs text-profit flex items-center gap-1">
             <CheckCircle className="w-3 h-3" />
             {bulkSyncResult.placed}/{bulkSyncResult.total} placed
-            {bulkSyncResult.failed > 0 && <span className="text-loss">({bulkSyncResult.failed} failed)</span>}
+            {bulkSyncResult.skipped > 0 && <span className="text-muted-foreground">({bulkSyncResult.skipped} skipped)</span>}
+            {bulkSyncResult.priceTooFar > 0 && <span className="text-warning">({bulkSyncResult.priceTooFar} price too far)</span>}
+            {(bulkSyncResult.failed - bulkSyncResult.priceTooFar) > 0 && <span className="text-loss">({bulkSyncResult.failed - bulkSyncResult.priceTooFar} failed)</span>}
           </span>
         )}
         {bulkSyncResult?.failedDetails && bulkSyncResult.failedDetails.length > 0 && (

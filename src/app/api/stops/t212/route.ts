@@ -396,7 +396,9 @@ export async function PUT(request: NextRequest) {
             t212Ticker: r.t212Ticker,
             accountType: acctType,
             stopPrice: r.stopPrice,
-            action: r.action === 'FAILED' ? `FAILED: ${r.error}` : r.action,
+            action: r.action === 'FAILED' ? `FAILED: ${r.error}`
+              : r.action === 'FAILED_PRICE_TOO_FAR' ? `FAILED_PRICE_TOO_FAR: ${r.error}`
+              : r.action,
             orderId: r.orderId,
           });
         }
@@ -418,7 +420,7 @@ export async function PUT(request: NextRequest) {
       total: positions.length,
       placed: results.filter((r) => r.action === 'PLACED').length,
       skipped: results.filter((r) => r.action.startsWith('SKIPPED')).length,
-      priceTooFar: results.filter((r) => r.action === 'SKIPPED_PRICE_TOO_FAR' || r.action === 'FAILED_PRICE_TOO_FAR').length,
+      priceTooFar: results.filter((r) => r.action.startsWith('SKIPPED_PRICE_TOO_FAR') || r.action.startsWith('FAILED_PRICE_TOO_FAR')).length,
       failed: results.filter((r) => r.action.startsWith('FAILED')).length,
       results,
       timestamp: new Date().toISOString(),
