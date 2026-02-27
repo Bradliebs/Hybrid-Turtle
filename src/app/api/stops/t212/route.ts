@@ -244,12 +244,38 @@ export async function POST(request: NextRequest) {
     const primaryAcctType: T212AccountType = position.accountType === 'isa' ? 'isa' : 'invest';
     const client = await getT212ClientForPosition(position);
 
+    // Stale stop detection: fetch T212 live price and check distance before making any stop calls.
+    // If stop is >50% from current price, skip the push and flag it for manual review.
+    let livePrice: number | undefined;
+    try {
+      const prices = await client.getPositionPrices();
+      livePrice = prices.get(t212Ticker);
+      if (livePrice && livePrice > 0) {
+        const { tooFar, distancePct } = Trading212Client.isStopTooFar(stopPrice, livePrice);
+        if (tooFar) {
+          return NextResponse.json({
+            success: false,
+            stale: true,
+            ticker: position.stock.ticker,
+            t212Ticker,
+            stopPrice,
+            currentPrice: livePrice,
+            distancePct: Math.round(distancePct * 10) / 10,
+            message: `Stop price is stale — ${stopPrice.toFixed(2)} is ${distancePct.toFixed(1)}% from current price ${livePrice.toFixed(2)}. Please review manually.`,
+          });
+        }
+      }
+    } catch {
+      // Price fetch failed — proceed with setStopLoss which has its own validation
+    }
+
     let order: Awaited<ReturnType<Trading212Client['setStopLoss']>>;
     let usedAcctType = primaryAcctType;
 
     try {
       // setStopLoss handles: fetch pending orders, monotonic check, cancel old, place new
-      order = await client.setStopLoss(t212Ticker, position.shares, stopPrice);
+      // Pass livePrice to avoid double-fetching from T212
+      order = await client.setStopLoss(t212Ticker, position.shares, stopPrice, livePrice);
     } catch (primaryErr) {
       // If T212 says "you don't own this equity", try the OTHER account automatically.
       // This catches the common misconfiguration where accountType is wrong in the DB.
@@ -268,8 +294,8 @@ export async function POST(request: NextRequest) {
         throw primaryErr;
       }
 
-      // Try the other account
-      order = await fallbackClient.setStopLoss(t212Ticker, position.shares, stopPrice);
+      // Try the other account — pass livePrice to avoid refetching
+      order = await fallbackClient.setStopLoss(t212Ticker, position.shares, stopPrice, livePrice);
       usedAcctType = fallbackAcctType;
 
       // Fix the position's accountType in the DB so future calls route correctly
@@ -396,7 +422,7 @@ export async function PUT(request: NextRequest) {
     // Group positions by account type for batched processing
     const byAccount = new Map<T212AccountType, typeof positions>();
     const skippedResults: Array<{
-      ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string;
+      ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string; message?: string;
     }> = [];
 
     for (const pos of positions) {
@@ -419,7 +445,7 @@ export async function PUT(request: NextRequest) {
 
     // Process each account type with a single batch call
     const results: Array<{
-      ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string; orderId?: number;
+      ticker: string; t212Ticker: string; accountType: string; stopPrice: number; action: string; orderId?: number; message?: string;
     }> = [...skippedResults];
 
     // Track positions that need retry on the other account (SKIPPED_NOT_OWNED or selling-equity-not-owned)
@@ -458,15 +484,17 @@ export async function PUT(request: NextRequest) {
             }
           }
 
+          const isStale = r.action === 'SKIPPED_PRICE_TOO_FAR' || r.action === 'FAILED_PRICE_TOO_FAR';
           results.push({
             ticker: tickerMap.get(r.t212Ticker) || r.t212Ticker,
             t212Ticker: r.t212Ticker,
             accountType: acctType,
             stopPrice: r.stopPrice,
-            action: r.action === 'FAILED' ? `FAILED: ${r.error}`
-              : r.action === 'FAILED_PRICE_TOO_FAR' ? `FAILED_PRICE_TOO_FAR: ${r.error}`
+            action: isStale ? 'STALE_STOP'
+              : r.action === 'FAILED' ? `FAILED: ${r.error}`
               : r.action,
             orderId: r.orderId,
+            ...(isStale ? { message: `Stop price is stale — please review manually. ${r.error || ''}`.trim() } : {}),
           });
         }
       } catch (error) {
@@ -536,15 +564,18 @@ export async function PUT(request: NextRequest) {
               );
             }
 
+            const isRetryStale = r.action === 'SKIPPED_PRICE_TOO_FAR' || r.action === 'FAILED_PRICE_TOO_FAR';
             results.push({
               ticker: item.position.stock.ticker,
               t212Ticker: r.t212Ticker,
               accountType: r.action === 'PLACED' ? fallbackAcctType : item.originalAcctType,
               stopPrice: r.stopPrice,
-              action: r.action === 'PLACED' ? 'PLACED_ACCOUNT_CORRECTED'
+              action: isRetryStale ? 'STALE_STOP'
+                : r.action === 'PLACED' ? 'PLACED_ACCOUNT_CORRECTED'
                 : r.action === 'FAILED' ? `FAILED: ${r.error}`
                 : r.action,
               orderId: r.orderId,
+              ...(isRetryStale ? { message: `Stop price is stale — please review manually. ${r.error || ''}`.trim() } : {}),
             });
           }
         } catch {
@@ -568,7 +599,7 @@ export async function PUT(request: NextRequest) {
       total: positions.length,
       placed: results.filter((r) => r.action === 'PLACED' || r.action === 'PLACED_ACCOUNT_CORRECTED').length,
       skipped: results.filter((r) => r.action.startsWith('SKIPPED')).length,
-      priceTooFar: results.filter((r) => r.action.startsWith('SKIPPED_PRICE_TOO_FAR') || r.action.startsWith('FAILED_PRICE_TOO_FAR')).length,
+      stale: results.filter((r) => r.action === 'STALE_STOP').length,
       notOwned: results.filter((r) => r.action === 'SKIPPED_NOT_OWNED').length,
       failed: results.filter((r) => r.action.startsWith('FAILED')).length,
       ...(accountCorrectedCount > 0 ? { accountCorrected: accountCorrectedCount } : {}),

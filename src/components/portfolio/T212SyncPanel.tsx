@@ -14,6 +14,7 @@ import {
   Clock,
   Unplug,
   Settings,
+  Repeat,
 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
@@ -69,6 +70,10 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [syncingAccountTypes, setSyncingAccountTypes] = useState(false);
+  const [accountTypeSyncResult, setAccountTypeSyncResult] = useState<{
+    updated: number; alreadyCorrect: number; notFound: number; totalChecked: number;
+  } | null>(null);
 
   const loadStatus = async () => {
     try {
@@ -100,6 +105,30 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
       setError(error instanceof ApiClientError ? error.message : 'Sync failed — check your connection');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSyncAccountTypes = async () => {
+    setSyncingAccountTypes(true);
+    setError(null);
+    setAccountTypeSyncResult(null);
+
+    try {
+      const data = await apiRequest<{
+        success: boolean;
+        summary: { updated: number; alreadyCorrect: number; notFound: number; totalChecked: number };
+      }>('/api/positions/sync-account-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: DEFAULT_USER_ID }),
+      });
+
+      setAccountTypeSyncResult(data.summary);
+      onSyncComplete?.();
+    } catch (error) {
+      setError(error instanceof ApiClientError ? error.message : 'Account type sync failed');
+    } finally {
+      setSyncingAccountTypes(false);
     }
   };
 
@@ -169,18 +198,33 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
           </div>
         </div>
 
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="btn-primary flex items-center gap-1.5 text-sm"
-        >
-          {syncing ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4" />
-          )}
-          {syncing ? 'Syncing...' : 'Sync Positions'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncAccountTypes}
+            disabled={syncingAccountTypes || syncing}
+            className="btn-secondary flex items-center gap-1.5 text-sm"
+            title="Check all positions against T212 and fix ISA/Invest account types"
+          >
+            {syncingAccountTypes ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Repeat className="w-4 h-4" />
+            )}
+            {syncingAccountTypes ? 'Syncing...' : 'Sync Account Types'}
+          </button>
+          <button
+            onClick={handleSync}
+            disabled={syncing || syncingAccountTypes}
+            className="btn-primary flex items-center gap-1.5 text-sm"
+          >
+            {syncing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
+            {syncing ? 'Syncing...' : 'Sync Positions'}
+          </button>
+        </div>
       </div>
 
       {/* Error */}
@@ -188,6 +232,19 @@ export default function T212SyncPanel({ onSyncComplete }: T212SyncPanelProps) {
         <div className="p-3 mx-4 mt-4 bg-loss/10 border border-loss/30 rounded-lg text-sm text-loss flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           {error}
+        </div>
+      )}
+
+      {/* Account Type Sync Result */}
+      {accountTypeSyncResult && (
+        <div className="p-3 mx-4 mt-4 bg-primary/10 border border-primary/30 rounded-lg text-sm text-foreground">
+          <div className="flex items-center gap-2 mb-1">
+            <Repeat className="w-4 h-4 text-primary-400" />
+            <span className="font-medium">Account Type Sync Complete</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Checked {accountTypeSyncResult.totalChecked} positions — {accountTypeSyncResult.updated} updated, {accountTypeSyncResult.alreadyCorrect} already correct{accountTypeSyncResult.notFound > 0 ? `, ${accountTypeSyncResult.notFound} not in DB` : ''}
+          </p>
         </div>
       )}
 
