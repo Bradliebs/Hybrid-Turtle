@@ -35,6 +35,8 @@ const createPositionSchema = z.object({
   whipsawBlocked: z.coerce.boolean().optional(),
   climaxDetected: z.coerce.boolean().optional(),
   notes: z.string().optional(),
+  // T212 dual-account: ISA vs Invest — ensures stops route to the correct account
+  accountType: z.enum(['invest', 'isa']).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -230,6 +232,7 @@ export async function POST(request: NextRequest) {
       whipsawBlocked,
       climaxDetected,
       notes,
+      accountType,
     } = parsed.data;
 
     // Hard pre-trade gates
@@ -373,6 +376,8 @@ export async function POST(request: NextRequest) {
           entry_type: entryType || 'BREAKOUT',
           protectionLevel: 'INITIAL',
           source: 'manual',
+          // T212 dual-account: ISA vs Invest — routes stops to the correct account
+          accountType: accountType ?? 'invest',
           notes,
         },
         include: { stock: true },
