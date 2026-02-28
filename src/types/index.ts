@@ -410,6 +410,7 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
   { label: 'Plan', href: '/plan' },
   { label: 'Trade Log', href: '/trade-log' },
   { label: 'Risk', href: '/risk' },
+  { label: 'Signals', href: '/backtest' },
   { label: 'Settings', href: '/settings' },
 ];
 

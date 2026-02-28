@@ -15,6 +15,7 @@ import {
   Settings,
   User,
   Shield,
+  Activity,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -24,6 +25,7 @@ const iconMap: Record<string, React.ReactNode> = {
   Plan: <ClipboardList className="w-4 h-4" />,
   'Trade Log': <NotebookPen className="w-4 h-4" />,
   Risk: <ShieldAlert className="w-4 h-4" />,
+  Signals: <Activity className="w-4 h-4" />,
   Settings: <Settings className="w-4 h-4" />,
 };
 
