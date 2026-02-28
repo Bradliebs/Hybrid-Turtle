@@ -18,6 +18,7 @@ import prisma from '@/lib/prisma';
 import { apiError } from '@/lib/api-response';
 import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
+import { isNightlyRunning } from '@/lib/nightly-guard';
 import { normalizePersistedPassFlag } from '@/lib/scan-pass-flags';
 
 const scanRequestSchema = z.object({
@@ -28,6 +29,12 @@ const scanRequestSchema = z.object({
 
 // ── POST: Run a fresh scan, persist to DB + cache in memory ─────────
 export async function POST(request: NextRequest) {
+  // Guard: block bulk Yahoo calls while nightly is running
+  if (await isNightlyRunning()) {
+    return apiError(503, 'NIGHTLY_RUNNING',
+      'Nightly scan is currently running — manual scan unavailable for a few minutes. Try again shortly.');
+  }
+
   try {
     const parsed = await parseJsonBody(request, scanRequestSchema);
     if (!parsed.ok) {

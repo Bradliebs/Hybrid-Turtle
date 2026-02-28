@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import Navbar from '@/components/shared/Navbar';
 import KPIBanner from '@/components/portfolio/KPIBanner';
 import PositionsTable from '@/components/portfolio/PositionsTable';
@@ -12,6 +13,9 @@ import { cn } from '@/lib/utils';
 import { PORTFOLIO_SUB_NAV } from '@/types';
 import { apiRequest } from '@/lib/api-client';
 import { Loader2 } from 'lucide-react';
+
+// Dynamic import keeps ~ReadyToBuyPanel out of initial bundle (only loads when visible)
+const ReadyToBuyPanel = dynamic(() => import('@/components/portfolio/ReadyToBuyPanel'), { ssr: false });
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -180,6 +184,17 @@ export default function PositionsPage() {
 
   // Use T212 account summary for portfolio KPIs (properly currency-converted)
   const openPositions = positions.filter((p) => p.status === 'OPEN');
+
+  // Cluster-aware position list for ReadyToBuyPanel overlap detection
+  const openPositionsForCluster = useMemo(() =>
+    openPositions.map((p) => ({
+      ticker: p.ticker,
+      cluster: p.sleeve, // sleeve is the best cluster proxy available in position data
+      sleeve: p.sleeve,
+    })),
+    [openPositions]
+  );
+
   const totalValue = account?.totalValue ?? 0;
   const unrealisedPL = account?.unrealisedPL ?? 0;
   const cash = account?.cash ?? 0;
@@ -240,6 +255,13 @@ export default function PositionsPage() {
 
         {/* Stop-Loss Recommendations — fetches live from /api/stops */}
         <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} refreshTrigger={stopRefreshKey} />
+
+        {/* Ready to Buy — trigger-met candidates from latest scan */}
+        <ReadyToBuyPanel
+          currentPositionCount={openPositions.length}
+          openPositions={openPositionsForCluster}
+          onPositionCreated={handleSyncComplete}
+        />
 
         {/* Loading state */}
         {loading ? (

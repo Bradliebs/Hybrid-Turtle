@@ -45,7 +45,7 @@ export function calcBIS(candle: BISCandle, avgVolume: number): number {
   if (avgVolume > 0 && Number.isFinite(candle.volume) && candle.volume > 0) {
     const volPct = candle.volume / avgVolume;
     if (volPct > 1.5) volumeScore = 5;
-    else if (volPct >= 1.0) volumeScore = 3;
+    else if (volPct >= 1.0) volumeScore = 2;
   }
 
   // 3. Close position in bar range — close in top 30% = bulls in control

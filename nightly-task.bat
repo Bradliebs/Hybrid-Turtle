@@ -55,4 +55,5 @@ if %EXIT_CODE% neq 0 (
 echo.
 echo  Full log saved to: nightly.log
 echo.
-pause
+:: Only pause when running interactively (not from Task Scheduler)
+if /i NOT "%~1"=="--scheduled" pause

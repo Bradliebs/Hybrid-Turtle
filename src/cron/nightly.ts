@@ -31,7 +31,7 @@ import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
 import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert, NightlyGapRiskAlert } from '@/lib/telegram';
-import { getBatchPrices, getBatchQuotes, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
+import { getBatchPrices, getBatchQuotes, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, calculateMA, preCacheHistoricalData } from '@/lib/market-data';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { detectLaggards } from '@/lib/laggard-detector';
@@ -55,6 +55,12 @@ async function runNightlyProcess() {
   console.log('========================================');
 
   try {
+    // Write RUNNING heartbeat so the dashboard knows we're active
+    await prisma.heartbeat.create({
+      data: { status: 'RUNNING', details: JSON.stringify({ startedAt: new Date().toISOString() }) },
+    });
+    console.log('  [---] RUNNING heartbeat written');
+
     // Step 0: Pre-cache historical data for all active tickers
     console.log('  [0/9] Pre-caching historical data for all active tickers...');
     try {
@@ -235,10 +241,31 @@ async function runNightlyProcess() {
 
     let laggardAlerts: NightlyLaggardAlert[] = [];
     try {
+      // Pre-compute MA20 + ADX (today vs yesterday) from cached daily bars
+      // getDailyPrices hits cache here — bars were fetched in Step 3
+      const laggardExtras = new Map<string, { ma20: number; adxToday: number; adxYesterday: number }>();
+      for (const p of positions) {
+        try {
+          const bars = await getDailyPrices(p.stock.ticker, 'full');
+          if (bars.length >= 29) {
+            // MA20 from newest-first close prices
+            const closes = bars.map(b => b.close);
+            const ma20 = calculateMA(closes, 20);
+            // ADX today (full bars) vs yesterday (exclude today's bar)
+            const adxToday = calculateADX(bars, 14).adx;
+            const adxYesterday = calculateADX(bars.slice(1), 14).adx;
+            laggardExtras.set(p.stock.ticker, { ma20, adxToday, adxYesterday });
+          }
+        } catch {
+          // Non-critical — recovery exemption just won't activate for this ticker
+        }
+      }
+
       const laggardInput = positions.map((p) => {
         const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
         const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
         const currency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
+        const extras = laggardExtras.get(p.stock.ticker);
         return {
           id: p.id,
           ticker: p.stock.ticker,
@@ -250,6 +277,8 @@ async function runNightlyProcess() {
           currentPrice,
           currency,
           sleeve: p.stock.sleeve,
+          // Recovery exemption fields — computed from cached daily bars
+          ...(extras ? { ma20: extras.ma20, adxToday: extras.adxToday, adxYesterday: extras.adxYesterday } : {}),
         };
       });
       const laggards = detectLaggards(laggardInput);
@@ -662,7 +691,7 @@ async function runNightlyProcess() {
       gapRiskAlerts,
     });
     } catch (error) {
-      hadFailure = true;
+      // Telegram is optional infrastructure — failure must not degrade heartbeat
       console.error('  [8] Telegram send failed:', (error as Error).message);
     }
     console.log(`        Telegram: ${telegramSent ? 'SENT' : 'NOT SENT (check credentials)'}`);
@@ -705,6 +734,19 @@ async function runNightlyProcess() {
       });
     } catch { /* ignore */ }
   } finally {
+    // Safety net: if latest heartbeat is still RUNNING, mark as FAILED
+    try {
+      const latest = await prisma.heartbeat.findFirst({ orderBy: { timestamp: 'desc' } });
+      if (latest?.status === 'RUNNING') {
+        await prisma.heartbeat.create({
+          data: {
+            status: 'FAILED',
+            details: JSON.stringify({ error: 'Pipeline exited with RUNNING status — forced to FAILED' }),
+          },
+        });
+        console.warn('  [!!!] RUNNING heartbeat found in finally — forced to FAILED');
+      }
+    } catch { /* best-effort */ }
     await prisma.$disconnect();
   }
 }

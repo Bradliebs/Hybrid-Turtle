@@ -626,7 +626,7 @@ export async function POST(request: NextRequest) {
         momentumAlert,
       });
     } catch (error) {
-      hadFailure = true;
+      // Telegram is optional infrastructure — failure must not degrade heartbeat
       console.warn('[Nightly] Telegram send failed:', (error as Error).message);
     }
 

@@ -11,6 +11,7 @@ import prisma from '@/lib/prisma';
 import { getMarketRegime } from '@/lib/market-data';
 import { scanEarlyBirds } from '@/lib/modules';
 import { apiError } from '@/lib/api-response';
+import { isNightlyRunning } from '@/lib/nightly-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +33,12 @@ export async function GET(request: NextRequest) {
   // cacheOnly mode: return 204 if no server cache (avoids triggering a full scan)
   if (cacheOnly && !_earlyBirdCache) {
     return new NextResponse(null, { status: 204 });
+  }
+
+  // Guard: block bulk Yahoo calls while nightly is running (refresh triggers a full scan)
+  if (await isNightlyRunning()) {
+    return apiError(503, 'NIGHTLY_RUNNING',
+      'Nightly scan is currently running — Early Bird scan unavailable for a few minutes. Try again shortly.');
   }
 
   try {

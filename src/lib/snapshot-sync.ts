@@ -418,16 +418,25 @@ export async function syncSnapshot(
     }
   }
 
-  // 7. Write all collected rows + update snapshot count in a single transaction
-  await prisma.$transaction([
-    ...batchData.map((d) =>
-      prisma.snapshotTicker.create({ data: d as Parameters<typeof prisma.snapshotTicker.create>[0]['data'] })
-    ),
-    prisma.snapshot.update({
-      where: { id: snapshot.id },
-      data: { rowCount: done },
-    }),
-  ]);
+  // 7. Write collected rows in batches to reduce SQLite write-lock duration.
+  //    Each batch holds the lock only for ~50 inserts instead of ~268.
+  const WRITE_BATCH_SIZE = 50;
+  for (let b = 0; b < batchData.length; b += WRITE_BATCH_SIZE) {
+    const chunk = batchData.slice(b, b + WRITE_BATCH_SIZE);
+    await prisma.$transaction(
+      chunk.map((d) =>
+        prisma.snapshotTicker.create({
+          data: d as Parameters<typeof prisma.snapshotTicker.create>[0]['data'],
+        })
+      )
+    );
+  }
+
+  // Only update rowCount after all batches committed successfully
+  await prisma.snapshot.update({
+    where: { id: snapshot.id },
+    data: { rowCount: done },
+  });
 
   return {
     snapshotId: snapshot.id,

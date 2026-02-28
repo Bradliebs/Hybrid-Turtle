@@ -61,7 +61,7 @@ describe('calcBIS', () => {
     expect(calcBIS(candle, 600_000)).toBe(15); // +5 body + +5 vol + +5 close
 
     // Volume 100-150% avg
-    expect(calcBIS(candle, 800_000)).toBe(13); // +5 body + +3 vol + +5 close
+    expect(calcBIS(candle, 800_000)).toBe(12); // +5 body + +2 vol + +5 close
 
     // Volume < 100% avg
     expect(calcBIS(candle, 2_000_000)).toBe(10); // +5 body + +0 vol + +5 close
