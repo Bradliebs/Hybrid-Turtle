@@ -63,8 +63,10 @@ export default function DashboardPage() {
   const [triggerMetCount, setTriggerMetCount] = useState(0);
   const [triggerMetTickers, setTriggerMetTickers] = useState<string[]>([]);
   const [scanCachedAt, setScanCachedAt] = useState<string | null>(null);
-  const [nightlyRunning, setNightlyRunning] = useState(false);
-  const [nightlyResult, setNightlyResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const nightlyRunning = useStore((s) => s.nightlyRunning);
+  const nightlyResult = useStore((s) => s.nightlyResult);
+  const setNightlyRunning = useStore((s) => s.setNightlyRunning);
+  const setNightlyResult = useStore((s) => s.setNightlyResult);
 
   const fetchLiveMarketData = useCallback(async () => {
     try {

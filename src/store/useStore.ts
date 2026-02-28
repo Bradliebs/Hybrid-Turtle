@@ -78,6 +78,10 @@ interface AppState {
   modulesFetching: boolean;
   marketDataFetchedAt: number;
 
+  // Nightly run state (survives tab navigation)
+  nightlyRunning: boolean;
+  nightlyResult: { ok: boolean; message: string } | null;
+
   // Actions
   setHealthStatus: (status: HealthStatus) => void;
   setMarketRegime: (regime: MarketRegime) => void;
@@ -108,6 +112,10 @@ interface AppState {
   isModulesStale: () => boolean;
   setMarketDataFetchedAt: (ts: number) => void;
   isMarketDataStale: () => boolean;
+
+  // Nightly actions
+  setNightlyRunning: (running: boolean) => void;
+  setNightlyResult: (result: { ok: boolean; message: string } | null) => void;
 }
 
 export const useStore = create<AppState>()(persist((set, get) => ({
@@ -146,6 +154,10 @@ export const useStore = create<AppState>()(persist((set, get) => ({
   modulesFetchedAt: 0,
   modulesFetching: false,
   marketDataFetchedAt: 0,
+
+  // Nightly run state
+  nightlyRunning: false,
+  nightlyResult: null,
 
   // Actions
   setHealthStatus: (status) =>
@@ -192,6 +204,10 @@ export const useStore = create<AppState>()(persist((set, get) => ({
     const state = get();
     return Date.now() - state.marketDataFetchedAt > CACHE_TTL;
   },
+
+  // Nightly actions
+  setNightlyRunning: (running) => set({ nightlyRunning: running }),
+  setNightlyResult: (result) => set({ nightlyResult: result }),
 }), {
   name: 'hybrid-turtle-settings',
   partialize: (state) => ({
