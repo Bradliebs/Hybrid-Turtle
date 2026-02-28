@@ -56,6 +56,7 @@ interface SignalHit {
   actionNote: string;
   atrPct: number;
   adx: number;
+  bps: number;
   fwd5: ForwardReturn | null;
   fwd10: ForwardReturn | null;
   fwd20: ForwardReturn | null;
@@ -130,7 +131,7 @@ export default function BacktestPage() {
   const [sleeveFilter, setSleeveFilter] = useState('');
   const [regimeFilter, setRegimeFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
-  const [sortField, setSortField] = useState<'date' | 'ncs' | 'fwd20' | 'maxFav'>('date');
+  const [sortField, setSortField] = useState<'date' | 'ncs' | 'bps' | 'fwd20' | 'maxFav'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   useEffect(() => {
@@ -187,6 +188,9 @@ export default function BacktestPage() {
           break;
         case 'ncs':
           cmp = a.ncs - b.ncs;
+          break;
+        case 'bps':
+          cmp = a.bps - b.bps;
           break;
         case 'fwd20':
           cmp = (a.fwd20?.rMultiple ?? -999) - (b.fwd20?.rMultiple ?? -999);
@@ -403,6 +407,13 @@ export default function BacktestPage() {
                     >
                       NCS <SortIcon field="ncs" />
                     </th>
+                    <th
+                      className="text-right px-3 py-3 text-xs font-semibold text-muted-foreground cursor-pointer hover:text-foreground"
+                      onClick={() => toggleSort('bps')}
+                      title="Breakout Probability Score (0–19)"
+                    >
+                      BPS <SortIcon field="bps" />
+                    </th>
                     <th className="text-center px-3 py-3 text-xs font-semibold text-muted-foreground">
                       Action
                     </th>
@@ -494,6 +505,18 @@ export default function BacktestPage() {
                             )}
                           >
                             {signal.ncs.toFixed(0)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <span
+                            className={cn(
+                              'font-mono text-xs font-semibold',
+                              signal.bps >= 14 ? 'text-profit' :
+                              signal.bps >= 10 ? 'text-blue-400' :
+                              signal.bps >= 6 ? 'text-amber-400' : 'text-muted-foreground'
+                            )}
+                          >
+                            {signal.bps}
                           </span>
                         </td>
                         <td className="px-3 py-2.5 text-center">

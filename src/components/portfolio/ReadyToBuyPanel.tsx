@@ -439,6 +439,15 @@ export default function ReadyToBuyPanel({
                         <span className="text-muted-foreground">
                           NCS <span className={ncsColor(candidate.dualNCS)}>{candidate.dualNCS?.toFixed(0) ?? '—'}</span>
                         </span>
+                        {candidate.bps != null && (
+                          <span className="text-muted-foreground">
+                            BPS <span className={cn(
+                              candidate.bps >= 14 ? 'text-profit' :
+                              candidate.bps >= 10 ? 'text-blue-400' :
+                              candidate.bps >= 6 ? 'text-amber-400' : 'text-foreground'
+                            )}>{candidate.bps}</span>
+                          </span>
+                        )}
                       </div>
 
                       {/* Stop level + initial risk */}

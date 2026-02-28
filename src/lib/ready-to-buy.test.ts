@@ -36,6 +36,7 @@ function makeTicker(overrides: Partial<CrossRefTicker> = {}): CrossRefTicker {
     priceCurrency: 'USD',
     matchType: 'BOTH_RECOMMEND',
     agreementScore: 80,
+    bps: null,
     ...overrides,
   };
 }

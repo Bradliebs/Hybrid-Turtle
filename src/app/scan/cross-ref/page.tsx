@@ -50,6 +50,7 @@ interface CrossRefTicker {
   dualDistancePct: number | null;
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;
+  bps: number | null;
 }
 
 interface CrossRefData {
@@ -638,13 +639,14 @@ export default function CrossReferencePage() {
                   <th className="px-3 py-3 text-center" title="Dual Score NCS">NCS</th>
                   <th className="px-3 py-3 text-center" title="Dual Score BQS">BQS</th>
                   <th className="px-3 py-3 text-center" title="Dual Score FWS (lower is better)">FWS</th>
+                  <th className="px-3 py-3 text-center" title="Breakout Probability Score (0–19, higher = better)">BPS</th>
                   <th className="px-3 py-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
+                    <td colSpan={11} className="px-4 py-12 text-center text-muted-foreground">
                       No tickers match the current filters.
                     </td>
                   </tr>
@@ -724,6 +726,24 @@ export default function CrossReferencePage() {
                               (t.dualFWS ?? 0) > 50 ? 'bg-red-400' : (t.dualFWS ?? 0) > 30 ? 'bg-amber-400' : 'bg-emerald-400'
                             }
                           />
+                        </td>
+                        <td className="px-3 py-3 text-center">
+                          {t.bps != null ? (
+                            <span
+                              className={cn(
+                                'text-xs font-mono font-semibold px-1.5 py-0.5 rounded',
+                                t.bps >= 14 && 'text-profit bg-profit/15',
+                                t.bps >= 10 && t.bps < 14 && 'text-blue-400 bg-blue-500/15',
+                                t.bps >= 6 && t.bps < 10 && 'text-amber-400 bg-amber-500/15',
+                                t.bps < 6 && 'text-muted-foreground bg-white/5',
+                              )}
+                              title={`Breakout Probability Score: ${t.bps}/19`}
+                            >
+                              {t.bps}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-600">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-center">
                           <ActionBadge action={t.dualAction} />

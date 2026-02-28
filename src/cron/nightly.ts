@@ -42,6 +42,7 @@ import { calculateBreadth, checkBreadthSafety } from '@/lib/modules/breadth-safe
 // Module 13 disabled — import preserved for reference
 // import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
 import { computeCorrelationMatrix } from '@/lib/correlation-matrix';
+import { refreshSectorMomentumCache } from '@/lib/sector-etf-cache';
 import { getRiskBudget, canPyramid } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
 import type { RiskProfileType, Sleeve } from '@/types';
@@ -472,6 +473,15 @@ async function runNightlyProcess() {
       console.warn('  [5] Correlation matrix failed:', (error as Error).message);
     }
     console.log(`        Climax: ${climaxAlerts.length}, Swap: ${swapAlerts.length}, Whipsaw: ${whipsawAlerts.length}, Corr pairs: ${correlationPairCount}`);
+
+    // Sector ETF momentum cache refresh (non-blocking — BPS factor 4 data)
+    try {
+      const sectorResult = await refreshSectorMomentumCache();
+      console.log(`        Sector ETF cache: ${sectorResult.cached} sectors cached, ${sectorResult.failed.length} failed`);
+    } catch (error) {
+      // Non-critical — BPS sector factor returns 0 on cache miss
+      console.warn('  [5] Sector ETF cache refresh failed:', (error as Error).message);
+    }
 
     // Step 6: Record equity snapshot + check pyramids
     console.log('  [6/9] Recording equity snapshot...');

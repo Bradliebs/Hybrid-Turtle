@@ -5,6 +5,7 @@ import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/l
 import type { ScanCandidate } from '@/types';
 import { apiError } from '@/lib/api-response';
 import { getPassedGateCounts, reconstructCandidatesFromDbRows } from '@/lib/scan-db-reconstruction';
+import { calcBPSFromSnapshot } from '@/lib/breakout-probability';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -227,6 +228,8 @@ interface CrossRefTicker {
   // Cross-reference classification
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;          // 0-100 how aligned the two systems are
+  // Breakout Probability Score (0–19, higher = more structural evidence for breakout)
+  bps: number | null;
 }
 
 export async function GET() {
@@ -313,6 +316,16 @@ export async function GET() {
         agreementScore = dualRecommends ? 75 : 25;
       }
 
+      // Compute BPS from available snapshot data
+      const bpsResult = dual
+        ? calcBPSFromSnapshot({
+            atr_pct: dual.atr_pct,
+            rs_vs_benchmark_pct: dual.rs_vs_benchmark_pct,
+            weekly_adx: dual.weekly_adx as number | undefined,
+            sector: dual.cluster_name as string | undefined,
+          })
+        : null;
+
       crossRef.push({
         ticker,
         yahooTicker: scan?.yahooTicker || undefined,
@@ -349,6 +362,8 @@ export async function GET() {
         // Classification
         matchType,
         agreementScore,
+        // BPS
+        bps: bpsResult?.bps ?? null,
       });
     }
 

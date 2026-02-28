@@ -16,6 +16,7 @@ import {
   scoreRow,
   type SnapshotRow,
 } from '@/lib/dual-score';
+import { calcBPSFromSnapshot } from '@/lib/breakout-probability';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,7 @@ interface SignalHit {
   actionNote: string;
   atrPct: number;
   adx: number;
+  bps: number;  // Breakout Probability Score (0–19)
   // Forward returns (null if no subsequent snapshot at that horizon)
   fwd5: ForwardReturn | null;
   fwd10: ForwardReturn | null;
@@ -337,6 +339,14 @@ export async function GET(request: NextRequest) {
         // Simulate stop ladder
         const stopSim = simulateStopLadder(entryPrice, current.stopLevel, forwardSnaps);
 
+        // Compute BPS from snapshot data available at signal time
+        const bpsResult = calcBPSFromSnapshot({
+          atr_pct: snapshotRow.atr_pct,
+          rs_vs_benchmark_pct: snapshotRow.rs_vs_benchmark_pct,
+          weekly_adx: snapshotRow.weekly_adx as number | undefined,
+          sector: snapshotRow.cluster_name as string | undefined,
+        });
+
         signals.push({
           ticker,
           name: current.name || ticker,
@@ -354,6 +364,7 @@ export async function GET(request: NextRequest) {
           actionNote: scored.ActionNote,
           atrPct: current.atrPct,
           adx: current.adx14,
+          bps: bpsResult.bps,
           fwd5,
           fwd10,
           fwd20,

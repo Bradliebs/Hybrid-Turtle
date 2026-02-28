@@ -42,6 +42,8 @@ export interface CrossRefTicker {
   // Cross-reference classification
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;
+  // Breakout Probability Score (0–19)
+  bps: number | null;
 }
 
 /** Enriched candidate that has passed trigger-met detection */
@@ -95,11 +97,15 @@ export function filterTriggerMet(tickers: CrossRefTicker[]): TriggerMetCandidate
     triggerMet.push({ ...t, aboveTriggerPct });
   }
 
-  // Sort by NCS descending (best quality first), fall back to agreement score
+  // Sort by NCS descending (best quality first), then BPS as tiebreaker, then agreement score
   triggerMet.sort((a, b) => {
     const ncsA = a.dualNCS ?? 0;
     const ncsB = b.dualNCS ?? 0;
     if (ncsA !== ncsB) return ncsB - ncsA;
+    // BPS tiebreaker — higher BPS = higher structural breakout probability
+    const bpsA = a.bps ?? 0;
+    const bpsB = b.bps ?? 0;
+    if (bpsA !== bpsB) return bpsB - bpsA;
     return b.agreementScore - a.agreementScore;
   });
 

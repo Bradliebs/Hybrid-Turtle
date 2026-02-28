@@ -1,3 +1,67 @@
+# Breakout Probability Score (BPS) — Implementation Plan
+
+**Date:** 28 Feb 2026
+**Risk-sensitive:** NO — read-only scoring module, no position sizing/stop/gate changes
+**Sacred files touched:** NONE
+
+---
+
+## What BPS Is
+
+A supplementary 0–19 score that estimates the probability of a successful breakout based on 7 factors. Sits **alongside** the existing NCS/BQS/FWS system — does NOT replace it. Higher BPS = more structural evidence for a clean breakout.
+
+---
+
+## 7 Factors (max 19 points total)
+
+| # | Factor | Max Pts | Data Source | Logic |
+|---|--------|---------|-------------|-------|
+| 1 | Consolidation Quality | 3 | ATR% + close vs MA200 | Tighter = better. ATR% < 2% = 3, < 3% = 2, < 4% = 1 |
+| 2 | Volume Accumulation Slope | 3 | Last 20 volume bars (linear regression slope) | Positive slope = accumulation. Steep positive = 3 |
+| 3 | RS Rank | 3 | rs_vs_benchmark_pct (already computed) | > 10% = 3, > 5% = 2, > 0% = 1 |
+| 4 | Sector Momentum | 2 | Sector ETF 20-day return (cached nightly) | Sector ETF > 0% = 1, > 3% = 2 |
+| 5 | Consolidation Duration | 3 | Days price within 5% of 20d high | 10–30 days ideal (3), 5–10 or 30–50 (2), else 1 |
+| 6 | Prior Trend Strength | 3 | Weekly ADX (already in SnapshotTicker) | ≥ 30 = 3, ≥ 25 = 2, ≥ 20 = 1 |
+| 7 | Failed Breakout History | 2 | failedBreakoutAt in TechnicalData | No recent failed breakout = 2, > 10 days ago = 1, recent = 0 |
+
+---
+
+## Files to Create
+
+| File | Purpose |
+|------|---------|
+| `src/lib/breakout-probability.ts` | Core algorithm: `calcBPS()`, `linearRegressionSlope()`, `BPSResult` type |
+| `src/lib/breakout-probability.test.ts` | Vitest tests for calcBPS + linear regression |
+| `src/lib/sector-etf-cache.ts` | In-memory sector ETF momentum cache + nightly refresh function |
+
+## Files to Modify
+
+| File | Change | Risk |
+|------|--------|------|
+| `src/app/api/scan/cross-ref/route.ts` | Add `bps` field to CrossRefTicker response | None — additive field |
+| `src/app/scan/cross-ref/page.tsx` | Show BPS column in cross-ref table | None — display only |
+| `src/lib/ready-to-buy.ts` | Add `bps` to CrossRefTicker type, use BPS as tiebreaker in sort | None — display sort only |
+| `src/components/portfolio/ReadyToBuyPanel.tsx` | Show BPS badge on candidate cards | None — display only |
+| `src/app/api/backtest/route.ts` | Compute and return BPS for each signal hit | None — read-only |
+| `src/app/backtest/page.tsx` | Add BPS column to signal table | None — display only |
+| `src/cron/nightly.ts` | Add sector ETF cache refresh in Step 5 (non-blocking) | Low — isolated try/catch |
+
+## Implementation Steps
+
+- [x] 1. Explore codebase and understand data flow
+- [x] 2. Write this plan
+- [ ] 3. Create `src/lib/breakout-probability.ts` with pure calcBPS function
+- [ ] 4. Create `src/lib/breakout-probability.test.ts` with Vitest tests
+- [ ] 5. Create `src/lib/sector-etf-cache.ts` for nightly sector ETF momentum
+- [ ] 6. Wire BPS into cross-ref API route
+- [ ] 7. Show BPS on scan cross-ref page
+- [ ] 8. Add BPS to ready-to-buy sort + display on portfolio panel
+- [ ] 9. Add BPS to backtest API + show on signal replay page
+- [ ] 10. Add sector ETF cache refresh to nightly.ts Step 5
+- [ ] 11. Verify compilation + run tests
+
+---
+
 # HybridTurtle Optimization Audit — 22 Feb 2026
 
 ## Audit Summary
