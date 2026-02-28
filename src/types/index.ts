@@ -351,6 +351,8 @@ export interface ScanCandidate {
     dataQuality: boolean;
     atrSpiking?: boolean;
     atrSpikeAction?: 'NONE' | 'SOFT_CAP' | 'HARD_BLOCK';
+    hurstExponent?: number | null;  // Hurst Exponent (0–1), null if insufficient data
+    hurstWarn?: boolean;            // true when H < 0.5 (mean-reverting — trend signal may be noise)
   };
 }
 

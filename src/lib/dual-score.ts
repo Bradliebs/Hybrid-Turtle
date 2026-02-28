@@ -78,6 +78,7 @@ export interface SnapshotRow {
   vol_regime?: string;              // LOW_VOL / NORMAL_VOL / HIGH_VOL from volRegime detector
   dual_regime_aligned?: boolean;     // true when both SPY + VWRL individually bullish
   bis_score?: number;                // Breakout Integrity Score (0–15), pre-computed from latest candle
+  hurst_exponent?: number;           // Hurst Exponent (0–1), pre-computed from daily closes. >0.5 = trending
   [key: string]: unknown;
 }
 
@@ -91,6 +92,7 @@ export interface BQSComponents {
   bqs_vol_bonus: number;
   bqs_weekly_adx: number;
   bqs_bis: number;
+  bqs_hurst: number;
   BQS: number;
 }
 
@@ -186,6 +188,18 @@ function weeklyAdxBonus(row: SnapshotRow): number {
   return 0;
 }
 
+// Hurst Exponent bonus: validates whether the ADX trend signal has genuine
+// persistence. H >= 0.7 = strong persistent trend (+8), H 0.6-0.7 = moderate (+5),
+// H 0.5-0.6 = weak trend (+2), H < 0.5 = mean-reverting (0 bonus).
+function hurstBonus(row: SnapshotRow): number {
+  const h = safeNum(row.hurst_exponent);
+  if (h === 0) return 0; // no data available — neutral
+  if (h >= 0.7) return 8;
+  if (h >= 0.6) return 5;
+  if (h >= 0.5) return 2;
+  return 0; // mean-reverting — no bonus
+}
+
 export function computeBQS(row: SnapshotRow): BQSComponents {
   const trend = trendStrength(row);
   const direction = directionDominance(row);
@@ -205,7 +219,11 @@ export function computeBQS(row: SnapshotRow): BQSComponents {
   // Defaults to 0 when candle data unavailable (CSV imports, old snapshots).
   const bis = safeNum(row.bis_score);
 
-  const bqs = clamp(trend + direction + vol + prox + tailwind + rs + volBonus + wAdxBonus + bis);
+  // Hurst: trend persistence validation — pre-computed from daily closes.
+  // Defaults to 0 when price history unavailable.
+  const hurst = hurstBonus(row);
+
+  const bqs = clamp(trend + direction + vol + prox + tailwind + rs + volBonus + wAdxBonus + bis + hurst);
 
   return {
     bqs_trend: round2(trend),
@@ -217,6 +235,7 @@ export function computeBQS(row: SnapshotRow): BQSComponents {
     bqs_vol_bonus: round2(volBonus),
     bqs_weekly_adx: round2(wAdxBonus),
     bqs_bis: round2(bis),
+    bqs_hurst: round2(hurst),
     BQS: round2(bqs),
   };
 }
@@ -407,6 +426,7 @@ const DEFAULTS: Record<string, unknown> = {
   weekly_adx: 0,
   vol_regime: 'NORMAL_VOL', dual_regime_aligned: true,
   bis_score: 0,
+  hurst_exponent: 0,
 };
 
 const BOOL_COLS: string[] = [
@@ -425,6 +445,7 @@ const NUMERIC_COLS: string[] = [
   'max_cluster_pct', 'max_super_cluster_pct',
   'weekly_adx',
   'bis_score',
+  'hurst_exponent',
 ];
 
 /**

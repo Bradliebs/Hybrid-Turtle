@@ -27,6 +27,7 @@ import { calculatePositionSize } from './position-sizer';
 import { validateRiskGates } from './risk-gates';
 import { checkAntiChasingGuard, checkPullbackContinuationEntry } from './scan-guards';
 import { validateTickerData } from './modules/data-validator';
+import { calcHurst } from './hurst';
 import prisma from './prisma';
 
 // ---- Stage 1: Universe ----
@@ -233,6 +234,12 @@ export async function runFullScan(
           console.warn(`[Scan] Skipping ${stock.ticker} — data invalid: ${validation.issues.join('; ')}`);
           return null;
         }
+
+        // ── Stage 2 soft filter: Hurst Exponent ──
+        // Uses existing validationBars (no new Yahoo call). H < 0.5 = HURST_WARN flag.
+        const closePrices = validationBars.map(b => b.close);
+        const hurstExponent = calcHurst(closePrices);
+        const hurstWarn = hurstExponent !== null && hurstExponent < 0.5;
 
         // Use price from chart data — avoids a separate quote() call per ticker
         const price = technicals.currentPrice;
@@ -464,6 +471,8 @@ export async function runFullScan(
             ...filterResults,
             atrSpiking: medianSpiking,
             atrSpikeAction,
+            hurstExponent,
+            hurstWarn,
           },
         } as ScanCandidate;
       } catch (error) {
