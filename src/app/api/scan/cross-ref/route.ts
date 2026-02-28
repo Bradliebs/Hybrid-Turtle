@@ -230,6 +230,10 @@ interface CrossRefTicker {
   agreementScore: number;          // 0-100 how aligned the two systems are
   // Breakout Probability Score (0–19, higher = more structural evidence for breakout)
   bps: number | null;
+  // Hurst Exponent from scan engine (0–1, >0.5 = trending)
+  hurstExponent: number | null;
+  // ADX from scan engine (trend strength)
+  scanAdx: number | null;
 }
 
 export async function GET() {
@@ -364,6 +368,10 @@ export async function GET() {
         agreementScore,
         // BPS
         bps: bpsResult?.bps ?? null,
+        // Hurst Exponent from scan engine Stage 2 soft filter
+        hurstExponent: scan?.filterResults?.hurstExponent ?? null,
+        // ADX from scan technicals
+        scanAdx: scan?.technicals?.adx ?? (dual?.adx_14 as number ?? null),
       });
     }
 

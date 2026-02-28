@@ -137,6 +137,9 @@ function WhyCard({ ticker }: WhyCardProps) {
           {ticker.bqs_bis > 0 && (
             <ComponentRow label="Breakout Integrity" value={ticker.bqs_bis} max={15} />
           )}
+          {ticker.bqs_hurst > 0 && (
+            <ComponentRow label="Hurst (Persistence)" value={ticker.bqs_hurst} max={8} />
+          )}
         </div>
       </div>
 

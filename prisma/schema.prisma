@@ -62,6 +62,7 @@ model Stock {
   currency      String?      // USD | GBP | EUR | CHF | DKK | CNY
   yahooTicker   String?      // Yahoo Finance symbol override (e.g. GSK.L, SIE.DE)
   t212Ticker    String?      // Trading 212 ticker mapping e.g. AAPL_US_EQ
+  isaEligible   Boolean?     // null = unknown, true = ISA eligible, false = not ISA eligible
   active        Boolean      @default(true)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -427,4 +428,28 @@ model CorrelationFlag {
   @@index([tickerA])
   @@index([tickerB])
   @@index([computedAt])
+}
+
+// ── Execution Log — Audit trail for T212 order execution ───────────
+// Every API call to Trading 212 during buy execution is logged here.
+// Covers: buy placement, fill polling, stop placement, and failures.
+// This is the safety net — if anything goes wrong, we have a full record.
+
+model ExecutionLog {
+  id              Int      @id @default(autoincrement())
+  createdAt       DateTime @default(now())
+  ticker          String                       // Ticker being traded (Yahoo format)
+  phase           String                       // BUY_PLACED | BUY_POLLING | BUY_FILLED | STOP_PLACED | BUY_TIMEOUT | STOP_FAILED | COMPLETE
+  orderId         String?                      // T212 order ID (if returned)
+  requestBody     String                       // JSON stringified request sent to T212
+  responseStatus  Int?                         // HTTP response status code
+  responseBody    String?                      // JSON stringified response from T212
+  stopPrice       Float?                       // Stop price used (if applicable)
+  quantity        Float?                       // Order quantity
+  accountType     String                       // invest | isa
+  error           String?                      // Error message if phase failed
+
+  @@index([ticker])
+  @@index([createdAt])
+  @@index([phase])
 }

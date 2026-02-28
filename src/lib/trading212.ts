@@ -1,9 +1,9 @@
 /**
  * DEPENDENCIES
- * Consumed by: /api/stops/t212/route.ts, /api/trading212/*, T212SyncPanel.tsx
+ * Consumed by: /api/stops/t212/route.ts, /api/trading212/*, T212SyncPanel.tsx, /api/positions/execute/route.ts
  * Consumes: fetch (T212 REST API)
  * Risk-sensitive: YES
- * Last modified: 2026-02-26
+ * Last modified: 2026-02-28
  * Notes: isStopTooFar() pre-validates stop distance before T212 API call (instrument-specific, ~50% heuristic)
  */
 // ============================================================
@@ -119,6 +119,11 @@ export interface T212PlaceStopOrderRequest {
   stopPrice: number;
   ticker: string;         // T212 format: AAPL_US_EQ
   timeValidity: 'DAY' | 'GOOD_TILL_CANCEL';
+}
+
+export interface T212PlaceMarketOrderRequest {
+  quantity: number;       // Positive = buy, Negative = sell
+  ticker: string;         // T212 format: AAPL_US_EQ
 }
 
 export interface T212PaginatedResponse<T> {
@@ -273,6 +278,18 @@ export class Trading212Client {
   /** Get a single pending order by ID. Rate limit: 1 req / 1s */
   async getOrder(orderId: number): Promise<T212PendingOrder> {
     return this.request<T212PendingOrder>(`/equity/orders/${orderId}`);
+  }
+
+  /**
+   * Place a Market order (buy or sell at current market price).
+   * Positive quantity = buy, negative = sell.
+   * Rate limit: 1 req / 2s
+   */
+  async placeMarketOrder(order: T212PlaceMarketOrderRequest): Promise<T212PendingOrder> {
+    return this.request<T212PendingOrder>('/equity/orders/market', {
+      method: 'POST',
+      body: order,
+    });
   }
 
   /**

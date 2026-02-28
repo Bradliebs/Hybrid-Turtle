@@ -43,7 +43,11 @@ export interface CrossRefTicker {
   matchType: 'BOTH_RECOMMEND' | 'SCAN_ONLY' | 'DUAL_ONLY' | 'BOTH_REJECT' | 'CONFLICT';
   agreementScore: number;
   // Breakout Probability Score (0–19)
-  bps: number | null;
+  bps?: number | null;
+  // Hurst Exponent from scan engine (0–1, >0.5 = trending)
+  hurstExponent?: number | null;
+  // ADX from scan engine (trend strength)
+  scanAdx?: number | null;
 }
 
 /** Enriched candidate that has passed trigger-met detection */

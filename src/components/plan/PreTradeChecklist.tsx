@@ -83,6 +83,8 @@ export default function PreTradeChecklist({
   const allPassed = checks.every(c => c.checked);
   const failedCount = checks.filter(c => !c.checked).length;
   const criticalFailed = checks.filter(c => c.critical && !c.checked);
+  // Entry-only failures (no candidates) aren't a trading danger — use softer language
+  const allEntryFailures = criticalFailed.length > 0 && criticalFailed.every(c => c.category === 'entry');
 
   return (
     <div className="card-surface p-4">
@@ -107,12 +109,24 @@ export default function PreTradeChecklist({
       </div>
 
       {criticalFailed.length > 0 && (
-        <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 mb-4">
-          <div className="flex items-center gap-2 text-warning text-sm font-semibold mb-1">
+        <div className={cn(
+          'rounded-lg p-3 mb-4 border',
+          allEntryFailures
+            ? 'bg-navy-700/30 border-navy-600/30'
+            : 'bg-warning/10 border-warning/30'
+        )}>
+          <div className={cn(
+            'flex items-center gap-2 text-sm font-semibold mb-1',
+            allEntryFailures ? 'text-muted-foreground' : 'text-warning'
+          )}>
             <AlertTriangle className="w-4 h-4" />
-            TRADE WITH CAUTION
+            {allEntryFailures ? 'NO CANDIDATES READY' : 'TRADE WITH CAUTION'}
           </div>
-          <p className="text-xs text-muted-foreground mb-2">The following items need attention before entering:</p>
+          <p className="text-xs text-muted-foreground mb-2">
+            {allEntryFailures
+              ? 'Waiting for candidates to meet entry criteria:'
+              : 'The following items need attention before entering:'}
+          </p>
           <ul className="space-y-1">
             {criticalFailed.map((c) => (
               <li key={c.label} className="text-xs text-warning/80">• {c.label}</li>

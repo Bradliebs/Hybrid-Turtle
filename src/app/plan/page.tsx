@@ -11,9 +11,12 @@ import PositionSizerWidget from '@/components/plan/PositionSizerWidget';
 import SwapSuggestionsWidget from '@/components/plan/SwapSuggestionsWidget';
 import LaggardAlertsWidget from '@/components/plan/LaggardAlertsWidget';
 import EarlyBirdWidget from '@/components/plan/EarlyBirdWidget';
+import TodayPanel from '@/components/plan/TodayPanel';
 import { useStore } from '@/store/useStore';
 import { apiRequest } from '@/lib/api-client';
-import { ClipboardList, Calendar, Loader2 } from 'lucide-react';
+import { ClipboardList, Calendar, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+
+const ADVANCED_VIEW_KEY = 'hybridturtle_advanced_view';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -56,6 +59,10 @@ interface ReadyCandidate {
   dualAction?: string;
   scanRankScore?: number;
   scanPassesFilters?: boolean;
+  // New fields for TodayPanel
+  bps?: number | null;
+  hurstExponent?: number | null;
+  scanAdx?: number | null;
 }
 
 /** Shape of a cross-ref ticker from /api/scan/cross-ref */
@@ -87,6 +94,10 @@ interface CrossRefTicker {
   dualDistancePct?: number;
   // Per-ticker display currency (GBX for .L, USD for US, EUR etc.)
   priceCurrency?: string;
+  // New fields for TodayPanel
+  bps?: number | null;
+  hurstExponent?: number | null;
+  scanAdx?: number | null;
 }
 
 interface HealthReportData {
@@ -130,6 +141,22 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(true);
   const [healthReport, setHealthReport] = useState<HealthReportData | null>(null);
   const [riskSummary, setRiskSummary] = useState<RiskSummaryData | null>(null);
+
+  // Advanced view toggle — persisted in localStorage
+  const [advancedView, setAdvancedView] = useState(false);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(ADVANCED_VIEW_KEY);
+      if (stored === 'true') setAdvancedView(true);
+    } catch { /* localStorage not available */ }
+  }, []);
+  const toggleAdvanced = () => {
+    setAdvancedView(prev => {
+      const next = !prev;
+      try { localStorage.setItem(ADVANCED_VIEW_KEY, String(next)); } catch { /* noop */ }
+      return next;
+    });
+  };
 
   const fetchPositions = useCallback(async () => {
     try {
@@ -216,6 +243,10 @@ export default function PlanPage() {
               scanPassesFilters: t.scanPassesFilters,
               scanPassesRiskGates: t.scanPassesRiskGates,
               scanPassesAntiChase: t.scanPassesAntiChase,
+              // TodayPanel fields
+              bps: t.bps,
+              hurstExponent: t.hurstExponent,
+              scanAdx: t.scanAdx,
             }));
           setScanCandidates(mapped);
         }
@@ -237,59 +268,123 @@ export default function PlanPage() {
       <Navbar />
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
-              <ClipboardList className="w-6 h-6 text-primary-400" />
-              Execution Plan
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Think Sunday · Observe Monday · Act Tuesday · Manage Wed–Fri
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <RegimeBadge regime={marketRegime} />
-            <div className="flex items-center gap-2 bg-navy-700/50 px-3 py-1.5 rounded-lg">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-foreground font-mono">
-                {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
-              </span>
+        {/* ── Header: minimal in novice view, full in advanced ── */}
+        {advancedView ? (
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
+                <ClipboardList className="w-6 h-6 text-primary-400" />
+                Execution Plan
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                Think Sunday · Observe Monday · Act Tuesday · Manage Wed–Fri
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <RegimeBadge regime={marketRegime} />
+              <div className="flex items-center gap-2 bg-navy-700/50 px-3 py-1.5 rounded-lg">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm text-foreground font-mono">
+                  {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
         {loading ? (
           <div className="card-surface p-8 flex items-center justify-center gap-3 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Loading positions with live prices...</span>
+            <span className="text-sm">Loading...</span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left Column */}
-            <div className="space-y-6">
-              <PhaseTimeline />
-              <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} />
-            </div>
+          <>
+          {/* ── LAYER 1 + 2: TodayPanel (novice-first, always visible) ── */}
+          <TodayPanel
+            weeklyPhase={weeklyPhase}
+            marketRegime={marketRegime}
+            advancedView={advancedView}
+            positions={positions.map(p => ({
+              ticker: p.ticker,
+              name: p.name,
+              rMultiple: p.rMultiple,
+              gainPercent: p.gainPercent,
+              protectionLevel: p.protectionLevel,
+              currentStop: p.currentStop,
+              priceCurrency: p.priceCurrency,
+            }))}
+            candidates={candidates.map(c => ({
+              ticker: c.ticker,
+              name: c.name,
+              price: c.price,
+              entryTrigger: c.entryTrigger,
+              stopPrice: c.stopPrice,
+              distancePercent: c.distancePercent,
+              shares: c.shares,
+              riskDollars: c.riskDollars,
+              priceCurrency: c.priceCurrency,
+              dualNCS: c.dualNCS,
+              dualBQS: c.dualBQS,
+              dualFWS: c.dualFWS,
+              bps: c.bps,
+              hurstExponent: c.hurstExponent,
+              scanAdx: c.scanAdx,
+            }))}
+            maxPositions={riskSummary?.budget?.maxPositions ?? 4}
+            usedPositions={positions.length}
+            usedRiskPercent={riskSummary?.budget?.usedRiskPercent ?? 0}
+            maxRiskPercent={riskSummary?.budget?.maxRiskPercent ?? 10}
+          />
 
-            {/* Middle Column */}
-            <div className="space-y-6">
-              <ReadyCandidates candidates={candidates} heldTickers={new Set(positions.map(p => p.ticker))} />
-              <PositionSizerWidget />
-            </div>
-
-            {/* Right Column */}
-            <div className="space-y-6">
-              <PreTradeChecklist
-                healthReport={healthReport}
-                riskBudget={riskSummary?.budget}
-                hasReadyCandidates={hasReadyCandidates}
-              />
-              <EarlyBirdWidget />
-              <SwapSuggestionsWidget />
-              <LaggardAlertsWidget />
-            </div>
+          {/* ── LAYER 3 TOGGLE ── */}
+          <div className="flex justify-center">
+            <button
+              onClick={toggleAdvanced}
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground bg-navy-800/50 hover:bg-navy-800/80 border border-border/30 px-4 py-2 rounded-lg transition-colors"
+            >
+              {advancedView ? (
+                <>
+                  Hide advanced view
+                  <ChevronUp className="w-4 h-4" />
+                </>
+              ) : (
+                <>
+                  Show advanced view
+                  <ChevronDown className="w-4 h-4" />
+                </>
+              )}
+            </button>
           </div>
+
+          {/* ── LAYER 3: Advanced View (all existing widgets) ── */}
+          {advancedView && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Column */}
+              <div className="space-y-6">
+                <PhaseTimeline />
+                <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} />
+              </div>
+
+              {/* Middle Column */}
+              <div className="space-y-6">
+                <ReadyCandidates candidates={candidates} heldTickers={new Set(positions.map(p => p.ticker))} />
+                <PositionSizerWidget />
+              </div>
+
+              {/* Right Column */}
+              <div className="space-y-6">
+                <PreTradeChecklist
+                  healthReport={healthReport}
+                  riskBudget={riskSummary?.budget}
+                  hasReadyCandidates={hasReadyCandidates}
+                />
+                <EarlyBirdWidget />
+                <SwapSuggestionsWidget />
+                <LaggardAlertsWidget />
+              </div>
+            </div>
+          )}
+          </>
         )}
       </main>
     </div>
