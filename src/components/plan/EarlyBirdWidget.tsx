@@ -33,6 +33,7 @@ interface EarlyBirdSignal {
   riskEfficiency: number;
   entryTrigger: number;
   candidateStop: number;
+  bps: number | null;
 }
 
 interface EarlyBirdResponse {
@@ -136,13 +137,13 @@ export default function EarlyBirdWidget() {
 
   const downloadCsv = () => {
     if (!sortedSignals.length) return;
-    const headers = ['Ticker','Name','Price','55d High','Range %','Volume Ratio','ADX','ATR%','MA200 Dist%','Grad Prob','Risk Eff','Entry Trigger','Stop','Regime','Reason'];
+    const headers = ['Ticker','Name','Price','55d High','Range %','Volume Ratio','ADX','ATR%','MA200 Dist%','Grad Prob','Risk Eff','BPS','Entry Trigger','Stop','Regime','Reason'];
     const rows = sortedSignals.map(s => [
       s.ticker, s.name, s.price, s.fiftyFiveDayHigh,
       s.rangePctile.toFixed(1), s.volumeRatio.toFixed(2),
       s.adx.toFixed(1), s.atrPercent.toFixed(2), s.ma200Distance.toFixed(1),
       s.graduationProbability, s.riskEfficiency.toFixed(2),
-      s.entryTrigger.toFixed(2), s.candidateStop.toFixed(2),
+      s.bps ?? '', s.entryTrigger.toFixed(2), s.candidateStop.toFixed(2),
       s.regime, s.reason,
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
     const csv = [headers.join(','), ...rows].join('\n');
@@ -254,7 +255,7 @@ export default function EarlyBirdWidget() {
                     <span className="text-amber-400 font-bold text-sm">{s.ticker}</span>
                     <span className="text-[10px] text-muted-foreground">{s.name}</span>
                   </div>
-                  <div className="grid grid-cols-5 gap-2 text-xs">
+                  <div className="grid grid-cols-6 gap-2 text-xs">
                     <div>
                       <span className="text-muted-foreground">Price</span>
                       <div className="font-mono text-foreground">{formatCurrency(s.price)}</div>
@@ -293,6 +294,20 @@ export default function EarlyBirdWidget() {
                         {s.riskEfficiency.toFixed(2)}
                       </div>
                     </div>
+                    {/* BPS — Breakout Probability Score (0–19, higher = better) */}
+                    {s.bps != null && (
+                      <div>
+                        <span className="text-muted-foreground">BPS</span>
+                        <div className={cn(
+                          'font-mono font-semibold',
+                          s.bps >= 14 ? 'text-emerald-400' :
+                          s.bps >= 10 ? 'text-blue-400' :
+                          s.bps >= 6 ? 'text-amber-400' : 'text-muted-foreground'
+                        )}>
+                          {s.bps}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   {/* Secondary row: ADX, ATR%, MA200 dist, entry/stop */}
                   <div className="grid grid-cols-5 gap-2 text-[10px] mt-1.5 text-muted-foreground">

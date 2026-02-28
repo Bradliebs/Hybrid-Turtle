@@ -443,6 +443,7 @@ export interface EarlyBirdSignal {
   entryTrigger: number;       // 20d high + 0.1×ATR
   candidateStop: number;      // entryTrigger - 1.5×ATR
   priceCurrency?: string;     // display currency (GBX for .L tickers, USD for US, etc.)
+  bps: number | null;         // Breakout Probability Score (0–19, higher = better)
 }
 
 // Module 3: Laggard Purge

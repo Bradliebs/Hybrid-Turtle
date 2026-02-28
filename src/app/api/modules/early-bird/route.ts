@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       getMarketRegime(),
       prisma.stock.findMany({
         where: { active: true },
-        select: { ticker: true, name: true, currency: true },
+        select: { ticker: true, name: true, currency: true, sector: true },
       }),
     ]);
 

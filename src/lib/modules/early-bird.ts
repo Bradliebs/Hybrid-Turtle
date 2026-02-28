@@ -10,6 +10,28 @@ import type { EarlyBirdSignal, MarketRegime } from '@/types';
 import { ATR_STOP_MULTIPLIER } from '@/types';
 import { getDailyPrices, calculateATR, calculateADX, calculateMA, calculate20DayHigh } from '../market-data';
 import { calculateEntryTrigger } from '../position-sizer';
+import { calcBPS } from '../breakout-probability';
+
+/**
+ * Count consecutive days (from most recent) where price is within
+ * 5% of the 20-day high. Used for BPS consolidation duration factor.
+ */
+function countConsolidationDays(
+  bars: { high: number; close: number }[]
+): number {
+  if (bars.length < 20) return 0;
+  const twentyDayHigh = Math.max(...bars.slice(0, 20).map(b => b.high));
+  const threshold = twentyDayHigh * 0.95; // within 5%
+  let count = 0;
+  for (const bar of bars) {
+    if (bar.close >= threshold) {
+      count++;
+    } else {
+      break; // stop at first day outside the range
+    }
+  }
+  return count;
+}
 
 /**
  * Check if a stock qualifies for Early Bird entry.
@@ -111,6 +133,7 @@ export function checkEarlyBird(
     riskEfficiency,
     entryTrigger,
     candidateStop,
+    bps: null, // computed by scanEarlyBirds for eligible signals
     // priceCurrency set by scanEarlyBirds which has DB context
   };
 }
@@ -120,7 +143,7 @@ export function checkEarlyBird(
  * Parallelized in batches of 10 for performance.
  */
 export async function scanEarlyBirds(
-  tickers: { ticker: string; name: string; currency?: string | null }[],
+  tickers: { ticker: string; name: string; currency?: string | null; sector?: string | null }[],
   regime: MarketRegime
 ): Promise<EarlyBirdSignal[]> {
   const signals: EarlyBirdSignal[] = [];
@@ -129,7 +152,7 @@ export async function scanEarlyBirds(
   for (let i = 0; i < tickers.length; i += BATCH_SIZE) {
     const batch = tickers.slice(i, i + BATCH_SIZE);
     const results = await Promise.allSettled(
-      batch.map(async ({ ticker, name, currency }) => {
+      batch.map(async ({ ticker, name, currency, sector }) => {
         // Need 200+ bars for MA200; fall back to compact (55) only if full fetch fails
         const bars = await getDailyPrices(ticker, 'full');
         if (bars.length < 55) return null;
@@ -166,6 +189,19 @@ export async function scanEarlyBirds(
           // Derive display currency: .L tickers trade in GBX (pence), others use DB currency or USD
           const isUK = ticker.endsWith('.L');
           signal.priceCurrency = isUK ? 'GBX' : (currency || 'USD').toUpperCase();
+
+          // BPS: compute from available live data (some factors will be null — graceful degradation)
+          const volumeBars = bars.slice(0, 20).map(b => b.volume);
+          const consolidationDays = countConsolidationDays(bars);
+          const bpsResult = calcBPS({
+            atrPct: atrPercent,
+            volumeBars,
+            sector: sector ?? undefined,
+            consolidationDays,
+            // weeklyAdx & rsVsBenchmarkPct not available in Early Bird live scan
+            // failedBreakoutAt not available — defaults to full credit (no recent failure)
+          });
+          signal.bps = bpsResult.bps;
         }
 
         return signal.eligible ? signal : null;

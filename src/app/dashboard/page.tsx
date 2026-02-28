@@ -14,6 +14,7 @@ import DualRegimeWidget from '@/components/dashboard/DualRegimeWidget';
 import RiskModulesWidget from '@/components/dashboard/RiskModulesWidget';
 import PyramidAlertsWidget from '@/components/dashboard/PyramidAlertsWidget';
 import HedgeCard from '@/components/dashboard/HedgeCard';
+import ScoringGuideWidget from '@/components/dashboard/ScoringGuideWidget';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { useStore } from '@/store/useStore';
 import { formatDate } from '@/lib/utils';
@@ -321,6 +322,9 @@ export default function DashboardPage() {
 
         {/* Hedge Portfolio — Long-term holds with guidance */}
         <HedgeCard />
+
+        {/* Scoring Guide — BPS interpretation + factor breakdown */}
+        <ScoringGuideWidget />
 
         {/* Publications/Alerts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
