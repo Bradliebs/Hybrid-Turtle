@@ -19,7 +19,7 @@ import { useStore } from '@/store/useStore';
 import { formatDate } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import type { FearGreedData, MarketRegime } from '@/types';
-import { Bell, Play, FileText, Zap } from 'lucide-react';
+import { Bell, Play, FileText, Zap, RefreshCw, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -63,6 +63,8 @@ export default function DashboardPage() {
   const [triggerMetCount, setTriggerMetCount] = useState(0);
   const [triggerMetTickers, setTriggerMetTickers] = useState<string[]>([]);
   const [scanCachedAt, setScanCachedAt] = useState<string | null>(null);
+  const [nightlyRunning, setNightlyRunning] = useState(false);
+  const [nightlyResult, setNightlyResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const fetchLiveMarketData = useCallback(async () => {
     try {
@@ -216,6 +218,73 @@ export default function DashboardPage() {
               No trigger met in the latest scan cache.
             </div>
           )}
+        </div>
+
+        {/* Run Nightly Snapshot */}
+        <div className="card-surface p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/10 w-10 h-10 rounded-lg flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-primary-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Nightly Snapshot</h3>
+                <p className="text-xs text-muted-foreground">
+                  Run the full 9-step nightly pipeline — health check, live prices, stops, snapshot sync & Telegram alert
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {nightlyResult && (
+                <div className={`flex items-center gap-1.5 text-xs font-medium ${
+                  nightlyResult.ok ? 'text-profit' : 'text-loss'
+                }`}>
+                  {nightlyResult.ok ? (
+                    <CheckCircle className="w-4 h-4" />
+                  ) : (
+                    <XCircle className="w-4 h-4" />
+                  )}
+                  {nightlyResult.message}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={nightlyRunning}
+                onClick={async () => {
+                  setNightlyRunning(true);
+                  setNightlyResult(null);
+                  try {
+                    const res = await fetch('/api/nightly', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ userId: 'default-user' }),
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                      setNightlyResult({ ok: true, message: `Done — ${data.summary?.snapshotSync?.tickerCount ?? '?'} tickers synced` });
+                      // Refresh dashboard data after nightly completes
+                      fetchLiveMarketData();
+                      fetchTriggerStatus();
+                    } else {
+                      setNightlyResult({ ok: false, message: data?.error?.message || 'Nightly failed' });
+                    }
+                  } catch (err) {
+                    setNightlyResult({ ok: false, message: (err as Error).message || 'Network error' });
+                  } finally {
+                    setNightlyRunning(false);
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-primary/15 text-primary-400 border border-primary/30 hover:bg-primary/25 hover:border-primary/50"
+              >
+                {nightlyRunning ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                {nightlyRunning ? 'Running...' : 'Run Nightly'}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Quick Actions */}
