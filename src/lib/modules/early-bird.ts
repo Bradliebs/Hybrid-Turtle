@@ -7,7 +7,7 @@
 
 import 'server-only';
 import type { EarlyBirdSignal, MarketRegime } from '@/types';
-import { ATR_STOP_MULTIPLIER } from '@/types';
+import { ATR_STOP_MULTIPLIER, ATR_VOLATILITY_CAP_ALL } from '@/types';
 import { getDailyPrices, calculateATR, calculateADX, calculateMA, calculate20DayHigh } from '../market-data';
 import { calculateEntryTrigger } from '../position-sizer';
 import { calcBPS } from '../breakout-probability';
@@ -168,9 +168,21 @@ export async function scanEarlyBirds(
         // Technical enrichment for Graduation Probability + Risk Efficiency
         const atr = calculateATR(bars, 14);
         const atrPercent = price > 0 ? (atr / price) * 100 : 0;
-        const { adx } = bars.length >= 29 ? calculateADX(bars, 14) : { adx: 0 };
+        const { adx, plusDI, minusDI } = bars.length >= 29
+          ? calculateADX(bars, 14)
+          : { adx: 0, plusDI: 0, minusDI: 0 };
         const ma200 = bars.length >= 200 ? calculateMA(closes, 200) : 0;
         const ma200Distance = ma200 > 0 ? ((price - ma200) / ma200) * 100 : 0;
+
+        // Hard technical gates — same as main scan engine (except ADX >= 20,
+        // which Early Bird intentionally relaxes to catch pre-ADX movers).
+        // Without these, tickers like DELL/NFLX can slip through with poor
+        // trend structure despite meeting range + volume criteria.
+        const dataQuality = ma200 > 0 && adx > 0;
+        if (!dataQuality) return null;          // insufficient data
+        if (price <= ma200) return null;         // below 200-day MA — no trend
+        if (plusDI <= minusDI) return null;       // bearish direction
+        if (atrPercent >= ATR_VOLATILITY_CAP_ALL) return null; // volatility too high
 
         // Entry trigger (20d high + 0.1×ATR) and candidate stop (trigger - 1.5×ATR)
         const twentyDayHigh = calculate20DayHigh(bars);

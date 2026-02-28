@@ -66,6 +66,13 @@ StopUpdateQueue and PositionsTable are both on `/portfolio/positions`. When the 
 **Fix:** Added `refreshTrigger` prop to StopUpdateQueue. The parent page increments it after `handleUpdateStop()` or `handleSyncComplete()`, causing StopUpdateQueue to re-fetch fresh recommendations.
 **Rule:** When two components on the same page both depend on the same DB state, add a refresh coordination mechanism. If one component triggers a DB mutation, all sibling consumers must be notified to re-fetch.
 
+## 2026-02-28 — Early Bird bypassing hard technical filters (DELL/NFLX)
+
+### Pattern: Alternative-entry module skipping main scan engine hard filters
+Early Bird only checked 3 criteria (top 10% of 55d range, volume > 1.5×, bullish regime) but completely bypassed the main scan engine's hard technical filters: price > MA200, +DI > -DI, ATR% cap, and data quality. Tickers like DELL and NFLX slipped into Early Bird results despite having poor trend structure (e.g., below MA200, bearish DI direction, or excessive volatility) because those checks were simply never applied.
+**Fix:** Added 4 hard gates to `scanEarlyBirds()` before the Early Bird–specific eligibility check: data quality, price > MA200, +DI > -DI, ATR% < 8. ADX >= 20 is intentionally kept relaxed — that's Early Bird's purpose (catch moves before ADX confirms).
+**Rule:** Any alternative-entry module (Early Bird, Fast-Follower, Re-Entry) must still apply the main scan engine's hard technical filters. Only the specific criterion the module relaxes (e.g., ADX for Early Bird) should be omitted. Never assume that the module's own eligibility criteria are sufficient alone.
+
 ## 2026-02-26 — T212 selling-equity-not-owned on Stop Push
 
 ### Pattern: Wrong accountType causes stop push to wrong T212 account
