@@ -64,6 +64,18 @@ interface TodayCandidate {
   bps?: number | null;
   hurstExponent?: number | null;
   scanAdx?: number | null;
+  sleeve?: string;
+  atrPercent?: number | null;
+  /** EV modifier from historical expectancy (-10 to +5), passed in by TodayPanel */
+  evModifier?: number | null;
+  /** Earnings calendar data */
+  earningsInfo?: {
+    daysUntilEarnings: number | null;
+    nextEarningsDate: string | null;
+    confidence: 'HIGH' | 'LOW' | 'NONE';
+    action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
+    reason: string | null;
+  };
 }
 
 interface TodayPosition {
@@ -118,10 +130,10 @@ function selectBestCandidate(candidates: TodayCandidate[]): TodayCandidate | nul
   );
   if (triggered.length === 0) return null;
 
-  // Rank by composite score
+  // Rank by composite score (includes EV modifier when available)
   return triggered.sort((a, b) => {
-    const scoreA = compositeScore(a.dualNCS, a.bps, a.hurstExponent);
-    const scoreB = compositeScore(b.dualNCS, b.bps, b.hurstExponent);
+    const scoreA = compositeScore(a.dualNCS, a.bps, a.hurstExponent, a.evModifier);
+    const scoreB = compositeScore(b.dualNCS, b.bps, b.hurstExponent, b.evModifier);
     return scoreB - scoreA;
   })[0];
 }
@@ -131,8 +143,8 @@ function selectBestCandidate(candidates: TodayCandidate[]): TodayCandidate | nul
 function selectTopCandidate(candidates: TodayCandidate[]): TodayCandidate | null {
   if (candidates.length === 0) return null;
   return [...candidates].sort((a, b) => {
-    const scoreA = compositeScore(a.dualNCS, a.bps, a.hurstExponent);
-    const scoreB = compositeScore(b.dualNCS, b.bps, b.hurstExponent);
+    const scoreA = compositeScore(a.dualNCS, a.bps, a.hurstExponent, a.evModifier);
+    const scoreB = compositeScore(b.dualNCS, b.bps, b.hurstExponent, b.evModifier);
     return scoreB - scoreA;
   })[0];
 }
@@ -199,6 +211,9 @@ function TechnicalDetails({ candidate }: { candidate: TodayCandidate }) {
           {candidate.hurstExponent != null && <span>Hurst: <span className="text-foreground">{candidate.hurstExponent.toFixed(2)}</span></span>}
           {candidate.scanAdx != null && <span>ADX: <span className="text-foreground">{candidate.scanAdx.toFixed(1)}</span></span>}
           <span>Distance: <span className="text-foreground">{candidate.distancePercent.toFixed(2)}%</span></span>
+          {candidate.evModifier != null && candidate.evModifier !== 0 && (
+            <span>EV: <span className={candidate.evModifier > 0 ? 'text-emerald-400' : 'text-amber-400'}>{candidate.evModifier > 0 ? '+' : ''}{candidate.evModifier}</span></span>
+          )}
         </div>
       )}
     </div>
@@ -426,6 +441,46 @@ function TimeToActCard({ candidate, regime, advancedView }: {
                     <span>{r.text}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* EV History Note — only shown when modifier is non-zero */}
+          {candidate.evModifier != null && candidate.evModifier !== 0 && (
+            <div className={cn(
+              'border-t border-border/30 pt-3 text-sm flex items-start gap-2',
+              candidate.evModifier > 0 ? 'text-emerald-400' : 'text-amber-400'
+            )}>
+              <span className="flex-shrink-0 mt-0.5">{candidate.evModifier > 0 ? '📈' : '⚠'}</span>
+              <span>
+                {candidate.evModifier > 0
+                  ? 'This type of setup has historically outperformed (+' + candidate.evModifier + ' score)'
+                  : 'This type of setup has historically underperformed (' + candidate.evModifier + ' score)'}
+              </span>
+            </div>
+          )}
+
+          {/* Earnings Calendar Warning — amber note when earnings within 5 days */}
+          {candidate.earningsInfo?.daysUntilEarnings != null && candidate.earningsInfo.daysUntilEarnings <= 5 && (
+            <div className="border-t border-border/30 pt-3 text-sm">
+              <div className={cn(
+                'flex items-start gap-2 rounded-lg p-3',
+                candidate.earningsInfo.action === 'AUTO_NO'
+                  ? 'bg-red-500/10 text-red-400'
+                  : 'bg-amber-500/10 text-amber-400'
+              )}>
+                <span className="flex-shrink-0 mt-0.5">⚠</span>
+                <span>
+                  {candidate.earningsInfo.action === 'AUTO_NO'
+                    ? `${candidate.ticker} reports earnings in ${candidate.earningsInfo.daysUntilEarnings} day${candidate.earningsInfo.daysUntilEarnings === 1 ? '' : 's'}. The system has blocked this trade.`
+                    : `Note: ${candidate.ticker} reports earnings in ${candidate.earningsInfo.daysUntilEarnings} days. Consider waiting until after the report.`
+                  }
+                  {candidate.earningsInfo.confidence === 'LOW' && (
+                    <span className="block text-xs mt-1 opacity-80">
+                      (Estimated date — not confirmed by the company)
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
           )}

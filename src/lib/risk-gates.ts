@@ -1,9 +1,9 @@
 /**
  * DEPENDENCIES
  * Consumed by: scan-engine.ts, nightly.ts, /api/positions/route.ts, /api/risk/route.ts, /api/nightly/route.ts, /api/modules/route.ts
- * Consumes: @/types
+ * Consumes: @/types, position-sizer.ts
  * Risk-sensitive: YES
- * Last modified: 2026-02-19
+ * Last modified: 2026-03-01
  * Notes: All 6 gates must pass. Never short-circuit, bypass, or add a soft override.
  */
 // ============================================================
@@ -12,6 +12,7 @@
 
 import type { RiskProfileType, Sleeve } from '@/types';
 import { RISK_PROFILES, SLEEVE_CAPS, POSITION_SIZE_CAPS, getProfileCaps } from '@/types';
+import { calculatePositionSize } from '@/lib/position-sizer';
 
 interface PositionData {
   id: string;
@@ -169,7 +170,10 @@ export const PYRAMID_CONFIG = {
   maxAdds: 2,
   // ATR-based triggers relative to entry
   addTriggers: [0.5, 1.0], // Add #1: Entry + 0.5 × ATR, Add #2: Entry + 1.0 × ATR
-  // Add sizing: same as original (full equity × risk_per_trade)
+  // Progressive risk scaling — later adds use less risk to prevent late-trend overexposure
+  riskScalars: [0.5, 0.25] as readonly number[], // Add #1: 50% of base risk, Add #2: 25% of base risk
+  // Open risk budget threshold — block pyramiding when open risk is ≥ 70% of max allowed
+  openRiskThreshold: 0.70,
 } as const;
 
 export const BACKTEST_PYRAMID_CONFIG = {
@@ -180,27 +184,42 @@ export const BACKTEST_PYRAMID_CONFIG = {
 /**
  * Check if pyramiding is allowed for a position
  * Uses ATR-based triggers: Add #1 at Entry + 0.5×ATR, Add #2 at Entry + 1.0×ATR
- * Max 2 adds. Add sizing = same as original (full equity × risk_per_trade).
+ * Max 2 adds. Progressive risk scaling: Add #1 = 50%, Add #2 = 25% of base risk.
+ * Blocked when open risk budget ≥ 70% of max allowed.
  */
 export function canPyramid(
   currentPrice: number,
   entryPrice: number,
   initialRisk: number,
   atr?: number,
-  currentAdds?: number
+  currentAdds?: number,
+  openRiskRatio?: number // 0–1 ratio: usedRisk / maxRisk. If ≥ 0.70, pyramiding blocked.
 ): {
   allowed: boolean;
   rMultiple: number;
   addNumber: number; // 0 = not allowed, 1 = first add, 2 = second add
   triggerPrice: number | null;
   message: string;
+  riskScalar: number; // 0.5 for add #1, 0.25 for add #2, 0 if not allowed
 } {
   if (initialRisk <= 0) {
-    return { allowed: false, rMultiple: 0, addNumber: 0, triggerPrice: null, message: 'Invalid initial risk' };
+    return { allowed: false, rMultiple: 0, addNumber: 0, triggerPrice: null, message: 'Invalid initial risk', riskScalar: 0 };
   }
 
   const rMultiple = (currentPrice - entryPrice) / initialRisk;
   const addsUsed = currentAdds ?? 0;
+
+  // Open risk budget gate — block pyramiding when risk budget is ≥ 70% full
+  if (openRiskRatio != null && openRiskRatio >= PYRAMID_CONFIG.openRiskThreshold) {
+    return {
+      allowed: false,
+      rMultiple,
+      addNumber: 0,
+      triggerPrice: null,
+      message: `Risk budget ${(openRiskRatio * 100).toFixed(0)}% used (≥ ${(PYRAMID_CONFIG.openRiskThreshold * 100).toFixed(0)}% threshold) — pyramiding blocked`,
+      riskScalar: 0,
+    };
+  }
 
   // Max adds reached
   if (addsUsed >= PYRAMID_CONFIG.maxAdds) {
@@ -210,12 +229,18 @@ export function canPyramid(
       addNumber: 0,
       triggerPrice: null,
       message: `Max pyramid adds reached (${PYRAMID_CONFIG.maxAdds}/${PYRAMID_CONFIG.maxAdds})`,
+      riskScalar: 0,
     };
   }
 
+  // Determine risk scalar for the next add
+  const nextAddIndex = addsUsed; // 0-based: 0 = first add, 1 = second add
+  const riskScalar = nextAddIndex < PYRAMID_CONFIG.riskScalars.length
+    ? PYRAMID_CONFIG.riskScalars[nextAddIndex]
+    : PYRAMID_CONFIG.riskScalars[PYRAMID_CONFIG.riskScalars.length - 1];
+
   // ATR-based trigger check
   if (atr != null && atr > 0) {
-    const nextAddIndex = addsUsed; // 0-based: 0 = first add, 1 = second add
     if (nextAddIndex < PYRAMID_CONFIG.addTriggers.length) {
       const triggerMultiplier = PYRAMID_CONFIG.addTriggers[nextAddIndex];
       const triggerPrice = entryPrice + triggerMultiplier * atr;
@@ -226,7 +251,8 @@ export function canPyramid(
           rMultiple,
           addNumber: nextAddIndex + 1,
           triggerPrice,
-          message: `Pyramid add #${nextAddIndex + 1} allowed: price ${currentPrice.toFixed(2)} ≥ trigger ${triggerPrice.toFixed(2)} (Entry + ${triggerMultiplier}×ATR)`,
+          message: `Pyramid add #${nextAddIndex + 1} allowed: price ${currentPrice.toFixed(2)} ≥ trigger ${triggerPrice.toFixed(2)} (Entry + ${triggerMultiplier}×ATR) — ${(riskScalar * 100).toFixed(0)}% risk`,
+          riskScalar,
         };
       } else {
         return {
@@ -235,6 +261,7 @@ export function canPyramid(
           addNumber: 0,
           triggerPrice,
           message: `Price ${currentPrice.toFixed(2)} below add #${nextAddIndex + 1} trigger ${triggerPrice.toFixed(2)} (Entry + ${triggerMultiplier}×ATR)`,
+          riskScalar: 0,
         };
       }
     }
@@ -248,6 +275,7 @@ export function canPyramid(
       addNumber: 0,
       triggerPrice: null,
       message: `Cannot add to position at ${rMultiple.toFixed(1)}R. Pyramiding only allowed at +1R or more.`,
+      riskScalar: 0,
     };
   }
 
@@ -256,7 +284,59 @@ export function canPyramid(
     rMultiple,
     addNumber: addsUsed + 1,
     triggerPrice: null,
-    message: `Pyramiding allowed at ${rMultiple.toFixed(1)}R (add #${addsUsed + 1})`,
+    message: `Pyramiding allowed at ${rMultiple.toFixed(1)}R (add #${addsUsed + 1}) — ${(riskScalar * 100).toFixed(0)}% risk`,
+    riskScalar,
+  };
+}
+
+/**
+ * Calculate scaled position size for a pyramid add.
+ * Delegates to calculatePositionSize with scaled risk percentage.
+ * Add #1 uses 50% of base risk, Add #2 uses 25%.
+ */
+export function calculatePyramidAddSize(params: {
+  equity: number;
+  riskProfile: RiskProfileType;
+  addNumber: number; // 1 or 2
+  currentPrice: number; // add entry price = current market price
+  currentStop: number; // position's current stop level
+  sleeve?: Sleeve;
+  fxToGbp?: number;
+  allowFractional?: boolean;
+}): {
+  shares: number;
+  riskDollars: number;
+  scaledRiskPercent: number;
+  riskScalar: number;
+  totalCost: number;
+} {
+  const scalarIndex = Math.min(params.addNumber - 1, PYRAMID_CONFIG.riskScalars.length - 1);
+  const riskScalar = PYRAMID_CONFIG.riskScalars[Math.max(0, scalarIndex)];
+  const profile = RISK_PROFILES[params.riskProfile];
+  const scaledRiskPercent = profile.riskPerTrade * riskScalar;
+
+  // Guard: stop must be below current price for long positions
+  if (params.currentStop >= params.currentPrice) {
+    return { shares: 0, riskDollars: 0, scaledRiskPercent, riskScalar, totalCost: 0 };
+  }
+
+  const result = calculatePositionSize({
+    equity: params.equity,
+    riskProfile: params.riskProfile,
+    entryPrice: params.currentPrice,
+    stopPrice: params.currentStop,
+    customRiskPercent: scaledRiskPercent,
+    sleeve: params.sleeve,
+    fxToGbp: params.fxToGbp,
+    allowFractional: params.allowFractional,
+  });
+
+  return {
+    shares: result.shares,
+    riskDollars: result.riskDollars,
+    scaledRiskPercent,
+    riskScalar,
+    totalCost: result.totalCost,
   };
 }
 

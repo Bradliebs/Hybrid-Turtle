@@ -1,9 +1,9 @@
 /**
  * DEPENDENCIES
- * Consumed by: nightly.ts, /api/risk/correlation/route.ts, heatmap-swap.ts
+ * Consumed by: nightly.ts, /api/risk/correlation/route.ts, /api/risk/correlation-scalar/route.ts, heatmap-swap.ts
  * Consumes: market-data.ts, prisma.ts
- * Risk-sensitive: NO (advisory warnings only — no hard blocks)
- * Last modified: 2026-02-24
+ * Risk-sensitive: YES (correlation data now drives position size reduction via correlation-scalar.ts)
+ * Last modified: 2026-03-01
  * Notes: Computes pairwise Pearson correlation on 90 days of daily returns.
  *        Flags pairs > 0.75 as HIGH_CORR. Runs nightly only (not real-time).
  */

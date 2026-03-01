@@ -50,15 +50,15 @@ A supplementary 0–19 score that estimates the probability of a successful brea
 
 - [x] 1. Explore codebase and understand data flow
 - [x] 2. Write this plan
-- [ ] 3. Create `src/lib/breakout-probability.ts` with pure calcBPS function
-- [ ] 4. Create `src/lib/breakout-probability.test.ts` with Vitest tests
-- [ ] 5. Create `src/lib/sector-etf-cache.ts` for nightly sector ETF momentum
-- [ ] 6. Wire BPS into cross-ref API route
-- [ ] 7. Show BPS on scan cross-ref page
-- [ ] 8. Add BPS to ready-to-buy sort + display on portfolio panel
-- [ ] 9. Add BPS to backtest API + show on signal replay page
-- [ ] 10. Add sector ETF cache refresh to nightly.ts Step 5
-- [ ] 11. Verify compilation + run tests
+- [x] 3. Create `src/lib/breakout-probability.ts` with pure calcBPS function
+- [x] 4. Create `src/lib/breakout-probability.test.ts` with Vitest tests (66 tests)
+- [x] 5. Create `src/lib/sector-etf-cache.ts` for nightly sector ETF momentum
+- [x] 6. Wire BPS into cross-ref API route
+- [x] 7. Show BPS on scan cross-ref page
+- [x] 8. Add BPS to ready-to-buy sort + display on portfolio panel
+- [x] 9. Add BPS to backtest API + show on signal replay page
+- [x] 10. Add sector ETF cache refresh to nightly.ts Step 5
+- [x] 11. Verify compilation + run tests (0 TS errors, 334/334 tests pass)
 
 ---
 

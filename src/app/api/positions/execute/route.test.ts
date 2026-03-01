@@ -216,7 +216,7 @@ describe('POST /api/positions/execute', () => {
   });
 
   // Helper: mock fetch for Phase D (DB position creation)
-  function mockFetchForPositionCreation(responseBody = { id: 'pos-123' }, status = 201) {
+  function mockFetchForPositionCreation(responseBody: Record<string, unknown> = { id: 'pos-123' }, status = 201) {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(responseBody), { status })
     );

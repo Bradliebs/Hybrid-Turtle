@@ -16,7 +16,7 @@ import prisma from '@/lib/prisma';
 import { ensureDefaultUser } from '@/lib/default-user';
 import { getBatchPrices, getDailyPrices, calculateMA, calculateADX, calculateATR, getMarketRegime, normalizeBatchPricesToGBP } from '@/lib/market-data';
 import { calculateRMultiple } from '@/lib/position-sizer';
-import { getRiskBudget, canPyramid } from '@/lib/risk-gates';
+import { getRiskBudget, canPyramid, calculatePyramidAddSize } from '@/lib/risk-gates';
 import { generateStopRecommendations } from '@/lib/stop-manager';
 import { detectDualRegime, checkRegimeStability } from '@/lib/regime-detector';
 import {
@@ -445,6 +445,10 @@ export async function GET(request: NextRequest) {
     const riskBudgetPct = budget.maxRiskPercent > 0
       ? (budget.usedRiskPercent / budget.maxRiskPercent) * 100
       : 0;
+    // Open risk ratio (0–1) for pyramid gating
+    const openRiskRatio = budget.maxRiskPercent > 0
+      ? budget.usedRiskPercent / budget.maxRiskPercent
+      : 1;
     const effectiveMaxPositions = breadthSafety.maxPositionsOverride || maxPositions;
 
     // ── Pyramid Alerts — parallelise ATR fetches ──
@@ -477,8 +481,28 @@ export async function GET(request: NextRequest) {
           p.entryPrice,
           p.initialRisk,
           atr ?? undefined,
-          currentAdds
+          currentAdds,
+          openRiskRatio
         );
+
+        // Compute scaled add sizing (50% risk for add #1, 25% for add #2)
+        const fxRatio = p.currentPrice > 0
+          ? ((livePrices[p.ticker] || p.entryPrice) > 0
+            ? (gbpPrices[p.ticker] ?? p.currentPrice) / (livePrices[p.ticker] || p.entryPrice)
+            : 1)
+          : 1;
+        const addSizing = pyramidCheck.allowed
+          ? calculatePyramidAddSize({
+              equity,
+              riskProfile,
+              addNumber: pyramidCheck.addNumber,
+              currentPrice: p.currentPrice,
+              currentStop: p.currentStop,
+              sleeve: p.sleeve,
+              fxToGbp: fxRatio,
+              allowFractional: true, // Trading 212
+            })
+          : { shares: 0, riskDollars: 0, scaledRiskPercent: 0, riskScalar: 0, totalCost: 0 };
 
         pyramidAlerts.push({
           ticker: p.ticker,
@@ -495,6 +519,10 @@ export async function GET(request: NextRequest) {
           allowed: pyramidCheck.allowed,
           message: pyramidCheck.message,
           priceCurrency,
+          riskScalar: pyramidCheck.riskScalar,
+          addShares: addSizing.shares,
+          addRiskAmount: addSizing.riskDollars,
+          scaledRiskPercent: addSizing.scaledRiskPercent,
         });
       }
     } catch (error) {

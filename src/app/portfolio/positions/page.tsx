@@ -16,6 +16,7 @@ import { Loader2 } from 'lucide-react';
 
 // Dynamic import keeps ~ReadyToBuyPanel out of initial bundle (only loads when visible)
 const ReadyToBuyPanel = dynamic(() => import('@/components/portfolio/ReadyToBuyPanel'), { ssr: false });
+const BreakoutFailurePanel = dynamic(() => import('@/components/portfolio/BreakoutFailurePanel'), { ssr: false });
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -255,6 +256,9 @@ export default function PositionsPage() {
 
         {/* Stop-Loss Recommendations — fetches live from /api/stops */}
         <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} refreshTrigger={stopRefreshKey} />
+
+        {/* Breakout Failure Alerts — amber warnings for positions that failed within 5 days */}
+        <BreakoutFailurePanel />
 
         {/* Ready to Buy — trigger-met candidates from latest scan */}
         <ReadyToBuyPanel

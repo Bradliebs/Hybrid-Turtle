@@ -2,9 +2,11 @@
  * DEPENDENCIES
  * Consumed by: src/components/portfolio/ReadyToBuyPanel.tsx
  * Consumes: src/lib/ready-to-buy.ts, src/lib/api-client.ts, src/lib/utils.ts,
- *           src/hooks/useWeeklyPhase.ts
- * Risk-sensitive: YES (calls POST /api/positions/execute which places live T212 orders)
- * Last modified: 2026-02-28
+ *           src/hooks/useWeeklyPhase.ts, src/lib/correlation-scalar.ts,
+ *           /api/risk/correlation-scalar (fetch)
+ * Risk-sensitive: YES (calls POST /api/positions/execute which places live T212 orders;
+ *                 applies correlation scalar to reduce position size for correlated tickers)
+ * Last modified: 2026-03-01
  * Notes: Two modes:
  *        1. T212 Execute: SSE-streamed 3-phase (buy → fill → stop) with full audit logging
  *        2. Manual fallback: Creates DB position only (no broker order)
@@ -21,6 +23,8 @@ import { getBuyButtonState } from '@/lib/ready-to-buy';
 import { getDayOfWeek } from '@/lib/utils';
 import type { TriggerMetCandidate } from '@/lib/ready-to-buy';
 import type { PositionSizingResult } from '@/types';
+import type { CorrelationScalarResult } from '@/lib/correlation-scalar';
+import { applyCorrelationScalar } from '@/lib/correlation-scalar';
 import {
   X,
   ShoppingCart,
@@ -31,6 +35,7 @@ import {
   Loader2,
   Zap,
   AlertOctagon,
+  Link2,
 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
@@ -63,6 +68,8 @@ interface BuyConfirmationModalProps {
   isaConnected: boolean;
   /** Position sizer from useRiskProfile().sizePosition */
   sizePosition: (entryPrice: number, stopPrice: number) => PositionSizingResult;
+  /** Tickers of currently open positions — used for correlation scalar lookup */
+  openPositionTickers: string[];
   isOpen: boolean;
   onConfirm: () => Promise<void>;
   onCancel: () => void;
@@ -86,6 +93,7 @@ export default function BuyConfirmationModal({
   investConnected,
   isaConnected,
   sizePosition,
+  openPositionTickers,
   isOpen,
   onConfirm,
   onCancel,
@@ -118,7 +126,13 @@ export default function BuyConfirmationModal({
   const dayOfWeek = getDayOfWeek();
   const buttonState = getBuyButtonState(dayOfWeek);
 
-  // Position sizing
+  // ── Correlation scalar state ──
+  const [corrScalar, setCorrScalar] = useState<CorrelationScalarResult>({
+    scalar: 1.0, reason: null, correlatedTicker: null, maxCorrelation: null,
+  });
+  const [corrLoading, setCorrLoading] = useState(false);
+
+  // Position sizing (base — before correlation adjustment)
   const sizing = useMemo<PositionSizingResult | null>(() => {
     try {
       if (!candidate.scanPrice || !candidate.scanStopPrice) return null;
@@ -128,6 +142,43 @@ export default function BuyConfirmationModal({
       return null;
     }
   }, [candidate.scanPrice, candidate.scanStopPrice, sizePosition]);
+
+  // Adjusted shares after correlation scalar
+  const adjustedShares = useMemo(() => {
+    if (!sizing) return 0;
+    return applyCorrelationScalar(sizing.shares, corrScalar.scalar);
+  }, [sizing, corrScalar.scalar]);
+
+  // Adjusted risk (proportional to share reduction)
+  const adjustedRisk = useMemo(() => {
+    if (!sizing || sizing.shares === 0) return 0;
+    return sizing.riskDollars * (adjustedShares / sizing.shares);
+  }, [sizing, adjustedShares]);
+
+  // Fetch correlation scalar when modal opens with a candidate
+  useEffect(() => {
+    if (!isOpen || !candidate.ticker || openPositionTickers.length === 0) {
+      setCorrScalar({ scalar: 1.0, reason: null, correlatedTicker: null, maxCorrelation: null });
+      return;
+    }
+    let cancelled = false;
+    setCorrLoading(true);
+    fetch('/api/risk/correlation-scalar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker: candidate.ticker, openTickers: openPositionTickers }),
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!cancelled && data) setCorrScalar(data);
+      })
+      .catch(() => {
+        // Fail-safe: no correlation data → no reduction
+        if (!cancelled) setCorrScalar({ scalar: 1.0, reason: null, correlatedTicker: null, maxCorrelation: null });
+      })
+      .finally(() => { if (!cancelled) setCorrLoading(false); });
+    return () => { cancelled = true; };
+  }, [isOpen, candidate.ticker, openPositionTickers]);
 
   // UK ticker detection for ISA hint
   const isUKTicker = candidate.ticker.endsWith('.L');
@@ -167,7 +218,7 @@ export default function BuyConfirmationModal({
           stockId: candidate.ticker, // resolved server-side
           entryPrice: candidate.scanPrice,
           stopLoss: candidate.scanStopPrice,
-          shares: sizing.shares,
+          shares: adjustedShares, // correlation-adjusted (scalar applied to position-sizer output)
           accountType,
           source: 'manual',
           sleeve: candidate.sleeve || 'CORE',
@@ -217,7 +268,7 @@ export default function BuyConfirmationModal({
           stockId: candidate.ticker,                              // Yahoo ticker — resolved to stockId in execute route
           ticker: candidate.yahooTicker || candidate.ticker,      // Yahoo format for logging
           t212Ticker: candidate.ticker,                            // Will be resolved from DB by t212Ticker field
-          quantity: sizing.shares,
+          quantity: adjustedShares, // correlation-adjusted (scalar applied to position-sizer output)
           stopPrice: candidate.scanStopPrice,
           entryPrice: candidate.scanPrice,
           accountType,
@@ -587,6 +638,36 @@ export default function BuyConfirmationModal({
                 </span>
               </div>
 
+              {/* Correlation reduction warning — shown above sizing when scalar < 1.0 */}
+              {corrScalar.scalar < 1.0 && sizing && !corrLoading && (
+                <div className="p-4 bg-amber-500/10 border-2 border-amber-500/40 rounded-lg space-y-2">
+                  <div className="flex items-start gap-2 text-amber-400">
+                    <Link2 className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-semibold">Position reduced — correlation risk</div>
+                      <p className="text-xs mt-1 text-amber-300/80">
+                        {candidate.ticker} is {corrScalar.maxCorrelation != null ? Math.round(corrScalar.maxCorrelation * 100) : '?'}% correlated with {corrScalar.correlatedTicker} (currently open)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs font-mono ml-6">
+                    <div>
+                      <span className="text-muted-foreground">Full size:</span>{' '}
+                      <span className="text-foreground">{sizing.shares} shares</span>
+                      <span className="text-muted-foreground"> (risk {formatCurrency(sizing.riskDollars)})</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Adjusted:</span>{' '}
+                      <span className="text-amber-400 font-semibold">{adjustedShares} shares</span>
+                      <span className="text-muted-foreground"> (risk {formatCurrency(adjustedRisk)})</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground ml-6">
+                    The system has {corrScalar.scalar === 0.75 ? 'reduced this position by 25%' : corrScalar.scalar === 0.50 ? 'halved this position' : 'reduced this position by 75%'} to protect against hidden leverage.
+                  </p>
+                </div>
+              )}
+
               {/* Position sizing summary */}
               {sizing ? (
                 <div className="bg-navy-800/70 border border-border rounded-lg p-4 space-y-2">
@@ -597,24 +678,50 @@ export default function BuyConfirmationModal({
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground text-xs">Shares</span>
-                      <span className="font-mono text-foreground">{sizing.shares} shares</span>
+                      <span className="font-mono text-foreground">
+                        {corrScalar.scalar < 1.0 ? (
+                          <>
+                            <span className="line-through text-muted-foreground mr-1">{sizing.shares}</span>
+                            <span className="text-amber-400">{adjustedShares}</span>
+                          </>
+                        ) : (
+                          <>{sizing.shares} shares</>
+                        )}
+                      </span>
                     </div>
                     {/* Approximate GBP position value — totalCost is already in GBP (shares × price × fxToGbp) */}
                     <div className="flex justify-between col-span-2">
                       <span />
-                      <span className="text-xs text-muted-foreground font-mono">≈ £{Math.round(sizing.totalCost)} position</span>
+                      <span className="text-xs text-muted-foreground font-mono">
+                        ≈ £{corrScalar.scalar < 1.0
+                          ? Math.round(adjustedShares * (sizing.totalCost / sizing.shares))
+                          : Math.round(sizing.totalCost)
+                        } position
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground text-xs">Total cost</span>
-                      <span className="font-mono text-foreground">{formatCurrency(sizing.totalCost)}</span>
+                      <span className="font-mono text-foreground">
+                        {formatCurrency(corrScalar.scalar < 1.0
+                          ? adjustedShares * (sizing.totalCost / sizing.shares)
+                          : sizing.totalCost
+                        )}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground text-xs">Risk (£)</span>
-                      <span className="font-mono text-loss">{formatCurrency(sizing.riskDollars)}</span>
+                      <span className="font-mono text-loss">
+                        {formatCurrency(corrScalar.scalar < 1.0 ? adjustedRisk : sizing.riskDollars)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground text-xs">Risk (%)</span>
-                      <span className="font-mono text-foreground">{sizing.riskPercent.toFixed(2)}%</span>
+                      <span className="font-mono text-foreground">
+                        {corrScalar.scalar < 1.0
+                          ? ((adjustedRisk / equity) * 100).toFixed(2)
+                          : sizing.riskPercent.toFixed(2)
+                        }%
+                      </span>
                     </div>
                   </div>
 
@@ -622,7 +729,10 @@ export default function BuyConfirmationModal({
                   <div className="flex items-start gap-2 mt-3 pt-3 border-t border-border/30 text-xs text-muted-foreground">
                     <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-primary-400" />
                     <span>
-                      The number of shares is calculated to risk exactly {formatCurrency(sizing.riskDollars)} ({sizing.riskPercent.toFixed(1)}% of your account) if the stop-loss triggers.
+                      {corrScalar.scalar < 1.0
+                        ? `Base size risks ${formatCurrency(sizing.riskDollars)} (${sizing.riskPercent.toFixed(1)}%). Reduced to ${formatCurrency(adjustedRisk)} due to correlation with ${corrScalar.correlatedTicker}.`
+                        : `The number of shares is calculated to risk exactly ${formatCurrency(sizing.riskDollars)} (${sizing.riskPercent.toFixed(1)}% of your account) if the stop-loss triggers.`
+                      }
                     </span>
                   </div>
                 </div>
@@ -784,7 +894,7 @@ export default function BuyConfirmationModal({
                     className="w-full px-4 py-3 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
                     <Zap className="w-4 h-4" />
-                    Execute on T212 — {sizing?.shares ?? '?'} shares in {accountType.toUpperCase()}
+                    Execute on T212 — {corrScalar.scalar < 1.0 ? adjustedShares : (sizing?.shares ?? '?')} shares in {accountType.toUpperCase()}
                   </button>
                 )}
 

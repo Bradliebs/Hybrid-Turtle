@@ -29,6 +29,14 @@ interface Candidate {
   scanPassesFilters?: boolean | null;
   scanPassesRiskGates?: boolean | null;
   scanPassesAntiChase?: boolean | null;
+  // Earnings calendar data
+  earningsInfo?: {
+    daysUntilEarnings: number | null;
+    nextEarningsDate: string | null;
+    confidence: 'HIGH' | 'LOW' | 'NONE';
+    action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
+    reason: string | null;
+  };
 }
 
 interface ReadyCandidatesProps {
@@ -179,6 +187,20 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border text-amber-400 bg-amber-500/15 border-amber-500/40">
                         <AlertTriangle className="w-3 h-3" />
                         TRIGGER MET
+                      </span>
+                    )}
+                    {/* Earnings calendar warning badge */}
+                    {c.earningsInfo?.daysUntilEarnings != null && c.earningsInfo.daysUntilEarnings <= 5 && (
+                      <span className={cn(
+                        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border",
+                        c.earningsInfo.action === 'AUTO_NO'
+                          ? 'text-red-400 bg-red-500/15 border-red-500/40'
+                          : 'text-amber-400 bg-amber-500/15 border-amber-500/30'
+                      )}>
+                        <AlertTriangle className="w-3 h-3" />
+                        {c.earningsInfo.action === 'AUTO_NO'
+                          ? `EARNINGS ${c.earningsInfo.daysUntilEarnings}d`
+                          : `⚠ Earnings ${c.earningsInfo.daysUntilEarnings}d`}
                       </span>
                     )}
                   </div>

@@ -40,6 +40,12 @@ model User {
   // Market data provider — yahoo (default) or eodhd
   marketDataProvider    String        @default("yahoo")     // yahoo | eodhd
   eodhApiKey            String?                              // EODHD API key (only needed if provider=eodhd)
+  // Gap Guard config — controls anti-chase gap check in scan pipeline
+  gapGuardMode          String        @default("ALL")       // ALL | MONDAY_ONLY
+  gapGuardWeekendATR    Float         @default(0.75)        // ATR threshold for Monday (weekend gaps)
+  gapGuardWeekendPct    Float         @default(3.0)         // % threshold for Monday (weekend gaps)
+  gapGuardDailyATR      Float         @default(1.0)         // ATR threshold for Tue–Fri (daily gaps)
+  gapGuardDailyPct      Float         @default(4.0)         // % threshold for Tue–Fri (daily gaps)
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   positions             Position[]
@@ -92,10 +98,12 @@ model Position {
   atr_at_entry    Float?
   profile_used    String?
   entry_type      String?     @default("BREAKOUT")
+  entryTrigger    Float?                              // 20-day high trigger price at time of entry (Donchian + ATR buffer)
   protectionLevel String      @default("INITIAL")    // INITIAL | BREAKEVEN | LOCK_08R | LOCK_1R_TRAIL
+  breakoutFailureDetectedAt DateTime?                 // Set when price closes below entryTrigger within 5 days — never cleared
   exitPrice       Float?
   exitDate        DateTime?
-  exitReason      String?     // STOP_HIT | CLIMAX_TRIM | LAGGARD_PURGE | MANUAL | RE_ENTRY_FAIL
+  exitReason      String?     // STOP_HIT | CLIMAX_TRIM | LAGGARD_PURGE | MANUAL | RE_ENTRY_FAIL | BREAKOUT_FAILURE
   exitProfitR     Float?      // R-multiple at exit
   whipsawCount    Int         @default(0)            // How many times stopped out in 30 days
   notes           String?
@@ -473,4 +481,21 @@ model Notification {
   @@index([readAt])                           // fast unread count query
   @@index([createdAt])
   @@index([type])
+}
+
+// ── Earnings Calendar Cache ─────────────────────────────────
+// Pre-cached earnings dates from Yahoo Finance quoteSummary.
+// Populated nightly; consumed by scan engine to block/demote
+// candidates reporting earnings within 5 days.
+
+model EarningsCache {
+  id               Int       @id @default(autoincrement())
+  ticker           String    @unique
+  nextEarningsDate DateTime?               // null if no date available
+  confidence       String    @default("NONE")  // HIGH | LOW | NONE
+  fetchedAt        DateTime  @default(now())
+  source           String    @default("YAHOO")
+
+  @@index([ticker])
+  @@index([fetchedAt])
 }

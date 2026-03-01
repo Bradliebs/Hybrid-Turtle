@@ -112,6 +112,9 @@ export async function runHealthCheck(userId: string): Promise<HealthCheckReport>
   // ---- H4: Cron Job Active ----
   results.push(await checkCronActive());
 
+  // ---- H5: Data Source Quality ----
+  results.push(await checkDataSource());
+
   // Determine overall status
   const hasRed = results.some((r) => r.status === 'RED');
   const hasYellow = results.some((r) => r.status === 'YELLOW');
@@ -499,5 +502,54 @@ async function checkCronActive(): Promise<HealthCheckResult> {
     return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'GREEN', message: `Nightly ran ${Math.floor(hoursSince)}h ago` };
   } catch {
     return { id: 'H4', label: 'Cron Job Active', category: 'System', status: 'YELLOW', message: 'Unable to check cron status' };
+  }
+}
+
+/**
+ * H5: Data Source Quality — checks the latest heartbeat for data source health.
+ * Reports whether the nightly pipeline used live Yahoo data, cached data, or degraded.
+ */
+async function checkDataSource(): Promise<HealthCheckResult> {
+  try {
+    const heartbeat = await prisma.heartbeat.findFirst({
+      where: { status: { in: ['SUCCESS', 'FAILED'] } },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    if (!heartbeat || !heartbeat.details) {
+      return { id: 'H5', label: 'Data Source', category: 'System', status: 'YELLOW', message: 'No heartbeat data available' };
+    }
+
+    let details: Record<string, unknown>;
+    try {
+      details = JSON.parse(heartbeat.details) as Record<string, unknown>;
+    } catch {
+      return { id: 'H5', label: 'Data Source', category: 'System', status: 'YELLOW', message: 'Heartbeat details unparseable' };
+    }
+
+    // Check for dataSource field written by updated nightly pipeline
+    const ds = details.dataSource as { health?: string; staleTickers?: string[]; maxStalenessHours?: number; summary?: string } | undefined;
+    if (!ds || !ds.health) {
+      // Pre-upgrade heartbeat — no data source info yet
+      return { id: 'H5', label: 'Data Source', category: 'System', status: 'GREEN', message: 'Live data (pre-upgrade heartbeat)' };
+    }
+
+    if (ds.health === 'LIVE') {
+      return { id: 'H5', label: 'Data Source', category: 'System', status: 'GREEN', message: `Live data \u2713 — ${ds.summary || 'all Yahoo'}` };
+    }
+
+    if (ds.health === 'PARTIAL') {
+      const staleCount = ds.staleTickers?.length ?? 0;
+      return { id: 'H5', label: 'Data Source', category: 'System', status: 'YELLOW', message: `Partial data \u26a0 — ${staleCount} ticker(s) from cache` };
+    }
+
+    // DEGRADED
+    const hours = ds.maxStalenessHours?.toFixed(1) ?? '?';
+    if ((ds.maxStalenessHours ?? 0) > 48) {
+      return { id: 'H5', label: 'Data Source', category: 'System', status: 'RED', message: `Stale cache \u2717 — data ${hours}h old (>48h). Run nightly with internet.` };
+    }
+    return { id: 'H5', label: 'Data Source', category: 'System', status: 'YELLOW', message: `Cached data \u26a0 — ${hours}h old. Yahoo was unavailable.` };
+  } catch {
+    return { id: 'H5', label: 'Data Source', category: 'System', status: 'YELLOW', message: 'Data source check failed' };
   }
 }

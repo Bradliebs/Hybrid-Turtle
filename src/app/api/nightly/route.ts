@@ -1,9 +1,9 @@
 /**
  * DEPENDENCIES
  * Consumed by: /api/nightly
- * Consumes: health-check.ts, stop-manager.ts, telegram.ts, market-data.ts, equity-snapshot.ts, snapshot-sync.ts, laggard-detector.ts, modules/*, risk-gates.ts, position-sizer.ts, prisma.ts, @/types
+ * Consumes: health-check.ts, stop-manager.ts, telegram.ts, market-data.ts, equity-snapshot.ts, snapshot-sync.ts, laggard-detector.ts, breakout-failure-detector.ts, alert-service.ts, modules/*, risk-gates.ts, position-sizer.ts, prisma.ts, @/types
  * Risk-sensitive: YES
- * Last modified: 2026-02-22
+ * Last modified: 2026-03-01
  * Notes: API nightly should continue on partial failures.
  */
 export const dynamic = 'force-dynamic';
@@ -13,8 +13,13 @@ import prisma from '@/lib/prisma';
 import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
-import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert } from '@/lib/telegram';
-import { getBatchPrices, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
+import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert, NightlyBreakoutFailureAlert } from '@/lib/telegram';
+import { detectBreakoutFailures } from '@/lib/breakout-failure-detector';
+import type { BreakoutFailureResult } from '@/lib/breakout-failure-detector';
+import { sendAlert } from '@/lib/alert-service';
+import { normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, preCacheHistoricalData } from '@/lib/market-data';
+import { fetchWithFallback, toPriceRecord } from '@/lib/data-provider';
+import type { DataSourceHealth } from '@/lib/data-provider';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { detectLaggards } from '@/lib/laggard-detector';
@@ -25,9 +30,9 @@ import { calculateBreadth, checkBreadthSafety } from '@/lib/modules/breadth-safe
 // Module 13 disabled — import preserved for reference
 // import { checkMomentumExpansion } from '@/lib/modules/momentum-expansion';
 import { getRiskBudget } from '@/lib/risk-gates';
-import { canPyramid } from '@/lib/risk-gates';
+import { canPyramid, calculatePyramidAddSize } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
-import type { RiskProfileType, Sleeve } from '@/types';
+import { RISK_PROFILES, type RiskProfileType, type Sleeve } from '@/types';
 import { z } from 'zod';
 import { apiError } from '@/lib/api-response';
 
@@ -38,6 +43,11 @@ const nightlyBodySchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     let hadFailure = false;
+    // Track data source health across the pipeline
+    let dataSourceHealth: DataSourceHealth = 'LIVE';
+    let dataSourceStaleTickers: string[] = [];
+    let dataSourceMaxStalenessHours = 0;
+    let dataSourceSummary = '';
     let userId = 'default-user';
     const contentLength = Number(request.headers.get('content-length') ?? '0');
     const hasBody = Number.isFinite(contentLength) && contentLength > 0;
@@ -97,7 +107,15 @@ export async function POST(request: NextRequest) {
     const openTickers = positions.map((p) => p.stock.ticker);
     let livePrices: Record<string, number> = {};
     try {
-      livePrices = openTickers.length > 0 ? await getBatchPrices(openTickers) : {};
+      if (openTickers.length > 0) {
+        // Use resilient fallback chain: Yahoo → AV → EODHD → DB cache
+        const fetchResult = await fetchWithFallback(openTickers, 'nightly');
+        livePrices = toPriceRecord(fetchResult);
+        dataSourceHealth = fetchResult.health;
+        dataSourceStaleTickers = fetchResult.staleTickers;
+        dataSourceMaxStalenessHours = fetchResult.maxStalenessHours;
+        dataSourceSummary = fetchResult.summary;
+      }
     } catch (error) {
       hadFailure = true;
       console.warn('[Nightly] Live price fetch failed:', (error as Error).message);
@@ -199,6 +217,71 @@ export async function POST(request: NextRequest) {
       console.warn('[Nightly] Trailing stop calculation failed:', (error as Error).message);
     }
 
+    // Step 3c: Breakout failure detection — price closed below entry trigger within 5 days
+    let breakoutFailureAlerts: NightlyBreakoutFailureAlert[] = [];
+    try {
+      const bfInput = positions.map((p) => {
+        const currentPrice = livePrices[p.stock.ticker];
+        const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
+        const currency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
+        return {
+          id: p.id,
+          ticker: p.stock.ticker,
+          entryPrice: p.entryPrice,
+          entryDate: p.entryDate,
+          entryTrigger: p.entryTrigger,
+          initialRisk: p.initialRisk,
+          currentPrice: currentPrice || p.entryPrice,
+          shares: p.shares,
+          currency,
+          alreadyFlagged: !!p.breakoutFailureDetectedAt,
+        };
+      });
+      const failures = detectBreakoutFailures(bfInput);
+
+      // Persist the detection timestamp on newly-flagged positions
+      for (const f of failures) {
+        try {
+          await prisma.position.update({
+            where: { id: f.positionId },
+            data: { breakoutFailureDetectedAt: new Date() },
+          });
+        } catch {
+          // Non-critical — flag best-effort
+        }
+      }
+
+      breakoutFailureAlerts = failures.map((f) => {
+        return {
+          ticker: f.ticker,
+          daysHeld: f.daysHeld,
+          rMultiple: f.rMultiple,
+          entryTrigger: f.entryTrigger,
+          currentPrice: f.currentPrice,
+          estimatedLoss: f.estimatedLoss,
+          currency: f.currency,
+          reason: f.reason,
+        };
+      });
+
+      // Send in-app + Telegram alerts for each breakout failure
+      for (const bf of breakoutFailureAlerts) {
+        const currSymbol = bf.currency === 'GBP' || bf.currency === 'GBX' ? '£' : bf.currency === 'EUR' ? '€' : '$';
+        await sendAlert({
+          type: 'BREAKOUT_FAILURE',
+          title: `⚠ Breakout failure — ${bf.ticker}`,
+          message: `${bf.ticker} has closed back below its entry trigger after ${bf.daysHeld} day${bf.daysHeld !== 1 ? 's' : ''}. Consider exiting.\n\nEntry trigger: ${currSymbol}${bf.entryTrigger.toFixed(2)}\nCurrent price: ${currSymbol}${bf.currentPrice.toFixed(2)}\nExpected loss: -${currSymbol}${Math.abs(bf.estimatedLoss).toFixed(2)}\n\nRecommendation: Exit this position in Trading 212. This breakout has failed.`,
+          data: { ticker: bf.ticker, daysHeld: bf.daysHeld, rMultiple: bf.rMultiple, entryTrigger: bf.entryTrigger, currentPrice: bf.currentPrice, estimatedLoss: bf.estimatedLoss },
+          priority: 'WARNING',
+        });
+      }
+      if (breakoutFailureAlerts.length > 0) {
+        console.log(`[Nightly] ${breakoutFailureAlerts.length} breakout failure(s) detected`);
+      }
+    } catch (error) {
+      console.warn('[Nightly] Breakout failure detection failed:', (error as Error).message);
+    }
+
     // Step 4: Get user for equity and risk profile
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const equity = user?.equity || 0;
@@ -209,6 +292,7 @@ export async function POST(request: NextRequest) {
     if (healthReport.overall === 'YELLOW') alerts.push('Health check has warnings');
     if (stopRecs.length > 0) alerts.push(`${stopRecs.length} R-based stop-loss updates recommended`);
     if (trailingStopChanges.length > 0) alerts.push(`${trailingStopChanges.length} trailing ATR stops auto-applied`);
+    if (breakoutFailureAlerts.length > 0) alerts.push(`⚠️ ${breakoutFailureAlerts.length} breakout failure(s) — consider exiting`);
 
     // Step 4b: Detect laggard / dead-money positions
     let laggardAlerts: NightlyLaggardAlert[] = [];
@@ -438,6 +522,10 @@ export async function POST(request: NextRequest) {
         if (row.positionId) addsMap.set(row.positionId, row._count.id);
       }
 
+      // Open risk ratio for pyramid gating (0–1 scale)
+      const maxOpenRiskPct = RISK_PROFILES[riskProfile].maxOpenRisk;
+      const openRiskRatio = maxOpenRiskPct > 0 ? openRiskPercent / maxOpenRiskPct : 1;
+
       for (const p of positions) {
         if (p.stock.sleeve === 'HEDGE') continue; // Skip hedge positions
         const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
@@ -457,12 +545,29 @@ export async function POST(request: NextRequest) {
           p.entryPrice,
           p.initialRisk,
           atr ?? undefined,
-          addsMap.get(p.id) ?? 0
+          addsMap.get(p.id) ?? 0,
+          openRiskRatio
         );
 
         if (pyramidCheck.allowed) {
           const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
           const currency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
+
+          // Compute scaled add sizing
+          const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
+          const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
+          const fxRatio = rawPrice > 0 ? gbpPrice / rawPrice : 1;
+          const addSizing = calculatePyramidAddSize({
+            equity,
+            riskProfile,
+            addNumber: pyramidCheck.addNumber,
+            currentPrice,
+            currentStop: p.currentStop,
+            sleeve: p.stock.sleeve as Sleeve,
+            fxToGbp: fxRatio,
+            allowFractional: true, // Trading 212
+          });
+
           pyramidAlerts.push({
             ticker: p.stock.ticker,
             entryPrice: p.entryPrice,
@@ -472,6 +577,10 @@ export async function POST(request: NextRequest) {
             triggerPrice: pyramidCheck.triggerPrice,
             message: pyramidCheck.message,
             currency,
+            riskScalar: pyramidCheck.riskScalar,
+            addShares: addSizing.shares,
+            addRiskAmount: addSizing.riskDollars,
+            scaledRiskPercent: addSizing.scaledRiskPercent,
           });
         }
       }
@@ -624,6 +733,7 @@ export async function POST(request: NextRequest) {
         whipsawAlerts,
         breadthAlert,
         momentumAlert,
+        breakoutFailures: breakoutFailureAlerts,
       });
     } catch (error) {
       // Telegram is optional infrastructure — failure must not degrade heartbeat
@@ -642,6 +752,13 @@ export async function POST(request: NextRequest) {
           alertsCount: alerts.length,
           snapshotSync,
           hadFailure,
+          // Data source fallback chain health
+          dataSource: {
+            health: dataSourceHealth,
+            staleTickers: dataSourceStaleTickers,
+            maxStalenessHours: dataSourceMaxStalenessHours,
+            summary: dataSourceSummary,
+          },
         }),
       },
     });
@@ -658,6 +775,7 @@ export async function POST(request: NextRequest) {
       whipsawAlerts,
       breadthAlert,
       momentumAlert,
+      breakoutFailures: breakoutFailureAlerts,
       alerts,
       timestamp: new Date(),
     });

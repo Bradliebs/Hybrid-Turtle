@@ -14,6 +14,7 @@ const statusStyles: Record<string, string> = {
   WAIT_PULLBACK: 'bg-amber-500/20 text-amber-400 border border-amber-500/30',
   COOLDOWN: 'bg-purple-500/20 text-purple-400 border border-purple-500/30',
   FAR: 'bg-loss/20 text-loss border border-loss/30',
+  EARNINGS_BLOCK: 'bg-red-500/20 text-red-400 border border-red-500/30',
   TRIGGERED: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30',
   // Position Status
   OPEN: 'bg-profit/20 text-profit border border-profit/30',
@@ -44,6 +45,7 @@ const statusLabels: Record<string, string> = {
   SMALL_ACCOUNT: 'Small Account',
   HIGH_RISK: 'High Risk',
   GAP_RISK: '⚡ Gap Risk',
+  EARNINGS_BLOCK: '🚫 Earnings',
 };
 
 function StatusBadge({ status, className }: StatusBadgeProps) {

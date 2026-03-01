@@ -199,11 +199,44 @@ describe('risk-gates formulas', () => {
     expect(result.allowed).toBe(true);
     expect(result.addNumber).toBe(1);
     expect(result.triggerPrice).toBe(105);
+    expect(result.riskScalar).toBe(0.5); // Add #1 = 50% of base risk
   });
 
   it('blocks pyramid adds once max adds is reached', () => {
     const result = canPyramid(130, 100, 5, 10, 2);
     expect(result.allowed).toBe(false);
     expect(result.addNumber).toBe(0);
+    expect(result.riskScalar).toBe(0); // Not allowed = 0 scalar
+  });
+
+  it('returns 25% risk scalar for add #2', () => {
+    // Add #2 trigger: entry(100) + 1.0 × ATR(10) = 110
+    const result = canPyramid(112, 100, 5, 10, 1);
+    expect(result.allowed).toBe(true);
+    expect(result.addNumber).toBe(2);
+    expect(result.riskScalar).toBe(0.25); // Add #2 = 25% of base risk
+  });
+
+  it('blocks pyramiding when open risk ratio >= 70%', () => {
+    // Price at trigger, but risk budget 75% full
+    const result = canPyramid(106, 100, 5, 10, 0, 0.75);
+    expect(result.allowed).toBe(false);
+    expect(result.riskScalar).toBe(0);
+    expect(result.message).toContain('Risk budget');
+    expect(result.message).toContain('pyramiding blocked');
+  });
+
+  it('allows pyramiding when open risk ratio < 70%', () => {
+    // Price at trigger, risk budget 50% full — should be allowed
+    const result = canPyramid(106, 100, 5, 10, 0, 0.50);
+    expect(result.allowed).toBe(true);
+    expect(result.addNumber).toBe(1);
+    expect(result.riskScalar).toBe(0.5);
+  });
+
+  it('blocks pyramiding at exactly 70% open risk threshold', () => {
+    const result = canPyramid(106, 100, 5, 10, 0, 0.70);
+    expect(result.allowed).toBe(false);
+    expect(result.riskScalar).toBe(0);
   });
 });

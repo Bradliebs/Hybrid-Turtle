@@ -17,8 +17,9 @@ import type {
   Sleeve,
   TechnicalData,
   RiskProfileType,
+  GapGuardConfig,
 } from '@/types';
-import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK, ATR_STOP_MULTIPLIER } from '@/types';
+import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK, ATR_STOP_MULTIPLIER, DEFAULT_GAP_GUARD_CONFIG } from '@/types';
 
 const FAILED_BREAKOUT_COOLDOWN_DAYS = 5;
 import { getTechnicalData, getMarketRegime, getVolRegime, getQuickPrice, getFXRate, getDailyPrices } from './market-data';
@@ -27,6 +28,7 @@ import { calculatePositionSize } from './position-sizer';
 import { validateRiskGates } from './risk-gates';
 import { checkAntiChasingGuard, checkPullbackContinuationEntry } from './scan-guards';
 import { validateTickerData } from './modules/data-validator';
+import { getEarningsInfo, evaluateEarningsRisk } from './earnings-calendar';
 import { calcHurst } from './hurst';
 import prisma from './prisma';
 
@@ -142,7 +144,8 @@ export function rankCandidate(
 export async function runFullScan(
   userId: string,
   riskProfile: RiskProfileType,
-  equity: number
+  equity: number,
+  gapGuardConfig: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG
 ): Promise<{
   regime: MarketRegime;
   candidates: ScanCandidate[];
@@ -284,6 +287,24 @@ export async function runFullScan(
           status = 'WATCH';
         }
 
+        // ── Earnings Calendar Check (between Stage 3 and Stage 5) ──
+        // Checks DB cache (pre-populated nightly). If cache miss, returns NONE.
+        // AUTO_NO for ≤2 days (HIGH confidence), DEMOTE_WATCH for 3-5 days.
+        let earningsCheckResult: ReturnType<typeof evaluateEarningsRisk> | null = null;
+        try {
+          const earningsInfo = await getEarningsInfo(stock.ticker);
+          earningsCheckResult = evaluateEarningsRisk(earningsInfo);
+
+          if (earningsCheckResult.action === 'AUTO_NO') {
+            status = 'EARNINGS_BLOCK';
+            passesAllFilters = false;
+          } else if (earningsCheckResult.action === 'DEMOTE_WATCH' && status === 'READY') {
+            status = 'WATCH';
+          }
+        } catch {
+          // Fail safe — earnings check failure never crashes the scan
+        }
+
         const rankScore = rankCandidate(stock.sleeve, technicals, status);
 
         let shares: number | undefined;
@@ -360,7 +381,8 @@ export async function runFullScan(
             // Volatility expansion anti-chase override (all days):
             // If price stretches too far above trigger in ATR terms (extATR > 0.8),
             // force WAIT_PULLBACK regardless of earlier READY/WATCH classification.
-            // This is separate from the Monday-only gap guard in scan-guards.ts.
+            // This is separate from the gap guard in scan-guards.ts (which uses
+            // day-aware thresholds and is configurable via GapGuardConfig).
             if (extATR > 0.8) {
               antiChaseResult = {
                 passed: false,
@@ -372,7 +394,8 @@ export async function runFullScan(
                 price,
                 entryTrigger,
                 technicals.atr,
-                new Date().getDay()
+                new Date().getDay(),
+                gapGuardConfig
               );
             }
 
@@ -467,6 +490,13 @@ export async function runFullScan(
           riskDollars,
           riskPercent,
           totalCost,
+          earningsInfo: earningsCheckResult ? {
+            daysUntilEarnings: earningsCheckResult.info.daysUntilEarnings,
+            nextEarningsDate: earningsCheckResult.info.nextEarningsDate?.toISOString() ?? null,
+            confidence: earningsCheckResult.info.confidence,
+            action: earningsCheckResult.action,
+            reason: earningsCheckResult.reason,
+          } : undefined,
           filterResults: {
             ...filterResults,
             atrSpiking: medianSpiking,
@@ -493,7 +523,7 @@ export async function runFullScan(
   }
 
   // Sort: triggered first → READY → WATCH → FAR/failed, then by rank score
-  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, COOLDOWN: 2, FAR: 3 };
+  const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, COOLDOWN: 2, EARNINGS_BLOCK: 2, FAR: 3 };
   candidates.sort((a, b) => {
     // Trigger-met candidates float to the very top (price ≥ entry trigger + passes filters)
     const aTriggered = a.passesAllFilters && a.price >= a.entryTrigger ? 1 : 0;

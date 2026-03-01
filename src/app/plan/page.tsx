@@ -63,6 +63,15 @@ interface ReadyCandidate {
   bps?: number | null;
   hurstExponent?: number | null;
   scanAdx?: number | null;
+  scanAtrPercent?: number | null;
+  // Earnings calendar data
+  earningsInfo?: {
+    daysUntilEarnings: number | null;
+    nextEarningsDate: string | null;
+    confidence: 'HIGH' | 'LOW' | 'NONE';
+    action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
+    reason: string | null;
+  };
 }
 
 /** Shape of a cross-ref ticker from /api/scan/cross-ref */
@@ -98,6 +107,15 @@ interface CrossRefTicker {
   bps?: number | null;
   hurstExponent?: number | null;
   scanAdx?: number | null;
+  scanAtrPercent?: number | null;
+  // Earnings calendar data
+  earningsInfo?: {
+    daysUntilEarnings: number | null;
+    nextEarningsDate: string | null;
+    confidence: 'HIGH' | 'LOW' | 'NONE';
+    action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
+    reason: string | null;
+  };
 }
 
 interface HealthReportData {
@@ -141,6 +159,8 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(true);
   const [healthReport, setHealthReport] = useState<HealthReportData | null>(null);
   const [riskSummary, setRiskSummary] = useState<RiskSummaryData | null>(null);
+  // EV modifier map: ticker → { modifier, dataQuality, tradeCount, expectancy }
+  const [evModifiers, setEvModifiers] = useState<Record<string, { modifier: number; dataQuality: string; tradeCount: number; expectancy: number | null }>>({});
 
   // Advanced view toggle — persisted in localStorage
   const [advancedView, setAdvancedView] = useState(false);
@@ -247,6 +267,9 @@ export default function PlanPage() {
               bps: t.bps,
               hurstExponent: t.hurstExponent,
               scanAdx: t.scanAdx,
+              scanAtrPercent: t.scanAtrPercent,
+              // Earnings calendar data
+              earningsInfo: t.earningsInfo,
             }));
           setScanCandidates(mapped);
         }
@@ -257,6 +280,25 @@ export default function PlanPage() {
 
     fetchHealthRiskAndScan();
   }, []);
+
+  // Fetch EV modifiers for candidates (separate effect — depends on marketRegime)
+  useEffect(() => {
+    const fetchEvModifiers = async () => {
+      try {
+        const regime = (marketRegime || 'UNKNOWN').toUpperCase();
+        const data = await apiRequest<{ ok: boolean; modifiers: Record<string, { modifier: number; dataQuality: string; tradeCount: number; expectancy: number | null }> }>(
+          `/api/ev-modifiers?regime=${regime}`
+        );
+        if (data.modifiers) {
+          setEvModifiers(data.modifiers);
+        }
+      } catch {
+        // Non-critical — EV modifiers enhance ranking but are not required
+      }
+    };
+
+    fetchEvModifiers();
+  }, [marketRegime]);
 
   // Use cross-referenced scan candidates from 7-stage engine + dual scores
   const candidates = scanCandidates;
@@ -329,6 +371,10 @@ export default function PlanPage() {
               bps: c.bps,
               hurstExponent: c.hurstExponent,
               scanAdx: c.scanAdx,
+              sleeve: c.sleeve,
+              atrPercent: c.scanAtrPercent,
+              evModifier: evModifiers[c.ticker]?.modifier ?? null,
+              earningsInfo: c.earningsInfo,
             }))}
             maxPositions={riskSummary?.budget?.maxPositions ?? 4}
             usedPositions={positions.length}

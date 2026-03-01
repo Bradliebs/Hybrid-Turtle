@@ -12,7 +12,10 @@ import {
 import {
   ATR_VOLATILITY_CAP_ALL,
   ATR_VOLATILITY_CAP_HIGH_RISK,
+  DEFAULT_GAP_GUARD_CONFIG,
   type RiskProfileType,
+  type GapGuardConfig,
+  type GapGuardMode,
 } from '@/types';
 import prisma from '@/lib/prisma';
 import { apiError } from '@/lib/api-response';
@@ -42,10 +45,30 @@ export async function POST(request: NextRequest) {
     }
     const { userId, riskProfile, equity } = parsed.data;
 
+    // Read user's gap guard config from DB (falls back to defaults if not set)
+    const userSettings = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        gapGuardMode: true,
+        gapGuardWeekendATR: true,
+        gapGuardWeekendPct: true,
+        gapGuardDailyATR: true,
+        gapGuardDailyPct: true,
+      },
+    });
+    const gapGuardConfig: GapGuardConfig = {
+      enabledDays: (userSettings?.gapGuardMode as GapGuardMode) || DEFAULT_GAP_GUARD_CONFIG.enabledDays,
+      weekendThresholdATR: userSettings?.gapGuardWeekendATR ?? DEFAULT_GAP_GUARD_CONFIG.weekendThresholdATR,
+      weekendThresholdPct: userSettings?.gapGuardWeekendPct ?? DEFAULT_GAP_GUARD_CONFIG.weekendThresholdPct,
+      dailyThresholdATR: userSettings?.gapGuardDailyATR ?? DEFAULT_GAP_GUARD_CONFIG.dailyThresholdATR,
+      dailyThresholdPct: userSettings?.gapGuardDailyPct ?? DEFAULT_GAP_GUARD_CONFIG.dailyThresholdPct,
+    };
+
     const result = await runFullScan(
       userId,
       riskProfile as RiskProfileType,
-      equity
+      equity,
+      gapGuardConfig
     );
 
     // ── Persist to database ──────────────────────────────────────────

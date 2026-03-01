@@ -49,6 +49,13 @@ export default function SettingsPage() {
   const [eodhApiKeySet, setEodhApiKeySet] = useState(false);
   const [showEodhKey, setShowEodhKey] = useState(false);
 
+  // Gap Guard config state
+  const [gapGuardMode, setGapGuardMode] = useState<'ALL' | 'MONDAY_ONLY'>('ALL');
+  const [gapGuardWeekendATR, setGapGuardWeekendATR] = useState('0.75');
+  const [gapGuardWeekendPct, setGapGuardWeekendPct] = useState('3.0');
+  const [gapGuardDailyATR, setGapGuardDailyATR] = useState('1.0');
+  const [gapGuardDailyPct, setGapGuardDailyPct] = useState('4.0');
+
   // Trading 212 Invest state
   const [t212ApiKey, setT212ApiKey] = useState('');
   const [t212ApiSecret, setT212ApiSecret] = useState('');
@@ -145,9 +152,24 @@ export default function SettingsPage() {
           t212IsaAccountId?: string | null;
           t212IsaCurrency?: string | null;
           t212IsaLastSync?: string | null;
+          // Gap Guard
+          gapGuardMode?: string;
+          gapGuardWeekendATR?: number;
+          gapGuardWeekendPct?: number;
+          gapGuardDailyATR?: number;
+          gapGuardDailyPct?: number;
         }>(`/api/settings?userId=${DEFAULT_USER_ID}`);
         if (data.marketDataProvider === 'eodhd') setMarketDataProvider('eodhd');
         if (data.eodhApiKeySet) setEodhApiKeySet(true);
+
+        // Restore gap guard config
+        if (data.gapGuardMode === 'ALL' || data.gapGuardMode === 'MONDAY_ONLY') {
+          setGapGuardMode(data.gapGuardMode);
+        }
+        if (data.gapGuardWeekendATR != null) setGapGuardWeekendATR(data.gapGuardWeekendATR.toString());
+        if (data.gapGuardWeekendPct != null) setGapGuardWeekendPct(data.gapGuardWeekendPct.toString());
+        if (data.gapGuardDailyATR != null) setGapGuardDailyATR(data.gapGuardDailyATR.toString());
+        if (data.gapGuardDailyPct != null) setGapGuardDailyPct(data.gapGuardDailyPct.toString());
 
         // Restore T212 Invest connection state
         if (data.t212Connected) {
@@ -241,6 +263,12 @@ export default function SettingsPage() {
           marketDataProvider,
           // Only send eodhApiKey if user entered a new one (not the masked placeholder)
           ...(eodhApiKey && !eodhApiKey.startsWith('****') ? { eodhApiKey } : {}),
+          // Gap guard config
+          gapGuardMode,
+          gapGuardWeekendATR: parseFloat(gapGuardWeekendATR) || 0.75,
+          gapGuardWeekendPct: parseFloat(gapGuardWeekendPct) || 3.0,
+          gapGuardDailyATR: parseFloat(gapGuardDailyATR) || 1.0,
+          gapGuardDailyPct: parseFloat(gapGuardDailyPct) || 4.0,
         }),
       });
     } catch {
@@ -848,6 +876,132 @@ export default function SettingsPage() {
           <p className="text-xs text-muted-foreground mt-2">
             Switching providers takes effect after saving. Both providers use the same caching
             and rate-limiting strategy. You can switch back to Yahoo at any time.
+          </p>
+        </div>
+
+        {/* Gap Guard */}
+        <div className="card-surface p-6">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-1">
+            <Shield className="w-5 h-5 text-warning" />
+            Gap Guard (Anti-Chase)
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Flags READY candidates that gapped significantly above their entry trigger.
+            Prevents chasing into post-gap moves on any trading day.
+          </p>
+
+          {/* Mode toggle */}
+          <div className="mb-4">
+            <label className="block text-sm text-muted-foreground mb-2">Apply gap check on</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setGapGuardMode('ALL')}
+                className={cn(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors border',
+                  gapGuardMode === 'ALL'
+                    ? 'bg-primary/20 border-primary text-primary-400'
+                    : 'border-white/10 text-muted-foreground hover:text-foreground hover:bg-surface-2'
+                )}
+              >
+                All trading days
+                <span className="block text-[10px] font-normal mt-0.5 opacity-70">Recommended</span>
+              </button>
+              <button
+                onClick={() => setGapGuardMode('MONDAY_ONLY')}
+                className={cn(
+                  'px-4 py-2 rounded-lg text-sm font-medium transition-colors border',
+                  gapGuardMode === 'MONDAY_ONLY'
+                    ? 'bg-primary/20 border-primary text-primary-400'
+                    : 'border-white/10 text-muted-foreground hover:text-foreground hover:bg-surface-2'
+                )}
+              >
+                Monday only
+                <span className="block text-[10px] font-normal mt-0.5 opacity-70">Weekend gaps only</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Thresholds */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Monday / Weekend thresholds */}
+            <div className="p-4 rounded-lg border border-white/10 bg-surface-2/50">
+              <h3 className="text-sm font-semibold text-foreground mb-2">Monday / Weekend Gap</h3>
+              <p className="text-[10px] text-muted-foreground mb-3">3-day gap after weekend close</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">ATR multiple</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.1"
+                    max="5.0"
+                    value={gapGuardWeekendATR}
+                    onChange={(e) => setGapGuardWeekendATR(e.target.value)}
+                    className="input-field w-full text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Percent</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      max="20"
+                      value={gapGuardWeekendPct}
+                      onChange={(e) => setGapGuardWeekendPct(e.target.value)}
+                      className="input-field w-full text-sm pr-6"
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Tuesday–Friday thresholds */}
+            <div className={cn(
+              'p-4 rounded-lg border bg-surface-2/50',
+              gapGuardMode === 'ALL' ? 'border-white/10' : 'border-white/5 opacity-40'
+            )}>
+              <h3 className="text-sm font-semibold text-foreground mb-2">Tuesday–Friday Gap</h3>
+              <p className="text-[10px] text-muted-foreground mb-3">1-day gap (higher bar to avoid over-triggering)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">ATR multiple</label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.1"
+                    max="5.0"
+                    value={gapGuardDailyATR}
+                    onChange={(e) => setGapGuardDailyATR(e.target.value)}
+                    className="input-field w-full text-sm"
+                    disabled={gapGuardMode === 'MONDAY_ONLY'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Percent</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      max="20"
+                      value={gapGuardDailyPct}
+                      onChange={(e) => setGapGuardDailyPct(e.target.value)}
+                      className="input-field w-full text-sm pr-6"
+                      disabled={gapGuardMode === 'MONDAY_ONLY'}
+                    />
+                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted-foreground mt-3">
+            Thresholds are applied to all READY candidates at scan time. When triggered, the candidate is flagged
+            with a chase warning — it is <span className="text-warning font-medium">not hard-blocked</span>.
           </p>
         </div>
 

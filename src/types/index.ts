@@ -53,6 +53,30 @@ export const RISK_PROFILES: Record<RiskProfileType, RiskProfileConfig> = {
   },
 };
 
+// ---- Gap Guard Config ----
+export type GapGuardMode = 'ALL' | 'MONDAY_ONLY';
+
+export interface GapGuardConfig {
+  /** Which days the gap guard runs: 'ALL' (every trading day) or 'MONDAY_ONLY' (legacy) */
+  enabledDays: GapGuardMode;
+  /** ATR multiple threshold for Monday/weekend gaps (3-day gap) */
+  weekendThresholdATR: number;
+  /** Percent-above-trigger threshold for Monday/weekend gaps */
+  weekendThresholdPct: number;
+  /** ATR multiple threshold for Tuesday–Friday gaps (1-day gap) */
+  dailyThresholdATR: number;
+  /** Percent-above-trigger threshold for Tuesday–Friday gaps */
+  dailyThresholdPct: number;
+}
+
+export const DEFAULT_GAP_GUARD_CONFIG: GapGuardConfig = {
+  enabledDays: 'ALL',
+  weekendThresholdATR: 0.75,
+  weekendThresholdPct: 3.0,
+  dailyThresholdATR: 1.0,
+  dailyThresholdPct: 4.0,
+};
+
 // ---- Sleeve Caps ----
 export const SLEEVE_CAPS = {
   CORE: 0.80,
@@ -142,7 +166,7 @@ export type PositionStatus = 'OPEN' | 'CLOSED';
 export type ProtectionLevel = 'INITIAL' | 'BREAKEVEN' | 'LOCK_08R' | 'LOCK_1R_TRAIL';
 export type MarketRegime = 'BULLISH' | 'SIDEWAYS' | 'BEARISH';
 export type VolRegime = 'LOW_VOL' | 'NORMAL_VOL' | 'HIGH_VOL';
-export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'COOLDOWN' | 'FAR';
+export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'COOLDOWN' | 'FAR' | 'EARNINGS_BLOCK';
 export type WeeklyPhase = 'PLANNING' | 'OBSERVATION' | 'EXECUTION' | 'MAINTENANCE';
 export type HealthStatus = 'GREEN' | 'YELLOW' | 'RED';
 
@@ -265,6 +289,7 @@ export const HEALTH_CHECK_ITEMS: { id: string; label: string; category: string }
   { id: 'H2', label: 'API Connectivity', category: 'System' },
   { id: 'H3', label: 'Database Integrity', category: 'System' },
   { id: 'H4', label: 'Cron Job Active', category: 'System' },
+  { id: 'H5', label: 'Data Source', category: 'System' },
 ];
 
 // ---- Stock Data ----
@@ -342,6 +367,14 @@ export interface ScanCandidate {
   riskDollars?: number;
   riskPercent?: number;
   totalCost?: number;
+  // Earnings calendar info (from EarningsCache)
+  earningsInfo?: {
+    daysUntilEarnings: number | null;
+    nextEarningsDate: string | null;  // ISO string for JSON serialisation
+    confidence: 'HIGH' | 'LOW' | 'NONE';
+    action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
+    reason: string | null;
+  };
   filterResults: {
     priceAboveMa200: boolean;
     adxAbove20: boolean;
@@ -649,6 +682,11 @@ export interface PyramidAlert {
   allowed: boolean;
   message: string;
   priceCurrency: string;
+  // Pyramid add sizing (scaled-down risk)
+  riskScalar: number; // 0.5 for add #1, 0.25 for add #2, 0 if not allowed
+  addShares: number; // Shares to buy for this add
+  addRiskAmount: number; // Risk £ for this add (GBP)
+  scaledRiskPercent: number; // Scaled risk % used for sizing
 }
 
 // Adaptive ATR Buffer (Module 11)

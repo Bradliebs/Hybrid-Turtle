@@ -3,10 +3,11 @@
  * Consumed by: TodayPanel.tsx
  * Consumes: none (pure functions)
  * Risk-sensitive: NO
- * Last modified: 2026-02-28
+ * Last modified: 2026-03-01
  * Notes: Translates raw technical values into plain English labels.
  *        Every function is pure and independently testable.
  *        These translations power the "What Should I Do Today?" panel.
+ *        compositeScore() accepts optional evModifier from ev-modifier.ts.
  */
 
 // ── NCS → Star Rating ────────────────────────────────────────
@@ -168,8 +169,10 @@ export function riskBudgetLabel(usedPct: number, maxPct: number): SignalLabel {
 
 // ── Composite Candidate Score ───────────────────────────────
 // Used to rank trigger-met candidates in the TodayPanel.
-// NCS × 0.4 + BPS_norm × 0.35 + hurstBonus × 0.25
+// NCS × 0.4 + BPS_norm × 0.35 + hurstBonus × 0.25 + evModifier
 // Redistributes weights proportionally when data is missing.
+// evModifier is an additive term from EV tracker history (-10 to +5).
+// Result clamped to [0, 100].
 
 export function hurstToBonus(h: number | null | undefined): number {
   if (h == null || !Number.isFinite(h)) return -1; // signal: missing
@@ -182,7 +185,8 @@ export function hurstToBonus(h: number | null | undefined): number {
 export function compositeScore(
   ncs: number | null | undefined,
   bps: number | null | undefined,
-  hurstExponent: number | null | undefined
+  hurstExponent: number | null | undefined,
+  evModifier?: number | null
 ): number {
   const ncsVal = ncs != null && Number.isFinite(ncs) ? ncs : 50; // neutral default
 
@@ -199,18 +203,21 @@ export function compositeScore(
   let hurstWeight = hBonus >= 0 ? 0.25 : 0;
 
   const totalWeight = ncsWeight + bpsWeight + hurstWeight;
-  if (totalWeight === 0) return ncsVal;
+  if (totalWeight === 0) return Math.max(0, Math.min(100, ncsVal + (evModifier ?? 0)));
 
   // Normalise weights to sum to 1
   ncsWeight /= totalWeight;
   bpsWeight /= totalWeight;
   hurstWeight /= totalWeight;
 
-  return Math.round(
+  const baseScore =
     ncsVal * ncsWeight +
     (bpsNorm >= 0 ? bpsNorm : 0) * bpsWeight +
-    (hBonus >= 0 ? hBonus : 0) * hurstWeight
-  );
+    (hBonus >= 0 ? hBonus : 0) * hurstWeight;
+
+  // Apply EV modifier as additive term, then clamp [0, 100]
+  const final = baseScore + (evModifier ?? 0);
+  return Math.round(Math.max(0, Math.min(100, final)));
 }
 
 // ── Build "Why System Likes It" reasons list ────────────────

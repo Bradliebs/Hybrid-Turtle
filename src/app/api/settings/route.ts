@@ -13,6 +13,12 @@ const settingsPutSchema = z.object({
   equity: z.number().positive('Equity must be positive').optional(),
   marketDataProvider: z.enum(['yahoo', 'eodhd']).optional(),
   eodhApiKey: z.string().nullable().optional(),
+  // Gap guard settings
+  gapGuardMode: z.enum(['ALL', 'MONDAY_ONLY']).optional(),
+  gapGuardWeekendATR: z.number().min(0.1).max(5.0).optional(),
+  gapGuardWeekendPct: z.number().min(0.5).max(20.0).optional(),
+  gapGuardDailyATR: z.number().min(0.1).max(5.0).optional(),
+  gapGuardDailyPct: z.number().min(0.5).max(20.0).optional(),
 });
 
 // GET /api/settings?userId=default-user
@@ -30,6 +36,12 @@ export async function GET(request: NextRequest) {
         equity: true,
         marketDataProvider: true,
         eodhApiKey: true,
+        // Gap Guard config
+        gapGuardMode: true,
+        gapGuardWeekendATR: true,
+        gapGuardWeekendPct: true,
+        gapGuardDailyATR: true,
+        gapGuardDailyPct: true,
         // Trading 212 Invest
         t212ApiKey: true,
         t212ApiSecret: true,
@@ -99,7 +111,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { riskProfile, equity, marketDataProvider, eodhApiKey } = parsed.data;
+    const { riskProfile, equity, marketDataProvider, eodhApiKey,
+      gapGuardMode, gapGuardWeekendATR, gapGuardWeekendPct, gapGuardDailyATR, gapGuardDailyPct,
+    } = parsed.data;
     const id = parsed.data.userId || 'default-user';
 
     const data: Record<string, unknown> = {};
@@ -110,6 +124,12 @@ export async function PUT(request: NextRequest) {
     if (eodhApiKey !== undefined && eodhApiKey !== null && !eodhApiKey.startsWith('****')) {
       data.eodhApiKey = eodhApiKey || null;
     }
+    // Gap guard fields
+    if (gapGuardMode !== undefined) data.gapGuardMode = gapGuardMode;
+    if (gapGuardWeekendATR !== undefined) data.gapGuardWeekendATR = gapGuardWeekendATR;
+    if (gapGuardWeekendPct !== undefined) data.gapGuardWeekendPct = gapGuardWeekendPct;
+    if (gapGuardDailyATR !== undefined) data.gapGuardDailyATR = gapGuardDailyATR;
+    if (gapGuardDailyPct !== undefined) data.gapGuardDailyPct = gapGuardDailyPct;
 
     const user = await prisma.user.update({
       where: { id },

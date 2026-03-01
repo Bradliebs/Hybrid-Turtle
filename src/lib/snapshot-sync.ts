@@ -29,6 +29,7 @@ import {
 import { validateTickerData } from './modules/data-validator';
 import { calculateAdaptiveBuffer } from './modules/adaptive-atr-buffer';
 import { calcBIS } from './breakout-integrity';
+import { getEarningsInfo } from './earnings-calendar';
 import type { Sleeve } from '@/types';
 import { ATR_STOP_MULTIPLIER, SNAPSHOT_CLUSTER_WARNING, SNAPSHOT_SUPER_CLUSTER_WARNING } from '@/types';
 
@@ -345,6 +346,14 @@ export async function syncSnapshot(
             bisScore,
           });
 
+          // ── Earnings calendar lookup (from DB cache — no Yahoo call) ──
+          let earningsInfo: { daysUntilEarnings: number | null } | null = null;
+          try {
+            earningsInfo = await getEarningsInfo(stock.ticker);
+          } catch {
+            // Non-critical — defaults to null (no penalty)
+          }
+
           return {
             snapshotId: snapshot.id,
             ticker: stock.ticker,
@@ -378,8 +387,9 @@ export async function syncSnapshot(
             atrCollapsing,
             atrCompressionRatio,
             rsVsBenchmarkPct: rsPct,
-            daysToEarnings: null,  // Not available from Yahoo without premium
-            earningsInNext5d: false,
+            // Earnings data from EarningsCache (populated nightly)
+            daysToEarnings: earningsInfo?.daysUntilEarnings ?? null,
+            earningsInNext5d: (earningsInfo?.daysUntilEarnings ?? 999) <= 5,
             clusterName: cluster,
             superClusterName: superCluster,
             clusterExposurePct: clusterRiskPct,

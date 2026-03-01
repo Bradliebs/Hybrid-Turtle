@@ -81,6 +81,16 @@ export default function PyramidAlertsWidget() {
                 <div className="text-[10px] text-muted-foreground">
                   {a.addsUsed}/{a.maxAdds} used
                 </div>
+                {a.addShares > 0 && (
+                  <div className="text-[10px] text-foreground mt-0.5 font-medium">
+                    {a.addShares.toFixed(2)} shares &middot; &pound;{a.addRiskAmount.toFixed(2)} risk
+                  </div>
+                )}
+                {a.riskScalar > 0 && (
+                  <div className="text-[10px] text-muted-foreground">
+                    {(a.riskScalar * 100).toFixed(0)}% of base risk
+                  </div>
+                )}
               </div>
             </div>
           ))}

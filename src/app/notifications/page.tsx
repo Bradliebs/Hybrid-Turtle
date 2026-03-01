@@ -46,6 +46,7 @@ function typeIcon(type: string) {
   switch (type) {
     case 'TRADE_TRIGGER': return <TrendingUp className="w-5 h-5 text-profit" />;
     case 'STOP_HIT': return <AlertTriangle className="w-5 h-5 text-loss" />;
+    case 'BREAKOUT_FAILURE': return <AlertTriangle className="w-5 h-5 text-amber-400" />;
     case 'PYRAMID_ADD': return <BarChart3 className="w-5 h-5 text-primary-400" />;
     case 'WEEKLY_SUMMARY': return <BarChart3 className="w-5 h-5 text-blue-400" />;
     case 'SYSTEM': return <Shield className="w-5 h-5 text-muted-foreground" />;
@@ -57,6 +58,7 @@ function typeLabel(type: string): string {
   switch (type) {
     case 'TRADE_TRIGGER': return 'Trade Alert';
     case 'STOP_HIT': return 'Stop Hit';
+    case 'BREAKOUT_FAILURE': return 'Breakout Failure';
     case 'PYRAMID_ADD': return 'Pyramid Add';
     case 'WEEKLY_SUMMARY': return 'Weekly Summary';
     case 'SYSTEM': return 'System';

@@ -3,37 +3,40 @@ import {
   checkAntiChasingGuard,
   checkPullbackContinuationEntry,
 } from './scan-guards';
+import { DEFAULT_GAP_GUARD_CONFIG, type GapGuardConfig } from '@/types';
+
+const MONDAY_ONLY: GapGuardConfig = { ...DEFAULT_GAP_GUARD_CONFIG, enabledDays: 'MONDAY_ONLY' };
 
 // ── Anti-Chasing Guard (Mode A) ─────────────────────────────
 
 describe('checkAntiChasingGuard', () => {
-  it('passes on non-Monday regardless of gap', () => {
-    // Tuesday=2, any gap should pass
-    const result = checkAntiChasingGuard(110, 100, 2, 2);
-    expect(result.passed).toBe(true);
-    expect(result.reason).toContain('Not Monday');
+  // ── ALL-days mode (default) ──
+  it('passes on weekends regardless of gap (ALL mode)', () => {
+    // Saturday=6, Sunday=0
+    expect(checkAntiChasingGuard(110, 100, 2, 0).passed).toBe(true);
+    expect(checkAntiChasingGuard(110, 100, 2, 6).passed).toBe(true);
   });
 
-  it('passes when price below entry trigger on Monday', () => {
+  it('passes when price below entry trigger on any day', () => {
     const result = checkAntiChasingGuard(99, 100, 2, 1);
     expect(result.passed).toBe(true);
     expect(result.reason).toContain('Below entry trigger');
   });
 
-  it('blocks when Monday gap > 0.75 ATR', () => {
+  it('blocks when Monday gap > 0.75 ATR (weekend threshold)', () => {
     // Gap = 105 - 100 = 5, ATR = 2, gapATR = 2.5 > 0.75
     const result = checkAntiChasingGuard(105, 100, 2, 1);
     expect(result.passed).toBe(false);
-    expect(result.reason).toContain('CHASE RISK');
+    expect(result.reason).toContain('gap');
     expect(result.reason).toContain('ATR');
   });
 
-  it('blocks when Monday price > 3% above trigger', () => {
+  it('blocks when Monday price > 3% above trigger (weekend threshold)', () => {
     // 103.5 is 3.5% above 100 → blocked
     const result = checkAntiChasingGuard(103.5, 100, 100, 1);
     // ATR is 100 so gapATR = 3.5/100 = 0.035 < 0.75, but percent = 3.5% > 3%
     expect(result.passed).toBe(false);
-    expect(result.reason).toContain('CHASE RISK');
+    expect(result.reason).toContain('gap');
     expect(result.reason).toContain('%');
   });
 
@@ -51,16 +54,86 @@ describe('checkAntiChasingGuard', () => {
     expect(result.passed).toBe(true);
   });
 
-  it('boundary: exactly 0.75 ATR gap passes', () => {
+  it('boundary: exactly 0.75 ATR gap passes on Monday', () => {
     // Gap = 1.5, ATR = 2, gapATR = 0.75 — not > 0.75, so passes
     const result = checkAntiChasingGuard(101.5, 100, 2, 1);
     expect(result.passed).toBe(true);
   });
 
-  it('boundary: exactly 3.0% above trigger — FP precision makes this block', () => {
+  it('boundary: exactly 3.0% above trigger on Monday — FP precision makes this block', () => {
     // ((103/100) - 1) * 100 = 3.0000000000000004 due to IEEE 754 — guard correctly blocks
     const result = checkAntiChasingGuard(103.0, 100, 100, 1);
     expect(result.passed).toBe(false);
+  });
+
+  // ── Tuesday–Friday checks (ALL mode, daily thresholds) ──
+  it('blocks on Tuesday when gap > 1.0 ATR (daily threshold)', () => {
+    // Gap = 3, ATR = 2, gapATR = 1.5 > 1.0
+    const result = checkAntiChasingGuard(103, 100, 2, 2);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain('Tuesday');
+  });
+
+  it('passes on Tuesday when gap between 0.75 and 1.0 ATR (daily threshold higher)', () => {
+    // Gap = 1.8, ATR = 2, gapATR = 0.9  — above Monday limit (0.75) but below daily (1.0)
+    const result = checkAntiChasingGuard(101.8, 100, 2, 2);
+    expect(result.passed).toBe(true);
+  });
+
+  it('blocks on Wednesday when price > 4% above trigger', () => {
+    // 104.5 is 4.5% above 100 → blocked (daily threshold is 4%)
+    const result = checkAntiChasingGuard(104.5, 100, 100, 3);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain('Wednesday');
+  });
+
+  it('passes on Wednesday when price 3.5% above trigger (below daily 4% threshold)', () => {
+    // 103.5 is 3.5% above 100 — would fail Monday (3%) but passes daily (4%)
+    const result = checkAntiChasingGuard(103.5, 100, 100, 3);
+    expect(result.passed).toBe(true);
+  });
+
+  it('blocks on Thursday with large ATR gap', () => {
+    // Gap = 2.5, ATR = 2, gapATR = 1.25 > 1.0
+    const result = checkAntiChasingGuard(102.5, 100, 2, 4);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain('Thursday');
+  });
+
+  it('blocks on Friday with large percent gap', () => {
+    const result = checkAntiChasingGuard(105, 100, 100, 5);
+    expect(result.passed).toBe(false);
+    expect(result.reason).toContain('Friday');
+  });
+
+  // ── MONDAY_ONLY mode (legacy) ──
+  it('passes on non-Monday in MONDAY_ONLY mode', () => {
+    const result = checkAntiChasingGuard(110, 100, 2, 2, MONDAY_ONLY);
+    expect(result.passed).toBe(true);
+    expect(result.reason).toContain('Monday-only mode');
+  });
+
+  it('blocks on Monday in MONDAY_ONLY mode (same as weekend threshold)', () => {
+    // Gap = 5, ATR = 2, gapATR = 2.5 > 0.75
+    const result = checkAntiChasingGuard(105, 100, 2, 1, MONDAY_ONLY);
+    expect(result.passed).toBe(false);
+  });
+
+  // ── Custom config ──
+  it('respects custom thresholds', () => {
+    const strictConfig: GapGuardConfig = {
+      enabledDays: 'ALL',
+      weekendThresholdATR: 0.5,
+      weekendThresholdPct: 2.0,
+      dailyThresholdATR: 0.6,
+      dailyThresholdPct: 2.5,
+    };
+    // Monday: gap 1.2 ATR > 0.5 → fail
+    expect(checkAntiChasingGuard(102.4, 100, 2, 1, strictConfig).passed).toBe(false);
+    // Wednesday: gap 1.3 ATR > 0.6 → fail
+    expect(checkAntiChasingGuard(102.6, 100, 2, 3, strictConfig).passed).toBe(false);
+    // Wednesday: gap 0.5 ATR < 0.6, pct 1% < 2.5% → pass
+    expect(checkAntiChasingGuard(101, 100, 2, 3, strictConfig).passed).toBe(true);
   });
 });
 

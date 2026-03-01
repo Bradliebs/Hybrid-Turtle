@@ -218,6 +218,11 @@ export interface NightlyPyramidAlert {
   triggerPrice: number | null;
   message: string;
   currency: string;
+  // Pyramid add sizing (scaled-down risk)
+  riskScalar: number; // 0.5 for add #1, 0.25 for add #2
+  addShares: number; // Shares to buy for this add
+  addRiskAmount: number; // Risk £ for this add (GBP)
+  scaledRiskPercent: number; // Scaled risk % used for sizing
 }
 
 /**
@@ -229,6 +234,20 @@ export interface NightlyGapRiskAlert {
   atrPercent: number;   // 14-day ATR%
   threshold: number;    // 2× ATR% threshold that was exceeded
   currency: string;
+}
+
+/**
+ * Breakout failure alert — price closed back below entry trigger within 5 days
+ */
+export interface NightlyBreakoutFailureAlert {
+  ticker: string;
+  daysHeld: number;
+  rMultiple: number;
+  entryTrigger: number;
+  currentPrice: number;
+  estimatedLoss: number;  // position-currency loss (negative = loss)
+  currency: string;
+  reason: string;
 }
 
 /**
@@ -262,6 +281,7 @@ export async function sendNightlySummary(summary: {
   breadthAlert?: NightlyBreadthAlert;
   momentumAlert?: NightlyMomentumAlert;
   gapRiskAlerts?: NightlyGapRiskAlert[];
+  breakoutFailures?: NightlyBreakoutFailureAlert[];
 }): Promise<boolean> {
   const healthEmoji = summary.healthStatus === 'GREEN' ? '🟢'
     : summary.healthStatus === 'YELLOW' ? '🟡' : '🔴';
@@ -316,7 +336,11 @@ export async function sendNightlySummary(summary: {
   const pyramidLines = pyramidList.length > 0
     ? pyramidList.map((p) => {
         const sym = currencySymbol(p.currency);
-        return `  📐 <b>${p.ticker}</b>  Add #${p.addNumber}  ${sym}${p.currentPrice.toFixed(2)} ≥ trigger ${p.triggerPrice ? sym + p.triggerPrice.toFixed(2) : 'R-based'}  (${p.rMultiple >= 0 ? '+' : ''}${p.rMultiple.toFixed(1)}R)`;
+        const scalePct = p.riskScalar > 0 ? `${(p.riskScalar * 100).toFixed(0)}%` : '?';
+        const sizingLine = p.addShares > 0
+          ? `\n       → ${p.addShares.toFixed(2)} shares (risk £${p.addRiskAmount.toFixed(2)} — ${scalePct} of base)`
+          : '';
+        return `  📐 <b>${p.ticker}</b>  Add #${p.addNumber}  ${sym}${p.currentPrice.toFixed(2)} ≥ trigger ${p.triggerPrice ? sym + p.triggerPrice.toFixed(2) : 'R-based'}  (${p.rMultiple >= 0 ? '+' : ''}${p.rMultiple.toFixed(1)}R)${sizingLine}`;
       }).join('\n')
     : '';
 
@@ -362,6 +386,17 @@ export async function sendNightlySummary(summary: {
   const gapRiskLines = gapRiskList.length > 0
     ? gapRiskList.map((g) => {
         return `  ⚡ <b>${escapeHtml(g.ticker)}</b>  Gap: ${g.gapPercent >= 0 ? '+' : ''}${g.gapPercent.toFixed(2)}%  (threshold: ±${g.threshold.toFixed(2)}%  ATR%: ${g.atrPercent.toFixed(2)}%)`;
+      }).join('\n')
+    : '';
+
+  // ── Breakout Failure lines ──
+  const breakoutFailureList = summary.breakoutFailures || [];
+  const breakoutFailureLines = breakoutFailureList.length > 0
+    ? breakoutFailureList.map((bf) => {
+        const sym = currencySymbol(bf.currency);
+        const lossStr = bf.estimatedLoss < 0 ? `${sym}${Math.abs(bf.estimatedLoss).toFixed(2)}` : `${sym}${bf.estimatedLoss.toFixed(2)}`;
+        return `  ⚠️ <b>${escapeHtml(bf.ticker)}</b>  ${bf.daysHeld}d held  ${bf.rMultiple.toFixed(1)}R
+       Trigger: ${sym}${bf.entryTrigger.toFixed(2)}  Now: ${sym}${bf.currentPrice.toFixed(2)}  Loss: -${lossStr}`;
       }).join('\n')
     : '';
 
@@ -414,6 +449,9 @@ ${swapLines}
 
 ` : ''}${whipsawList.length > 0 ? `<b>━━━ Whipsaw Blocks (${whipsawList.length}) ━━━</b>
 ${whipsawLines}
+
+` : ''}${breakoutFailureList.length > 0 ? `<b>━━━ ⚠️ Breakout Failures (${breakoutFailureList.length}) ━━━</b>
+${breakoutFailureLines}
 
 ` : ''}${laggardList.length > 0 ? `<b>━━━ Laggards / Dead Money (${laggardList.length}) ━━━</b>
 ${laggardLines}

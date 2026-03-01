@@ -235,6 +235,16 @@ interface CrossRefTicker {
   hurstExponent: number | null;
   // ADX from scan engine (trend strength)
   scanAdx: number | null;
+  // ATR% from scan engine technicals (volatility measure for EV modifier)
+  scanAtrPercent: number | null;
+  // Earnings calendar data (from scan engine EarningsCache)
+  earningsInfo?: {
+    daysUntilEarnings: number | null;
+    nextEarningsDate: string | null;
+    confidence: 'HIGH' | 'LOW' | 'NONE';
+    action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
+    reason: string | null;
+  };
 }
 
 export async function GET() {
@@ -380,6 +390,10 @@ export async function GET() {
         hurstExponent: scan?.filterResults?.hurstExponent ?? null,
         // ADX from scan technicals
         scanAdx: scan?.technicals?.adx ?? (dual?.adx_14 as number ?? null),
+        // ATR% from scan technicals (for EV modifier ATR bucket classification)
+        scanAtrPercent: scan?.technicals?.atrPercent ?? null,
+        // Earnings calendar data passed through from scan engine
+        earningsInfo: scan?.earningsInfo ?? undefined,
       });
     }
 

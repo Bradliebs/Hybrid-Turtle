@@ -1,18 +1,20 @@
 /**
  * DEPENDENCIES
- * Consumed by: /api/positions/route.ts (trade close), /api/ev-stats/route.ts
+ * Consumed by: /api/positions/route.ts (trade close), /api/ev-stats/route.ts, /api/ev-modifiers/route.ts
  * Consumes: prisma.ts
  * Risk-sensitive: NO
- * Last modified: 2026-02-24
+ * Last modified: 2026-03-01
  * Notes: Logging only — no actions or alerts. Records outcome data per closed
  *        trade for expectancy analysis sliced by regime, ATR bucket, cluster, sleeve.
+ *        classifyAtrBucket exported for ev-modifier.ts to reuse thresholds.
+ *        getExpectancyForCombination() queries the intersection of sleeve+ATR+regime.
  */
 import prisma from './prisma';
 
 // ── ATR Bucket classification ─────────────────────────────────────
 // Buckets based on ATR% at entry. Thresholds are intentional —
 // they align with the scan engine's volatility health bands.
-function classifyAtrBucket(atrPercent: number | null | undefined): string {
+export function classifyAtrBucket(atrPercent: number | null | undefined): string {
   if (atrPercent == null || atrPercent <= 0) return 'UNKNOWN';
   if (atrPercent < 2) return 'LOW';
   if (atrPercent < 4) return 'MEDIUM';
@@ -163,4 +165,31 @@ export async function getExpectancyStats(filters?: {
     byCluster: groupSlices(records, 'cluster'),
     bySleeve: groupSlices(records, 'sleeve'),
   };
+}
+
+// ── Combination Expectancy Query ──────────────────────────────
+// Queries the intersection of sleeve + ATR bucket + regime.
+// Returns a single ExpectancySlice for the specific combination,
+// or null if no matching records exist.
+// Used by /api/ev-modifiers to feed into ev-modifier.ts scoring.
+export async function getExpectancyForCombination(
+  sleeve: string,
+  atrBucket: string,
+  regime: string
+): Promise<ExpectancySlice | null> {
+  const records = await prisma.evRecord.findMany({
+    where: {
+      sleeve,
+      atrBucket,
+      regime,
+    },
+    select: {
+      rMultiple: true,
+      outcome: true,
+    },
+  });
+
+  if (records.length === 0) return null;
+
+  return computeSlice(`${sleeve}|${atrBucket}|${regime}`, records);
 }

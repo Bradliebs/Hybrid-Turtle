@@ -169,6 +169,33 @@ function WhyCard({ ticker }: WhyCardProps) {
         </div>
       </div>
 
+      {/* Earnings Warning (if applicable) */}
+      {(ticker.EarningsPenalty > 0 || (ticker.days_to_earnings != null && Number(ticker.days_to_earnings) <= 5)) && (
+        <div
+          className="rounded-lg p-3 border-l-4"
+          style={{
+            borderLeftColor: Number(ticker.days_to_earnings) <= 2 ? '#ef4444' : '#f59e0b',
+            backgroundColor: Number(ticker.days_to_earnings) <= 2 ? '#ef444410' : '#f59e0b10',
+          }}
+        >
+          <div className="text-xs font-semibold text-foreground mb-1">📅 Earnings</div>
+          <div className="text-sm text-muted-foreground">
+            {ticker.days_to_earnings != null
+              ? `Next earnings: ${Number(ticker.days_to_earnings)} day${Number(ticker.days_to_earnings) === 1 ? '' : 's'} away`
+              : 'Earnings expected within 5 days'}
+            {Number(ticker.days_to_earnings) <= 2 && (
+              <div className="text-red-400 font-semibold mt-1">System recommendation: Do not buy</div>
+            )}
+            {Number(ticker.days_to_earnings) > 2 && Number(ticker.days_to_earnings) <= 5 && (
+              <div className="text-amber-400 font-semibold mt-1">System recommendation: Wait for result</div>
+            )}
+            {ticker.EarningsPenalty > 0 && (
+              <div className="text-xs text-muted-foreground mt-1">NCS penalty: −{ticker.EarningsPenalty.toFixed(0)}</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Action Note */}
       <div
         className="rounded-lg p-3 border-l-4"

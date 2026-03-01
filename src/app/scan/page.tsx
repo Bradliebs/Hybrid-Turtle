@@ -461,8 +461,8 @@ export default function ScanPage() {
                   </div>
                 </div>
 
-                <div className="text-xs text-muted-foreground px-1" title="WAIT_PULLBACK can be triggered by volatility expansion (extATR > 0.8) or Monday gap anti-chase rules.">
-                  WAIT_PULLBACK can be triggered by volatility expansion (extATR &gt; 0.8) or Monday gap anti-chase rules.
+                <div className="text-xs text-muted-foreground px-1" title="WAIT_PULLBACK can be triggered by volatility expansion (extATR > 0.8) or gap anti-chase rules on any trading day.">
+                  WAIT_PULLBACK can be triggered by volatility expansion (extATR &gt; 0.8) or gap anti-chase rules.
                 </div>
 
                 {/* Entry formula — inline compact */}
@@ -719,7 +719,7 @@ export default function ScanPage() {
                 </h3>
                 <div className="bg-warning/10 border border-warning/30 rounded-lg p-4 mb-4">
                   <p className="text-sm text-warning font-semibold">
-                    Triggered candidates must pass: (Price - Entry) / ATR &le; 0.75 AND Price / Entry - 1 &le; 3.0%. Prevents chasing gaps.
+                    Flags candidates where price gapped above trigger. Monday: (Price - Entry) / ATR &le; 0.75 AND &le; 3.0%. Tue–Fri: &le; 1.0 ATR AND &le; 4.0%. Configurable in Settings.
                   </p>
                 </div>
                 <div className="space-y-2">

@@ -8,6 +8,7 @@ import FearGreedGauge from '@/components/dashboard/FearGreedGauge';
 import WeeklyPhaseIndicator from '@/components/dashboard/WeeklyPhaseIndicator';
 import HealthTrafficLight from '@/components/dashboard/HealthTrafficLight';
 import HeartbeatMonitor from '@/components/dashboard/HeartbeatMonitor';
+import DataSourceTile from '@/components/dashboard/DataSourceTile';
 import ModuleStatusPanel from '@/components/dashboard/ModuleStatusPanel';
 import ActionCardWidget from '@/components/dashboard/ActionCardWidget';
 import DualRegimeWidget from '@/components/dashboard/DualRegimeWidget';
@@ -169,7 +170,7 @@ export default function DashboardPage() {
         <WeeklyPhaseIndicator />
 
         {/* System Status Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <HealthTrafficLight />
           <div className="card-surface p-4">
             <h3 className="text-sm font-semibold text-foreground mb-3">Market Regime</h3>
@@ -178,11 +179,12 @@ export default function DashboardPage() {
               <div className="text-xs text-muted-foreground">
                 {marketRegime === 'BULLISH'
                   ? 'New positions allowed'
-                  : 'Caution advised — market is not bullish'}
+                  : 'Caution advised \u2014 market is not bullish'}
               </div>
             </div>
           </div>
           <HeartbeatMonitor />
+          <DataSourceTile />
         </div>
 
         <div className="card-surface p-4">

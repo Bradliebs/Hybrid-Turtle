@@ -549,6 +549,7 @@ export default function ReadyToBuyPanel({
           investConnected={settings?.t212Connected ?? false}
           isaConnected={settings?.t212IsaConnected ?? false}
           sizePosition={sizePosition}
+          openPositionTickers={openPositions.map(p => p.ticker)}
           isOpen={modalOpen}
           onConfirm={handleBuyConfirm}
           onCancel={handleModalClose}

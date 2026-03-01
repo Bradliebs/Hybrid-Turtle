@@ -96,11 +96,19 @@ interface YahooChartBar {
   volume: number;
 }
 
+/** Minimal shape returned by yf.quoteSummary() calendarEvents module */
+export interface YahooCalendarEvents {
+  earningsDate?: Date[];
+  dividendDate?: Date;
+  exDividendDate?: Date;
+}
+
 /** Shape of the yahoo-finance2 instance */
 interface YahooFinanceInstance {
   quote(ticker: string): Promise<YahooQuoteResult | null>;
   quote(tickers: string[]): Promise<YahooQuoteResult[]>;
   chart(ticker: string, opts: { period1: string; period2: string; interval: string }): Promise<{ quotes: YahooChartBar[] }>;
+  quoteSummary(ticker: string, opts: { modules: string[] }): Promise<{ calendarEvents?: YahooCalendarEvents } | null>;
 }
 
 // ── In-memory cache to avoid hammering Yahoo ──
@@ -1091,3 +1099,57 @@ export async function preCacheHistoricalData(): Promise<{
     }
   }, 3000);
 })();
+
+// ────────────────────────────────────────────────────
+// Earnings Date — via quoteSummary(calendarEvents)
+// ────────────────────────────────────────────────────
+
+export interface EarningsDateResult {
+  /** Next earnings date (first of range if Yahoo gives a window) */
+  earningsDate: Date | null;
+  /** Second date in range (if Yahoo gives start/end window) */
+  earningsDateEnd: Date | null;
+  /** HIGH if single confirmed date, LOW if range/estimated, NONE if unavailable */
+  confidence: 'HIGH' | 'LOW' | 'NONE';
+}
+
+/**
+ * Fetch the next earnings date for a ticker from Yahoo Finance.
+ * Uses quoteSummary with calendarEvents module — no API key required.
+ * Returns null dates and NONE confidence on any error (fail-safe).
+ */
+export async function getEarningsDate(ticker: string): Promise<EarningsDateResult> {
+  if (isEodhd()) {
+    // EODHD path does not support earnings — return unknown
+    return { earningsDate: null, earningsDateEnd: null, confidence: 'NONE' };
+  }
+
+  try {
+    const yahooTicker = toYahooTicker(ticker);
+    const result = await yf.quoteSummary(yahooTicker, { modules: ['calendarEvents'] });
+    const events = result?.calendarEvents;
+
+    if (!events?.earningsDate || events.earningsDate.length === 0) {
+      return { earningsDate: null, earningsDateEnd: null, confidence: 'NONE' };
+    }
+
+    const dates = events.earningsDate.map(d => new Date(d));
+    // Filter out invalid dates
+    const validDates = dates.filter(d => !isNaN(d.getTime()));
+    if (validDates.length === 0) {
+      return { earningsDate: null, earningsDateEnd: null, confidence: 'NONE' };
+    }
+
+    const earningsDate = validDates[0];
+    const earningsDateEnd = validDates.length > 1 ? validDates[1] : null;
+
+    // Single date = confirmed by company (HIGH). Range = estimated (LOW).
+    const confidence: 'HIGH' | 'LOW' = validDates.length === 1 ? 'HIGH' : 'LOW';
+
+    return { earningsDate, earningsDateEnd, confidence };
+  } catch (err) {
+    // Fail safe — never crash the scan for a missing earnings date
+    console.warn(`[EarningsDate] Failed for ${ticker}:`, (err as Error).message);
+    return { earningsDate: null, earningsDateEnd: null, confidence: 'NONE' };
+  }
+}
