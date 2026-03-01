@@ -116,6 +116,35 @@ Set or verify:
 - account equity
 - risk profile
 - Trading 212 connection details
+- market data provider (Yahoo or EODHD)
+
+## Trade Log (`/trade-log`)
+Use this to review past trades and learn.
+
+You can:
+- filter by ticker, decision, trade type, date range
+- see win rate, expectancy, and slippage stats
+- review what worked and what failed per trade
+- view performance by regime and monthly trends
+
+## Notifications (`/notifications`)
+Use this to track system alerts.
+
+Shows:
+- trade trigger alerts
+- stop-hit warnings
+- pyramid-up signals
+- nightly summaries and system events
+- mark individual or all notifications as read
+
+## Backtest (`/backtest`)
+Use this to audit signal quality.
+
+Shows:
+- historical trigger hits replayed with forward R-multiples
+- win rate, average R, and stop-hit statistics
+- filter by sleeve, regime, or action type
+- requires nightly snapshot history to populate
 
 ---
 

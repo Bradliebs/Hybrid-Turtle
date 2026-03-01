@@ -1,6 +1,6 @@
 # HybridTurtle Dashboard — Complete Operating Guide
 
-> **Version:** 5.11 | **Last Updated:** February 2026
+> **Version:** 6.0 | **Last Updated:** March 2026
 >
 > Prefer a simpler non-technical walkthrough? See `USER-GUIDE.md`.
 
@@ -17,11 +17,15 @@
 7. [Scan — Finding New Trades](#7-scan)
 8. [Plan — Weekly Execution](#8-plan)
 9. [Risk — Risk Management](#9-risk)
-10. [Nightly Automation](#10-nightly-automation)
-11. [The Weekly Workflow](#11-the-weekly-workflow)
-12. [All API Routes — Quick Reference](#12-api-routes)
-13. [System Rules — Immutable](#13-immutable-rules)
-14. [Module System — 21 Risk Checks](#14-module-system)
+10. [Trade Log — Journal & Audit](#10-trade-log)
+11. [Notifications Centre](#11-notifications)
+12. [Backtest — Signal Replay](#12-backtest)
+13. [Hedge Portfolio — Long-Term Holds](#13-hedge-portfolio)
+14. [Nightly Automation](#14-nightly-automation)
+15. [The Weekly Workflow](#15-the-weekly-workflow)
+16. [All API Routes — Quick Reference](#16-api-routes)
+17. [System Rules — Immutable](#17-immutable-rules)
+18. [Module System — 21 Risk Checks](#18-module-system)
 
 ---
 
@@ -78,25 +82,25 @@ The Settings page has 6 sections:
 |---------|-----------|---------------|---------------|
 | Conservative | 0.75% | 8 | 7.0% |
 | **Balanced** (default) | **0.95%** | **5** | **5.5%** |
-| Small Account | 1.50% | 4 | 10.0% |
-| Aggressive | 1.00% | 2 | 6.0% |
+| Small Account | 2.00% | 4 | 10.0% |
+| Aggressive | 3.00% | 3 | 12.0% |
 
-**Aggressive Profile Details (Building Mode):**
+> **Note:** The AGGRESSIVE profile also uses a wider initial stop (2.0×ATR vs the default 1.5×ATR).
+
+**Aggressive Profile Details:**
 
 | Category | Parameter | Value |
 |----------|-----------|-------|
-| Caps | Mode | BUILDING (2 positions) |
-| Caps | Max Position (Core) | 18% |
-| Caps | Max Position (High-Risk) | 12% |
+| Caps | Max Positions | 3 |
+| Caps | Max Position (Core) | 40% |
+| Caps | Max Position (High-Risk) | 20% |
 | Caps | Max Cluster | 35% |
 | Caps | Max Super-Cluster | 50% |
-| ADX | Expansion Trigger | ≥ 25 |
-| Entry | ATR Buffer | 10% |
+| Caps | Max Sector | 45% |
+| Entry | ATR Buffer | Adaptive 5%–20% (Module 11b) |
 | Entry | DIST_READY | ≤ 2.0% |
 | Entry | DIST_WATCH | ≤ 3.0% |
-| Exit | CHOP Tightening | 1.5×ATR |
-| Re-entry | Enabled | Yes |
-| Regime | Benchmarks | SPY + SPY |
+| Regime | Benchmarks | SPY + VWRL (dual benchmark) |
 
 Click **Save Settings** to persist. This updates the database via `PUT /api/settings`.
 
@@ -112,7 +116,20 @@ Click **Save Settings** to persist. This updates the database via `PUT /api/sett
 - **Sync Now** — Imports all T212 positions into the dashboard.
 - **Disconnect** — Removes stored credentials.
 
-### 2.3 Data Sources
+**ISA Account (separate section):**
+
+If you also have a T212 ISA account, a second set of API Key / Secret fields is available. Connect and sync ISA positions independently. ISA positions sync with `accountType: ISA` so they’re tracked separately in the portfolio.
+
+### 2.3 Market Data Provider
+
+| Field | Purpose |
+|-------|--------|
+| Provider | **Yahoo Finance** (default) or **EODHD** (requires API key) |
+| EODHD API Key | Only needed if you select EODHD as provider |
+
+Yahoo Finance is free and requires no API key. EODHD is optional and offered as an alternative data source.
+
+### 2.4 Data Sources
 
 | Field | Purpose |
 |-------|---------|
@@ -264,12 +281,17 @@ The dashboard is your daily command centre. Data refreshes automatically every 6
 | **Health Traffic Light** | Overall system health: 🟢 GREEN / 🟡 YELLOW / 🔴 RED |
 | **Market Regime** | BULLISH / SIDEWAYS / BEARISH (SPY vs 200-day MA) |
 | **Heartbeat Monitor** | Timestamp of last successful nightly run |
+| **Trigger Status Card** | Count of triggered candidates ready to buy |
+| **Nightly Snapshot Runner** | Manual "Run Nightly" button for on-demand execution |
 | **Quick Actions** | Shortcut buttons to key pages |
 | **Risk Modules Widget** | Summary of breadth, momentum, whipsaw, laggard, climax signals |
+| **Pyramid Alerts Widget** | Pyramid-up opportunities for existing positions |
 | **Module Status Panel** | All 21 modules at a glance with status lights |
 | **Fear & Greed Gauge** | CNN Fear & Greed Index (0–100, Extreme Fear → Extreme Greed) |
 | **Dual Regime Widget** | SPY vs VWRL regime comparison + regime stability indicator |
 | **Action Card** | This week's action plan — candidates, stop updates, flags |
+| **Scoring Guide Widget** | Reference card for BQS / FWS / NCS score interpretation |
+| **Hedge Portfolio Card** | Hedge positions summary with P&L and stop guidance |
 | **Recent Alerts** | Latest system events: heartbeats, health checks, trades, stop moves |
 
 ---
@@ -295,7 +317,7 @@ URL: `/portfolio/positions`
 | Current | Live price from Yahoo Finance (GBP-normalised) |
 | Stop-Loss | Current stop price (🔒 icon if above initial) |
 | Protection | Level: INITIAL → BREAKEVEN → LOCK +0.5R → LOCK +1R TRAIL |
-| Shares | Number of shares (fractional to 0.001) |
+| Shares | Number of shares (fractional to 0.01) |
 | Gain % | Unrealised gain/loss percentage |
 | Value | Current position value in GBP |
 | Risk $ | Current risk in GBP (initialRisk × shares) |
@@ -351,17 +373,19 @@ The scan runs a 7-stage pipeline against your entire ticker universe. Click **Ru
 |-------|------|-------------|
 | 1 | **Universe** | Loads all active stocks grouped by sleeve |
 | 2 | **Technical Filters** | Applies 6 technical filters to each ticker: Price > 200-MA, ADX ≥ 20, +DI > −DI, ATR% < 8% (7% for High-Risk), Efficiency ≥ 30%, Data Quality check |
-| 3 | **Classification** | Tags each passing candidate: **READY** (≤ 2% from breakout), **WATCH** (≤ 5%), **FAR** (> 5%). Also flags **TRIGGERED** if price is at/above entry trigger |
+| 3 | **Classification** | Tags each passing candidate: **READY** (≤ 2% from breakout), **WATCH** (≤ 3%), **FAR** (> 3%). Also flags **TRIGGERED** if price is at/above entry trigger. **COOLDOWN** blocks re-entry for tickers with a recent failed breakout. |
 | 4 | **Ranking** | Scores candidates: Sleeve priority (Core 40, ETF 20, High-Risk 10, Hedge 5) + Status bonus (READY +30, WATCH +10) + ADX + Volume + Efficiency + Relative Strength |
-| 5 | **Risk Gates** | Checks: Total open risk ≤ max, positions < max, sleeve within cap, cluster ≤ 20%, sector ≤ 33%, position size cap |
-| 6 | **Anti-Chase Guard** | Monday-only: Blocks entries if price gapped > 0.75 ATR or > 3% above the entry trigger |
-| 7 | **Position Sizing** | Calculates shares = floor((Equity × Risk%) / ((Entry − Stop) × FX)), fractional to 0.001. Skips if result ≤ 0 |
+| 5 | **Risk Gates** | Checks: Total open risk ≤ max, positions < max, sleeve within cap, cluster ≤ cap (20% default, 25% SMALL_ACCOUNT, 35% AGGRESSIVE), sector ≤ cap (25% default, 30% SMALL_ACCOUNT, 45% AGGRESSIVE), position size cap |
+| 6 | **Anti-Chase Guard** | Monday gap guard: blocks if gapped > 0.75 ATR or > 3% above trigger. Also applies an **all-days** volatility extension check: extATR > 0.8 → WAIT_PULLBACK. Plus COOLDOWN block for failed breakouts. |
+| 7 | **Position Sizing** | Calculates shares = floor((Equity × Risk%) / ((Entry − Stop) × FX)), fractional to 0.01 (T212). Skips if result ≤ 0 |
 
 ### Entry Trigger Formula
 
 ```
-Entry Trigger = 20-day High + (0.10 × ATR(14))
+Entry Trigger = 20-day High + (buffer% × ATR(14))
 ```
+
+The buffer % is **adaptive** (Module 11b): scales from **5% to 20%** based on ATR% and vol regime. Default centre is 10%.
 
 ### Stop Price (Initial)
 
@@ -444,7 +468,102 @@ URL: `/risk`
 
 ---
 
-## 10. Hedge Portfolio — Long-Term Holds
+## 10. Trade Log — Journal & Audit
+
+URL: `/trade-log`
+
+A post-trade review page showing what worked, what failed, and why.
+
+### Top Section
+
+**Filters bar (6 controls):** ticker search, decision (TAKEN / SKIPPED / PARTIAL), trade type (ENTRY / EXIT / STOP_HIT / ADD / TRIM), date range, Apply button. Date presets: Last 30D, Last 90D, YTD, All Time.
+
+**Summary cards (6):** Win Rate, Expectancy (R), Avg Slippage %, Worked count, Failed count, Total Logs.
+
+### Charts
+
+- **Performance by Regime** — bar chart: trade count and avg R per regime (BULLISH / SIDEWAYS / BEARISH)
+- **Monthly Win Rate Trend** — bar chart: win rate % and outcome count per month
+- **Top Decision Reasons / Top Winning Tags / Top Losing Tags** — ranked frequency lists
+
+### Trade Journal Table
+
+| Column | Description |
+|--------|------------|
+| Date | Trade date |
+| Ticker | Symbol + name |
+| Type | ENTRY / EXIT / STOP_HIT / ADD / TRIM |
+| Regime | Market regime at time of trade |
+| R-multiple | Risk-adjusted return |
+| P/L (£) | Realised profit/loss |
+| Why | Decision reason / exit reason |
+| What Worked | Post-trade positive notes |
+| What Failed | Post-trade negative notes |
+| Lessons | Key takeaways |
+
+---
+
+## 11. Notifications Centre
+
+URL: `/notifications`
+
+Centralised inbox for trade alerts, stop warnings, and nightly pipeline outputs.
+
+### Features
+
+- **Unread badge** (red pill) in header
+- **Filter tabs:** All / Unread
+- **Mark all as read** button
+- **Notification cards** with type icon, relative timestamp, unread indicator (pulsing blue dot), title, and message body
+- **Priority-based left border:** CRITICAL = red, WARNING = amber, INFO = blue
+
+### Notification Types
+
+| Type | Meaning |
+|------|---------|
+| TRADE_TRIGGER | Trade alert — candidate hit entry trigger |
+| STOP_HIT | Stop-loss warning |
+| PYRAMID_ADD | Add/pyramid-up signal for existing position |
+| WEEKLY_SUMMARY | Weekly recap |
+| SYSTEM | System events (health, errors, heartbeat) |
+
+---
+
+## 12. Backtest — Signal Replay
+
+URL: `/backtest`
+
+Read-only signal quality audit. Replays historical trigger hits from snapshot data with forward R-multiples and stop ladder simulation.
+
+### Summary Cards (5)
+
+Total Signals, With Outcomes (%), Win Rate (20d), Avg R (20d), Stops Hit (count + %).
+
+### Filters
+
+Ticker search, sleeve dropdown (Stock Core / ETF Core / High Risk / Hedge), regime dropdown, action dropdown (Auto-Yes / Conditional / Auto-No). Sortable columns.
+
+### Signal Table Columns
+
+| Column | Description |
+|--------|------------|
+| Date | Signal date |
+| Ticker | Symbol + name |
+| Regime | Badge (Bullish / Sideways / Bearish) |
+| Entry / Stop / Risk | Entry price, stop level, risk per share |
+| BQS / FWS / NCS | Dual-score components |
+| BPS | Breakout Probability Score (0–19) |
+| Action | Auto-Yes / Conditional / Auto-No |
+| 5d / 10d / 20d R | Forward R-multiples at 5, 10, 20 day windows |
+| Max Favourable R | Best R reached |
+| Max Adverse R | Worst drawdown in R |
+| Stop Hit | ✕ with R-level if hit, ✓ if survived |
+
+> Build snapshot history by running the nightly pipeline. Signals require at least one snapshot sync to appear.
+
+---
+
+## 13. Hedge Portfolio — Long-Term Holds
 
 ### What Is the Hedge Sleeve?
 
@@ -490,24 +609,31 @@ These are shown as guidance badges on the dashboard card. You decide whether to 
 
 ---
 
-## 11. Nightly Automation
+## 14. Nightly Automation
 
 ### What Runs Automatically
 
 The nightly cron executes at **9:30 PM UK time**, Monday–Friday.
 
-### The 8-Step Nightly Process
+### The 10-Step Nightly Process (+ Sub-Steps)
 
 | Step | What Happens |
 |------|-------------|
+| 0 | Pre-cache historical data for all active tickers |
 | 1 | Run 16-point health check |
-| 2 | Fetch all open positions |
-| 3 | Generate R-based stop recommendations (breakeven / lock levels) |
-| 4 | Generate trailing ATR stop recommendations + **auto-apply** if stop moves up |
-| 5 | Collect alerts (health warnings, stop moves, trailing updates) |
-| 6 | Fetch user equity |
-| 7 | Send Telegram summary with health, regime, positions, stops, alerts |
-| 8 | Write heartbeat (SUCCESS or FAILED) |
+| 2 | Fetch live prices for all open positions |
+| 3 | R-based stop recommendations (breakeven / lock levels) |
+| 3b | Trailing ATR stop recommendations + **auto-apply** if stop moves up |
+| 3c | Gap risk detection for HIGH_RISK positions (advisory) |
+| 3d | Stop-hit detection — alert if price ≤ currentStop |
+| 4 | Detect laggards + collect alerts |
+| 5 | Risk-signal modules (breadth, momentum, whipsaw, climax, etc.) |
+| 6 | Equity snapshot + pyramid-up checks (rate-limited: once per 6 hours) |
+| 7 | Snapshot sync — full universe refresh + top 15 READY candidates |
+| 8 | Send Telegram summary with health, regime, positions, stops, alerts |
+| 9 | Write heartbeat (SUCCESS or FAILED) |
+
+**If any step fails:** error is logged, FAILED written to heartbeat, remaining steps continue where possible.
 
 ### Manual Trigger
 
@@ -531,8 +657,8 @@ Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.
 | E | State File Currency | Logic |
 | F | Config Coherence | Logic |
 | G1 | Sleeve Limits | Allocation |
-| G2 | Cluster Concentration (≤ 20%) | Allocation |
-| G3 | Sector Concentration (≤ 33%) | Allocation |
+| G2 | Cluster Concentration (≤ cap: 20% default, 25% SMALL_ACCOUNT, 35% AGGRESSIVE) | Allocation |
+| G3 | Sector Concentration (≤ cap: 25% default, 30% SMALL_ACCOUNT, 45% AGGRESSIVE) | Allocation |
 | H1 | Heartbeat Recent | System |
 | H2 | API Connectivity | System |
 | H3 | Database Integrity | System |
@@ -540,7 +666,7 @@ Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.
 
 ---
 
-## 12. The Weekly Workflow
+## 15. The Weekly Workflow
 
 ### Sunday — THINK
 
@@ -584,7 +710,7 @@ Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.
 
 ---
 
-## 13. API Routes — Quick Reference
+## 16. API Routes — Quick Reference
 
 ### Core Data
 
@@ -631,7 +757,10 @@ Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.
 |-------|--------|---------|
 | `GET /api/positions?userId=X&status=OPEN` | GET | Get enriched positions (live prices, GBP) |
 | `POST /api/positions` | POST | Create manual position |
+| `POST /api/positions/execute` | POST | Execute a planned trade (from Plan page) |
 | `PATCH /api/positions` | PATCH | Close/exit position: `{positionId, exitPrice}` |
+| `POST /api/positions/reset-from-t212` | POST | Reset position data from Trading 212 source |
+| `POST /api/positions/sync-account-types` | POST | Sync ISA/CFD account type assignments |
 | `PUT /api/stops` | PUT | Update stop: `{positionId, newStop, reason}` — **monotonic** |
 | `GET /api/stops?userId=X` | GET | Get R-based stop recommendations |
 | `GET /api/stops/sync?userId=X` | GET | Get trailing ATR stop recommendations |
@@ -661,7 +790,22 @@ Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.
 | `POST /api/nightly` | POST | Trigger full nightly process |
 | `GET /api/portfolio/summary?userId=X` | GET | Portfolio distribution data |
 | `GET /api/publications?userId=X` | GET | Recent system events |
+### Notifications & Trade Log
 
+| Route | Method | Purpose |
+|-------|--------|--------|
+| `GET /api/notifications?userId=X` | GET | Get all notifications |
+| `PUT /api/notifications/read-all?userId=X` | PUT | Mark all notifications read |
+| `PUT /api/notifications/:id` | PUT | Mark single notification read |
+| `GET /api/trade-log?userId=X` | GET | Get trade journal entries |
+| `GET /api/trade-log/summary?userId=X` | GET | Get trade log summary statistics |
+
+### Backtest & Analytics
+
+| Route | Method | Purpose |
+|-------|--------|--------|
+| `POST /api/backtest` | POST | Run signal replay backtest |
+| `GET /api/ev-stats?userId=X` | GET | Expected value statistics |
 ### Hedge
 
 | Route | Method | Purpose |
@@ -670,7 +814,7 @@ Or call the API directly: `POST /api/nightly` with `{"userId": "default-user"}`.
 
 ---
 
-## 14. Immutable Rules
+## 17. Immutable Rules
 
 These are hardcoded into the system and cannot be overridden:
 
@@ -681,7 +825,7 @@ These are hardcoded into the system and cannot be overridden:
 | 3 | **No entries without GREEN/YELLOW health** — pre-trade checklist enforces |
 | 4 | **Risk per trade ≤ profile limit** — position sizer caps at profile % |
 | 5 | **Total open risk ≤ profile cap** — risk gate rejects if exceeded |
-| 6 | **Position sizing rounds DOWN** — fractional to 0.001, zero-size = skip |
+| 6 | **Position sizing rounds DOWN** — fractional to 0.01 (T212), zero-size = skip |
 | 7 | **No buying on Monday** — Observation phase, anti-chasing guard active |
 | 8 | **Anti-chasing: gap > 0.75 ATR or > 3% blocks entry** — Monday guard |
 | 9 | **Super-cluster cap at 50%** — concentration limit per super-cluster |
@@ -689,7 +833,7 @@ These are hardcoded into the system and cannot be overridden:
 
 ---
 
-## 15. Module System — 21 Risk & Analysis Checks
+## 18. Module System — 21 Risk & Analysis Checks
 
 All modules run via `GET /api/modules?userId=X` and report to the Dashboard's Module Status Panel.
 
@@ -700,12 +844,13 @@ All modules run via `GET /api/modules?userId=X` and report to the Dashboard's Mo
 | 5 | **Climax Top Exit** | 🟢 = no climax signals, 🟡 = tighten stops, 🔴 = trim recommended |
 | 7 | **Heat-Map Swap** | 🟢 = no swaps, 🟡 = swap suggestions available |
 | 8 | **Heat Check** | 🟢 = cluster OK, 🔴 = blocked (overweight cluster) |
-| 9 | **Fast-Follower Re-Entry** | 🟢 = re-entry signals found, 🟡 = watching cooldowns |
+| 9 | **Fast-Follower Re-Entry** | **DISABLED** — re-entry after stop-hit fights the tape at 4-position account size |
 | 9.1 | **Regime Stability** | 🟢 = stable 3+ days, 🟡 = transitioning, 🔴 = chop detected |
 | 10 | **Breadth Safety Valve** | 🟢 = breadth healthy (≥ 50%), 🟡 = below threshold, 🔴 = max positions restricted |
 | 11 | **Whipsaw Kill Switch** | 🟢 = no blocks, 🔴 = ticker blocked (recent whipsaw) |
+| 11b | **Adaptive ATR Buffer** | Internal — scales entry buffer 5%–20% based on ATR% and vol regime |
 | 12 | **Super-Cluster Cap** | 🟢 = within 50% cap, 🔴 = breached |
-| 13 | **Momentum Expansion** | 🟢 = ADX high (expanded risk allowed), 🟡 = normal |
+| 13 | **Momentum Expansion** | **DISABLED** — procyclical risk expansion adds risk near end of moves, not middle |
 | 14 | **Climax Trim/Tighten** | 🟢 = no action, 🟡 = tighten, 🔴 = trim |
 | 15 | **Trades Log** | 🟢 = logged OK, includes slippage tracking |
 | 16 | **Turnover Monitor** | 🟢 = healthy pace, 🟡 = high turnover (avg hold < 5d or > 20 trades/30d) |

@@ -1,6 +1,7 @@
 # Hybrid-Turtle — Complete Trading Logic Reference
 
 > Auto-generated reference of all trading rules, thresholds, and decision logic.
+> Last verified against source code: **1 March 2026**
 
 ---
 
@@ -48,9 +49,9 @@ Universe (DB)
 
 **Nightly loop:**
 ```
-Health Check → Live Prices → Stop Management (R-based + trailing ATR)
-  → Laggard/Dead Money Detection → Risk Modules (climax, swap, whipsaw, breadth, momentum, correlation)
-  → Equity Snapshot + Pyramid Check → Snapshot Sync → Telegram Alert → Heartbeat
+Pre-Cache → Health Check → Live Prices → Stop Management (R-based + trailing ATR + gap risk + stop-hit detection)
+  → Laggard/Dead Money Detection → Risk Modules (climax, swap, whipsaw, breadth, correlation)
+  → Equity Snapshot + Pyramid Check → Snapshot Sync + Trigger Alerts → Telegram Alert → Heartbeat
 ```
 
 ### End-to-End Decision Tree (Current Code)
@@ -91,12 +92,16 @@ SCAN PATH:
     - open risk, max positions, sleeve cap, cluster cap, sector cap, position-size cap
     - profile-aware caps via getProfileCaps()
 
-  8) Stage 6 Anti-Chase
-    - ext_atr = (close - entryTrigger) / ATR
-    - if ext_atr > 0.8:
-      status = WAIT_PULLBACK (candidate kept, breakout blocked)
-     else:
-      run anti-chase guard (Monday-only gap checks)
+  8) Stage 6 Anti-Chase (3 sub-checks in order)
+    a) Failed breakout cooldown:
+       - if failedBreakoutAt exists and < 5 days ago:
+         status = COOLDOWN, skip remaining anti-chase checks
+    b) ext_atr guard (DAILY, not Monday-only):
+       - ext_atr = (close - entryTrigger) / ATR
+       - if ext_atr > 0.8:
+         status = WAIT_PULLBACK (candidate kept, breakout blocked)
+    c) Monday-only gap anti-chase:
+       - run checkAntiChasingGuard() (gap checks)
 
   9) Mode B Pullback Continuation (only WAIT_PULLBACK)
     - anchor = max(HH20, EMA20)
@@ -148,10 +153,20 @@ ALL hard filters must pass for a candidate to proceed:
 | Data quality | `technicals.ma200 > 0 && technicals.adx > 0` | Hard filter |
 | Efficiency ≥ 30 | `technicals.efficiency >= 30` | **Soft filter** — demotes READY → WATCH |
 
+**Data Validation Gate (Module 18):**
+
+Before technical filters, `validateTickerData()` is called. If data is invalid (stale, missing, anomalous), the ticker is **skipped entirely** (returns null, not included in results).
+
 **ATR Spike Logic:**
+
+Spike detection uses **median of last 14 ATR values** as baseline: `atr >= medianAtr14 × 1.3`. Falls back to `technicals.atrSpiking` flag if median is unavailable.
 
 - `atrSpiking && bullishDI` → **SOFT_CAP**: demote READY → WATCH
 - `atrSpiking && !bullishDI` → **HARD_BLOCK**: force status to FAR, fail filters
+
+**Hurst Exponent (soft flag):**
+
+Calculated via `calcHurst(closePrices)`. Sets `hurstWarn = true` when H < 0.5 (mean-reverting). Flag only — does not block or downgrade status. Also feeds into BQS as a 0–8 point bonus (see [§7](#7-dual-score-engine-bqs--fws--ncs)).
 
 ### Stage 3: Status Classification
 
@@ -164,6 +179,14 @@ distance ≤ 2%  → READY
 distance ≤ 3%  → WATCH
 distance > 3%  → FAR
 ```
+
+**Post-classification overrides** (applied after initial status):
+
+- ATR spike + bullish DI → READY demoted to `WATCH`
+- ATR spike + bearish DI → forced to `FAR` + hard block
+- Efficiency < 30 → READY demoted to `WATCH`
+- ext_atr > 0.8 → overridden to `WAIT_PULLBACK` (see Stage 6)
+- Failed breakout cooldown active → overridden to `COOLDOWN` (see Stage 6)
 
 ### Stage 4: Ranking
 
@@ -184,9 +207,17 @@ Results sorted by rank score descending.
 
 Delegates to `validateRiskGates()` — see [§4](#4-risk-gates--6-gates).
 
-### Stage 6: Anti-Chase Guard
+### Stage 6: Anti-Chase / Execution Guard
 
-Delegates to `checkAntiChasingGuard()` — see [§3](#3-anti-chase-guard).
+Three distinct sub-checks in order:
+
+**6a. Failed Breakout Cooldown** (`FAILED_BREAKOUT_COOLDOWN_DAYS = 5`):
+If `technicals.failedBreakoutAt` exists and < 5 days ago → status forced to `COOLDOWN`, anti-chase bypassed entirely.
+
+**6b. ext_atr Volatility Expansion Guard** — **active every day** (not Monday-only):
+`extATR = (price − entryTrigger) / ATR`. If `extATR > 0.8` → status forced to `WAIT_PULLBACK` (candidate kept, breakout blocked). Triggers Mode B pullback continuation check.
+
+**6c. Monday-only Gap Anti-Chase** — delegates to `checkAntiChasingGuard()` — see [§3](#3-anti-chase-guard). Only runs if 6a and 6b did not already block.
 
 ### Stage 7: Position Sizing
 
@@ -223,8 +254,8 @@ All 6 gates must pass before a new position is allowed:
 
 | # | Gate | Rule | Default Thresholds |
 |---|------|------|--------------------|
-| 1 | **Total Open Risk** | `(currentOpenRisk + newRiskDollars) / equity × 100 ≤ maxOpenRisk` | CON=7%, BAL=5.5%, SMALL=10%, AGG=6% |
-| 2 | **Max Positions** | `openPositions < maxPositions` (ex-HEDGE) | CON=8, BAL=5, SMALL=4, AGG=2 |
+| 1 | **Total Open Risk** | `(currentOpenRisk + newRiskDollars) / equity × 100 ≤ maxOpenRisk` | CON=7%, BAL=5.5%, SMALL=10%, AGG=12% |
+| 2 | **Max Positions** | `openPositions < maxPositions` (ex-HEDGE) | CON=8, BAL=5, SMALL=4, AGG=3 |
 | 3 | **Sleeve Limit** | `sleeveValue / totalPortfolioValue ≤ SLEEVE_CAPS[sleeve]` | CORE=80%, ETF=80%, HIGH_RISK=40%, HEDGE=100% |
 | 4 | **Cluster Concentration** | `clusterValue / totalPortfolioValue ≤ clusterCap` | Default 20% — **SMALL_ACCOUNT: 25%** |
 | 5 | **Sector Concentration** | `sectorValue / totalPortfolioValue ≤ sectorCap` | Default 25% — **SMALL_ACCOUNT: 30%** |
@@ -274,6 +305,24 @@ Floors to 2 decimal places (0.01 shares) when `allowFractional: true` (Trading 2
 If `shares × entryPrice × fxToGbp > equity × positionSizeCap[sleeve]`, clamp shares down.
 
 Position size caps are **profile-aware** — see [Concentration Caps](#concentration-caps) for per-profile values.
+
+### Per-Position Max Loss Guard
+
+After cap enforcement, a final guard checks:
+```
+perPositionMaxLossPct = profile.per_position_max_loss_pct ?? riskPercent
+if (riskPerShare × shares) > equity × (perPositionMaxLossPct / 100)
+  → clamp shares down to max allowed loss
+```
+Currently no profiles set `per_position_max_loss_pct`, so this defaults to `riskPercent` (no-op unless custom risk is used).
+
+### Risk Cash Cap / Floor
+
+Before share calculation, risk cash is bounded:
+- `riskCash = min(riskCashRaw, profile.risk_cash_cap)` if cap defined
+- `riskCash = max(riskCash, profile.risk_cash_floor)` if floor defined
+
+Currently no profiles set these — they are for future use.
 
 ### Risk Per Trade by Profile
 
@@ -346,7 +395,7 @@ Three scores: **BQS** (Breakout Quality Score — good), **FWS** (Fatal Weakness
 
 ### BQS Components (0–100, clamped)
 
-Theoretical range is −10 to 130 before `clamp(0, 100)` is applied.
+Theoretical range is −15 to 148 before `clamp(0, 100)` is applied.
 
 | Component | Weight | Formula |
 |-----------|--------|--------|
@@ -359,6 +408,7 @@ Theoretical range is −10 to 130 before `clamp(0, 100)` is applied.
 | Volume Bonus | 0–5 | If volRatio > 1.2: `5 × clamp((volRatio − 1.2) / 0.6)` |
 | **Weekly ADX Bonus** | **−5 to +10** | Weekly ADX ≥ 30 → +10; ≥ 25 → +5; < 20 → −5; no data → 0 |
 | **Breakout Integrity (BIS)** | **0–15** | See [§19](#19-breakout-integrity-score-bis) |
+| **Hurst Bonus** | **0 to +8** | H ≥ 0.7 → +8; H ≥ 0.6 → +5; H ≥ 0.5 → +2; H < 0.5 or no data → 0 |
 
 #### Dual Regime Score (DRS) — `calcDualRegimeScore()`
 
@@ -394,8 +444,10 @@ Replaces the old `marketTailwind()`. Consolidates directional regime, volatility
 ### NCS (Net Composite Score)
 
 ```
-BaseNCS = clamp(BQS − 0.8 × FWS + 10)
-NCS     = clamp(BaseNCS − EarningsPenalty − ClusterPenalty − SuperClusterPenalty)
+BaseNCS      = clamp(BQS − 0.8 × FWS + 10)
+totalPenalty = EarningsPenalty + ClusterPenalty + SuperClusterPenalty
+cappedPenalty = min(totalPenalty, 40)   ← total penalty capped at 40 to prevent excessive stacking
+NCS          = clamp(BaseNCS − cappedPenalty)
 ```
 
 ### Action Classification
@@ -414,18 +466,17 @@ NCS     = clamp(BaseNCS − EarningsPenalty − ClusterPenalty − SuperClusterP
 
 ### Primary Regime Detection
 
-Point-based system:
+Point-based system (5 signals, max 8 points each side):
 
-| Signal | Bullish Points | Bearish Points |
-|--------|---------------|----------------|
-| SPY > 200MA | +3 | — |
-| SPY < 200MA | — | +3 |
-| +DI > −DI | +2 | — |
-| −DI > +DI | — | +2 |
-| VIX < 20 | +1 | — |
-| VIX > 30 | — | +1 |
-| A/D ratio > 1.2 | +1 | — |
-| A/D ratio < 0.8 | — | +1 |
+| # | Signal | Bullish Condition | Bull Pts | Bearish Condition | Bear Pts |
+|---|--------|-------------------|----------|-------------------|----------|
+| 1 | **Price vs MA200** | SPY > 200MA | +3 | SPY ≤ 200MA | +3 |
+| 2 | **ADX Trend Strength** | ADX ≥ 25 AND +DI > −DI | +1 | ADX ≥ 25 AND −DI ≥ +DI | +1 |
+| 3 | **DI Direction** | +DI > −DI | +2 | −DI ≥ +DI | +2 |
+| 4 | **VIX Fear Level** | VIX < 20 | +1 | VIX ≥ 30 | +1 |
+| 5 | **A/D Ratio** | A/D ratio > 1.2 | +1 | A/D ratio < 0.8 | +1 |
+
+> Signal #2 only awards points when `spyAdx >= 25`. VIX 20–29 and A/D 0.8–1.2 are neutral zones (0 points).
 
 ### ±2% CHOP Band (Module 10)
 
@@ -523,8 +574,8 @@ These are **suggestions only** — not auto-sell.
 
 **Blow-off top detection** — both conditions must be true:
 
-- Price > **18%** above MA20
-- Volume > **3×** average 20-day volume
+- Price **≥ 18%** above MA20
+- Volume **≥ 3×** average 20-day volume (prior 20 bars, excluding today)
 
 **Action:** TRIM (50%) or TIGHTEN stop (configurable).
 
@@ -600,13 +651,22 @@ Scales entry buffer inversely with ATR%:
 | Between | Linear interpolation |
 
 ```
-adjustedEntryTrigger = twentyDayHigh + bufferPercent × ATR
+scaledBufferPercent = bufferPercent × volMultiplier
+adjustedEntryTrigger = triggerBaseHigh + scaledBufferPercent × ATR
 ```
+
+**Vol Regime Multiplier** (scales buffer by SPY volatility environment):
+
+| Vol Regime | Multiplier |
+|------------|------------|
+| `LOW_VOL` | 0.8 (tighter buffer in calm markets) |
+| `NORMAL_VOL` | 1.0 |
+| `HIGH_VOL` | 1.3 (wider buffer in volatile markets) |
 
 Feature flag for A/B comparison:
 
-- `USE_PRIOR_20D_HIGH_FOR_TRIGGER=true` → `adjustedEntryTrigger = prior20DayHigh + bufferPercent × ATR` (excludes most recent bar)
-- unset/`false` (default) → `adjustedEntryTrigger = twentyDayHigh + bufferPercent × ATR` (includes most recent bar)
+- `USE_PRIOR_20D_HIGH_FOR_TRIGGER=true` → `triggerBaseHigh = prior20DayHigh` (excludes most recent bar)
+- unset/`false` (default) → `triggerBaseHigh = twentyDayHigh` (includes most recent bar)
 
 ### Module 12: Super-Cluster
 
@@ -614,13 +674,18 @@ Feature flag for A/B comparison:
 
 Groups correlated clusters into super-clusters with a **50% aggregate cap** (`SUPER_CLUSTER_CAP = 0.50`).
 
-### Module 13: Momentum Expansion
+- `MIN_POSITIONS_FOR_CAP = 2` — breach detection suppressed when total open positions < 2.
+
+### Module 13: Momentum Expansion (**DISABLED**)
 
 **Source:** `src/lib/modules/momentum-expansion.ts`
+
+> **⚠️ Permanently disabled in nightly pipeline.** Import is commented out. Rationale: procyclical risk expansion adds risk near end of moves, not middle.
 
 When SPY ADX > **25** (strong trend):
 
 - Max open risk expanded by factor **1.214** (e.g., 7.0% → 8.5%)
+- **MAX_EXPANDED_RISK = 12.0%** — absolute ceiling regardless of profile
 
 ### Module 15: Trade Logger
 
@@ -717,21 +782,31 @@ For profitable exits (> 0.5R, NOT stop-hit):
 
 ---
 
-## 13. Nightly Process — 9 Steps
+## 13. Nightly Process — 10 Steps (+ Sub-steps)
 
 **Source:** `src/cron/nightly.ts`
 
+A `RUNNING` heartbeat is written before Step 0. If the pipeline exits with status still `RUNNING`, a safety-net `FAILED` heartbeat is forced in the `finally` block.
+
 | Step | Action | Details |
 |------|--------|---------|
+| 0 | Pre-Cache | Cache Yahoo Finance historical data for all active tickers (batch). Runs first. |
 | 1 | Health Check | Run 16-point health check |
-| 2 | Live Prices | Fetch live prices for all open positions (batch via Yahoo) |
-| 3 | Stop Management | Generate R-based stop recommendations + **auto-apply trailing ATR stops** (2×ATR below highest close) |
-| 4 | Laggard Detection | Detect TRIM_LAGGARD + DEAD_MONEY flags |
-| 5 | Risk Modules | Run: Climax, Swap, Whipsaw, Breadth Safety (sampled 30 tickers), Momentum Expansion, Correlation Matrix |
-| 6 | Equity Snapshot | Record equity snapshot (min 6h between snapshots) + check pyramid add opportunities |
+| 2 | Live Prices | Fetch live prices for all open positions (batch via Yahoo) + normalise to GBP via FX |
+| 3 | R-Based Stop Recs | Generate R-based stop recommendations + **auto-apply** via `updateStopLoss()` (monotonic violations caught silently) |
+| 3b | Trailing ATR Stops | Generate trailing ATR recs via `generateTrailingStopRecommendations()` + **auto-apply** (2×ATR below highest close) |
+| 3c | Gap Risk Detection | HIGH_RISK positions only: flags if gap > 2×ATR%. **Advisory only** (no blocks) |
+| 3d | Stop-Hit Detection | For each open position, checks `currentPrice ≤ currentStop`. Sends `STOP_HIT` alert for each hit |
+| 4 | Laggard Detection | Detect TRIM_LAGGARD + DEAD_MONEY flags (with recovery exemption check) |
+| 5 | Risk Modules | Run: Climax, Swap, Whipsaw, Breadth Safety (sampled 30 tickers), Correlation Matrix, Sector ETF Cache. **Module 13 (Momentum Expansion) permanently DISABLED** |
+| 6 | Equity Snapshot | Record equity snapshot (min 6h between snapshots) + check pyramid add opportunities (Tuesday-only `PYRAMID_ADD` alerts) |
 | 7 | Snapshot Sync | Sync snapshot data from Yahoo (full universe) + query READY/trigger-met candidates (top 15) |
+| 7c | Trade Trigger Alerts | **Tuesday only**: send `TRADE_TRIGGER` in-app alerts for trigger-met candidates (max 3) |
+| 7d | Weekly Summary Alert | **Sunday only**: send `WEEKLY_SUMMARY` in-app alert with market mood + position summary (`skipTelegram: true`) |
 | 8 | Telegram Alert | Send summary: alerts, positions, stop changes, candidates, module results |
-| 9 | Heartbeat | Write heartbeat to DB (SUCCESS or FAILED) |
+| 9 | Heartbeat | Write heartbeat to DB (SUCCESS or FAILED based on `hadFailure` flag) |
+
+**Error handling:** Each step is wrapped in its own `try/catch`. One step failing does **not** abort subsequent steps — `hadFailure` is set and execution continues. Telegram failure does not set `hadFailure` (optional infrastructure). Some sub-steps (3c, 3d, climax, correlation, sector ETF cache) only `warn` without setting `hadFailure`.
 
 Runs via: `npx tsx src/cron/nightly.ts --run-now`
 
@@ -795,19 +870,21 @@ Replaces the Python `master_snapshot` pipeline.
 
 ### Status Classification in Snapshot
 
+Based on distance to **entry trigger** (adaptive buffer output, not raw 20d high):
+
 | Condition | Status |
 |-----------|--------|
 | Not above MA200 or −DI dominant | IGNORE |
-| Distance to 20d high ≤ 2% | READY |
-| Distance to 20d high ≤ 5% | WATCH |
-| Distance to 20d high > 5% | FAR |
-| Override: above MA200 + ADX ≥ 20 + bullish DI + dist > 5% | TREND |
+| Distance to entry trigger ≤ 2% | READY |
+| Distance to entry trigger ≤ 3% | WATCH |
+| Distance to entry trigger > 3% | FAR |
+| Override: above MA200 + ADX ≥ 20 + bullish DI + dist to 20d high > 5% | TREND |
 
 ### Calculated Values
 
-- **Entry trigger:** `20-day high + ATR × 0.1`
+- **Entry trigger:** Adaptive ATR buffer output (see Module 11b) — `triggerBaseHigh + scaledBufferPercent × ATR`
 - **Stop level:** `entryTrigger − ATR × 1.5`
-- **Default cluster cap:** max cluster = 35%, max super-cluster = 60%
+- **Default cluster/super-cluster early-warning thresholds (display only, not gates):** max cluster = 35%, max super-cluster = 60%
 
 ---
 
@@ -833,6 +910,8 @@ Replaces the Python `master_snapshot` pipeline.
 | SMALL_ACCOUNT | 2.00% | 4 | 10.0% |
 | AGGRESSIVE | 3.00% | 3 | 12.0% |
 
+> **AGGRESSIVE profile also has `initial_stop_atr_mult = 2.0`** — wider initial stops (`entry − 2.0 × ATR` instead of default 1.5). No other profile overrides this.
+
 ### Sleeve Caps
 
 | Sleeve | Allocation Cap | Position Size Cap (default) |
@@ -844,7 +923,7 @@ Replaces the Python `master_snapshot` pipeline.
 
 ### Concentration Caps
 
-Default values (used for CONSERVATIVE and AGGRESSIVE profiles):
+Default values (used for CONSERVATIVE profile only — AGGRESSIVE and others have overrides):
 
 | Cap | Default Value |
 |-----|---------------|
@@ -920,7 +999,7 @@ Certain profiles receive looser caps via `getProfileCaps()`. Add new overrides i
 |-------|---------|
 | `GET /api/plan` | Weekly execution plan |
 | `GET /api/modules` | Run all 21 modules |
-| `POST /api/nightly` | Full 9-step nightly process |
+| `POST /api/nightly` | Full 10-step nightly process |
 
 ### Trading 212 Integration
 
@@ -1045,3 +1124,7 @@ Computes pairwise Pearson correlation on 90 days of daily log returns for open p
 | `getCorrelationFlags(ticker)` | Get HIGH_CORR pairs involving a specific ticker (used by Module 7 Heatmap Swap) |
 | `getAllCorrelationFlags()` | All cached flags sorted by correlation desc (used by /risk page) |
 | `checkCorrelationWarnings(candidate, openTickers)` | Advisory check: warns if a new candidate is highly correlated with existing positions |
+
+---
+
+*Last verified against source code: 1 March 2026*

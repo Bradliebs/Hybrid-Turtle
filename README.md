@@ -67,6 +67,7 @@ That's it. The installer creates a `.env` file automatically with secure default
 | `update.bat` | Update dependencies/database after pulling new code |
 | `nightly-task.bat` | Run nightly automation checks (schedulable via Task Scheduler) |
 | `package-for-distribution.bat` | Package the app for offline distribution |
+| `register-nightly-task.bat` | Register the nightly cron as a Windows Task Scheduler entry |
 
 ## Environment variables
 
@@ -85,10 +86,12 @@ To start from the template instead, copy `.env.example` to `.env` before running
 | `MARKET_DATA_PROVIDER` | | `yahoo` | Market data source — `yahoo` (default) or `eodhd` |
 | `EODHD_API_KEY` | | — | EODHD API key (required only when `MARKET_DATA_PROVIDER=eodhd`) |
 | `NIGHTLY_CRON` | | `30 21 * * *` | Cron expression for nightly run (default 9:30 PM UK) |
+| `USE_PRIOR_20D_HIGH_FOR_TRIGGER` | | — | Feature flag: use prior day's 20-day high for entry trigger instead of live day |
+| `EMAIL_SMTP_HOST` | | — | SMTP host for optional email alerting (experimental) |
 
 ## Telegram notifications (optional)
 
-The nightly automation can send alerts covering stop changes, laggard warnings, climax-top signals, swap suggestions, whipsaw blocks, breadth safety, momentum expansion, and ready-to-buy candidates.
+The nightly automation can send alerts covering stop changes, laggard warnings, climax-top signals, swap suggestions, whipsaw blocks, breadth safety, and ready-to-buy candidates.
 
 ### Setup
 
@@ -116,7 +119,9 @@ The nightly automation can send alerts covering stop changes, laggard warnings, 
 ├── src/
 │   ├── app/             # Next.js App Router (pages + API routes)
 │   │   ├── api/         # REST endpoints (see API routes below)
+│   │   ├── backtest/    # Signal replay & quality audit
 │   │   ├── dashboard/   # Main command center
+│   │   ├── notifications/ # Notification inbox
 │   │   ├── portfolio/   # Position management
 │   │   ├── scan/        # Scan engine UI
 │   │   ├── plan/        # Weekly execution workspace
@@ -129,7 +134,7 @@ The nightly automation can send alerts covering stop changes, laggard warnings, 
 │   ├── cron/            # Nightly automation entry point
 │   ├── hooks/           # Custom React hooks
 │   ├── lib/             # Core business logic
-│   │   └── modules/     # Modular engine plugins (21 modules)
+│   │   └── modules/     # Modular engine plugins (19 active + 2 disabled modules)
 │   ├── store/           # Zustand state management
 │   └── types/           # Shared TypeScript types
 ```
@@ -147,9 +152,10 @@ All routes are under `/api`. Key endpoint groups:
 | `/api/modules` | Dashboard module data (5 min server cache, parallelised) |
 | `/api/nightly` | Nightly automation trigger |
 | `/api/plan` | Weekly execution plans |
+| `/api/notifications` | Notification inbox (trade alerts, stop warnings, system events) |
 | `/api/portfolio` | Portfolio overview & metrics |
 | `/api/positions` | Position CRUD & stop management |
-| `/api/publications` | Dual-score publication records |
+| `/api/publications` | Activity feed (heartbeats, health checks, stop moves, position events) |
 | `/api/risk` | Risk calculations & gates |
 | `/api/scan` | Scan engine execution & results |
 | `/api/settings` | User settings & preferences |
@@ -157,6 +163,8 @@ All routes are under `/api`. Key endpoint groups:
 | `/api/stops` | Stop price history |
 | `/api/trade-log` | Trade journal entries |
 | `/api/trading212` | Trading 212 connect & sync |
+| `/api/backtest` | Signal replay & quality audit |
+| `/api/ev-stats` | Expected value statistics |
 
 ## Documentation
 
