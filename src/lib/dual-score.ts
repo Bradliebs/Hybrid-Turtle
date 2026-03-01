@@ -65,6 +65,7 @@ export interface SnapshotRow {
   chasing_55_last5: boolean;
   atr_spiking: boolean;
   atr_collapsing: boolean;
+  atr_compression_ratio?: number | null;  // ATR now / ATR 20 bars ago — BPS Factor 1
   rs_vs_benchmark_pct: number;
   days_to_earnings?: number | null;
   earnings_in_next_5d?: boolean;

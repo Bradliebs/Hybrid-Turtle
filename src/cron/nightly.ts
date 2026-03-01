@@ -48,6 +48,19 @@ import { calculateRMultiple } from '@/lib/position-sizer';
 import { sendAlert } from '@/lib/alert-service';
 import type { RiskProfileType, Sleeve } from '@/types';
 
+/**
+ * Return the current day-of-week (0=Sun … 6=Sat) in UK local time.
+ * Uses IANA 'Europe/London' so it handles GMT ↔ BST automatically
+ * and does not depend on the machine's system timezone.
+ */
+function getUKDayOfWeek(): number {
+  const now = new Date();
+  const ukTime = new Date(
+    now.toLocaleString('en-GB', { timeZone: 'Europe/London' })
+  );
+  return ukTime.getDay();
+}
+
 async function runNightlyProcess() {
   const userId = 'default-user';
   let hadFailure = false;
@@ -229,6 +242,10 @@ async function runNightlyProcess() {
     }
     console.log(`        Gap risk: ${gapRiskAlerts.length} flagged`);
 
+    // Collect alert summary strings for the Telegram nightly report.
+    // Declared here (before Step 3d) because stop-hit detection pushes to it.
+    const alerts: string[] = [];
+
     // Step 3d: Stop-hit detection — alert if any position price <= currentStop
     const stopHitPositions: Array<{ ticker: string; name: string; currentStop: number; currentPrice: number; currency: string }> = [];
     try {
@@ -271,7 +288,6 @@ async function runNightlyProcess() {
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const equity = user?.equity || 0;
 
-    const alerts: string[] = [];
     if (healthReport.overall === 'RED') alerts.push('Health check is RED — review issues before trading');
     if (healthReport.overall === 'YELLOW') alerts.push('Health check has warnings');
     if (stopChanges.length > 0) alerts.push(`${stopChanges.length} R-based stop-loss updates auto-applied`);
@@ -596,7 +612,7 @@ async function runNightlyProcess() {
       }
 
       // Send pyramid add alerts via notification centre (Tuesday only)
-      const dayOfWeekPyramid = new Date().getDay(); // 0=Sun, 2=Tue
+      const dayOfWeekPyramid = getUKDayOfWeek(); // 0=Sun, 2=Tue — UK timezone
       if (dayOfWeekPyramid === 2 && pyramidAlerts.length > 0) {
         for (const pa of pyramidAlerts) {
           const currSymbol = pa.currency === 'GBP' || pa.currency === 'GBX' ? '£' : pa.currency === 'EUR' ? '€' : '$';
@@ -716,7 +732,7 @@ async function runNightlyProcess() {
     }
 
     // ── Alert Generation — In-app notifications via alert-service ────
-    const dayOfWeek = new Date().getDay(); // 0=Sunday, 2=Tuesday
+    const dayOfWeek = getUKDayOfWeek(); // 0=Sunday, 2=Tuesday — UK timezone
 
     // ALERT 1: Trade triggers (Tuesday only, max 3)
     if (dayOfWeek === 2 && triggerMetCandidates.length > 0) {
@@ -775,6 +791,10 @@ async function runNightlyProcess() {
           message: `Market mood: ${mood}\nOpen positions: ${positions.length} (${positionTickers})\nPortfolio value: £${portfolioValue.toFixed(0)}\nCandidates watching: ${watchCount}\n\nClosest to triggering:\n${closestLines}\n\nYour trading window is Tuesday.`,
           data: { mood, positionCount: positions.length, portfolioValue, watchCount },
           priority: 'INFO',
+          // Sunday nightly report (sendNightlySummary) already sends a comprehensive
+          // Telegram message — suppress Telegram here to avoid a confusing double-message.
+          // The in-app notification still saves to DB for the notifications page.
+          skipTelegram: true,
         });
         console.log('        Weekly summary alert sent');
       } catch (error) {

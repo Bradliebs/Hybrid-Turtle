@@ -111,6 +111,9 @@ export default function BuyConfirmationModal({
   } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  // Synchronous guard against double-click race condition — useRef updates
+  // in the same tick as the click, before React re-renders.
+  const isExecutingRef = useRef(false);
 
   const dayOfWeek = getDayOfWeek();
   const buttonState = getBuyButtonState(dayOfWeek);
@@ -193,6 +196,9 @@ export default function BuyConfirmationModal({
 
   const handleAutoExecute = useCallback(async () => {
     if (!sizing || !candidate.scanPrice || !candidate.scanStopPrice) return;
+    // Synchronous ref guard — closes the race window before React re-renders
+    if (isExecutingRef.current) return;
+    isExecutingRef.current = true;
     setExecuting(true);
     setError(null);
     setCriticalWarning(null);
@@ -301,6 +307,7 @@ export default function BuyConfirmationModal({
       }
     } finally {
       setExecuting(false);
+      isExecutingRef.current = false;
       abortRef.current = null;
     }
   }, [sizing, candidate, accountType]);
@@ -773,7 +780,7 @@ export default function BuyConfirmationModal({
                 {canAutoExecute && (
                   <button
                     onClick={handleAutoExecute}
-                    disabled={submitting || success || !sizing || neitherConnected}
+                    disabled={submitting || executing || isExecutingRef.current || success || !sizing || neitherConnected}
                     className="w-full px-4 py-3 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white"
                   >
                     <Zap className="w-4 h-4" />

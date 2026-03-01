@@ -272,10 +272,12 @@ export async function syncSnapshot(
           const chasing20 = chasingLastN(daily, 20, 5);
           const chasing55 = chasingLastN(daily, 55, 5);
 
-          // ── ATR spike / collapse ──
+          // ── ATR spike / collapse / compression ──
           const atrOld = atr20DaysAgo(daily);
           const atrSpiking = atrOld > 0 ? atr14 >= atrOld * 1.3 : false;
           const atrCollapsing = atrOld > 0 ? atr14 <= atrOld * 0.5 : false;
+          // Ratio < 1 = compression (consolidation), > 1 = expansion
+          const atrCompressionRatio = atrOld && atrOld > 0 ? atr14 / atrOld : null;
 
           // ── Volume ──
           const volRatio = volumeRatio(daily);
@@ -374,6 +376,7 @@ export async function syncSnapshot(
             chasing55Last5: chasing55,
             atrSpiking,
             atrCollapsing,
+            atrCompressionRatio,
             rsVsBenchmarkPct: rsPct,
             daysToEarnings: null,  // Not available from Yahoo without premium
             earningsInNext5d: false,

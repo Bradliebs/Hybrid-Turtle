@@ -61,7 +61,7 @@ export function adxToLabel(adx: number | null | undefined): SignalLabel {
   }
   if (adx > 40) return { text: 'Strong', status: 'positive' };
   if (adx >= 25) return { text: 'Good', status: 'positive' };
-  if (adx >= 20) return { text: 'Moderate', status: 'uncertain' };
+  if (adx >= 20) return { text: 'Weak — be careful', status: 'uncertain' };
   return { text: 'Weak', status: 'negative' };
 }
 

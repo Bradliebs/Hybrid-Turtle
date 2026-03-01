@@ -29,6 +29,8 @@ export interface AlertPayload {
   message: string;
   data?: Record<string, unknown>;
   priority: AlertPriority;
+  /** When true, save to DB only — skip Telegram delivery. */
+  skipTelegram?: boolean;
 }
 
 // ── Telegram Configuration Check ────────────────────────────────────
@@ -99,8 +101,8 @@ export async function sendAlert(payload: AlertPayload): Promise<void> {
     console.error('[alert-service] Failed to save notification to DB:', (error as Error).message);
   }
 
-  // Layer 2: Telegram (optional — skip silently if not configured)
-  if (isTelegramConfigured()) {
+  // Layer 2: Telegram (optional — skip silently if not configured or suppressed)
+  if (isTelegramConfigured() && !payload.skipTelegram) {
     try {
       const emoji = priorityEmoji(payload.priority);
       const telegramText = `${emoji} <b>${escapeHtml(payload.title)}</b>\n\n${escapeHtml(payload.message)}`;

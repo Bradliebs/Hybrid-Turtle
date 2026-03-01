@@ -5,7 +5,7 @@ import { scoreAll, normaliseRow, type SnapshotRow, type ScoredTicker } from '@/l
 import type { ScanCandidate } from '@/types';
 import { apiError } from '@/lib/api-response';
 import { getPassedGateCounts, reconstructCandidatesFromDbRows } from '@/lib/scan-db-reconstruction';
-import { calcBPSFromSnapshot } from '@/lib/breakout-probability';
+import { calcBPSFromSnapshot, computeRsPercentiles } from '@/lib/breakout-probability';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -81,6 +81,7 @@ function dbRowToSnapshotRow(row: Record<string, unknown>): SnapshotRow {
     chasing_55_last5: (row.chasing55Last5 as boolean) ?? false,
     atr_spiking: (row.atrSpiking as boolean) ?? false,
     atr_collapsing: (row.atrCollapsing as boolean) ?? false,
+    atr_compression_ratio: (row.atrCompressionRatio as number | null) ?? null,
     rs_vs_benchmark_pct: (row.rsVsBenchmarkPct as number) || 0,
     days_to_earnings: (row.daysToEarnings as number | null) ?? null,
     earnings_in_next_5d: (row.earningsInNext5d as boolean) ?? false,
@@ -262,6 +263,11 @@ export async function GET() {
       dualMap.set(t.ticker, t);
     }
 
+    // ── Pre-compute RS percentile ranks across the full universe ──
+    const rsPercentileMap = computeRsPercentiles(
+      dualTickers.map(t => ({ ticker: t.ticker, rs: t.rs_vs_benchmark_pct ?? 0 }))
+    );
+
     // ── Merge all tickers ───────────────────────────────────
     const allTickerArr: string[] = [];
     scanMap.forEach((_, k) => allTickerArr.push(k));
@@ -324,7 +330,9 @@ export async function GET() {
       const bpsResult = dual
         ? calcBPSFromSnapshot({
             atr_pct: dual.atr_pct,
+            atr_compression_ratio: dual.atr_compression_ratio,
             rs_vs_benchmark_pct: dual.rs_vs_benchmark_pct,
+            rsPercentile: rsPercentileMap.get(ticker) ?? null,
             weekly_adx: dual.weekly_adx as number | undefined,
             sector: dual.cluster_name as string | undefined,
           })

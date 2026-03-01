@@ -16,7 +16,7 @@ import {
   scoreRow,
   type SnapshotRow,
 } from '@/lib/dual-score';
-import { calcBPSFromSnapshot } from '@/lib/breakout-probability';
+import { calcBPSFromSnapshot, computeRsPercentiles } from '@/lib/breakout-probability';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,6 +89,7 @@ function dbRowToSnapshotRow(row: Record<string, unknown>): SnapshotRow {
     chasing_55_last5: (row.chasing55Last5 as boolean) ?? false,
     atr_spiking: (row.atrSpiking as boolean) ?? false,
     atr_collapsing: (row.atrCollapsing as boolean) ?? false,
+    atr_compression_ratio: (row.atrCompressionRatio as number | null) ?? null,
     rs_vs_benchmark_pct: (row.rsVsBenchmarkPct as number) || 0,
     days_to_earnings: (row.daysToEarnings as number | null) ?? null,
     earnings_in_next_5d: (row.earningsInNext5d as boolean) ?? false,
@@ -252,6 +253,7 @@ export async function GET(request: NextRequest) {
         chasing55Last5: true,
         atrSpiking: true,
         atrCollapsing: true,
+        atrCompressionRatio: true,
         rsVsBenchmarkPct: true,
         daysToEarnings: true,
         earningsInNext5d: true,
@@ -284,7 +286,21 @@ export async function GET(request: NextRequest) {
       tickerHistory.set(row.ticker, existing);
     }
 
-    // 5. Detect trigger crossovers and compute signals
+    // 5. Pre-compute RS percentile ranks per snapshot for cross-sectional Factor 3
+    const rsPercentileBySnapshot = new Map<string, Map<string, number>>();
+    {
+      const bySnapshot = new Map<string, { ticker: string; rs: number }[]>();
+      for (const row of allTickers) {
+        const arr = bySnapshot.get(row.snapshotId) || [];
+        arr.push({ ticker: row.ticker, rs: row.rsVsBenchmarkPct ?? 0 });
+        bySnapshot.set(row.snapshotId, arr);
+      }
+      for (const [snapId, rows] of Array.from(bySnapshot)) {
+        rsPercentileBySnapshot.set(snapId, computeRsPercentiles(rows));
+      }
+    }
+
+    // 6. Detect trigger crossovers and compute signals
     const signals: SignalHit[] = [];
 
     for (const [ticker, history] of Array.from(tickerHistory)) {
@@ -340,12 +356,16 @@ export async function GET(request: NextRequest) {
         const stopSim = simulateStopLadder(entryPrice, current.stopLevel, forwardSnaps);
 
         // Compute BPS from snapshot data available at signal time
+        const rsPercentile = rsPercentileBySnapshot.get(current.snapshotId)?.get(ticker) ?? null;
         const bpsResult = calcBPSFromSnapshot({
           atr_pct: snapshotRow.atr_pct,
+          atr_compression_ratio: snapshotRow.atr_compression_ratio,
           rs_vs_benchmark_pct: snapshotRow.rs_vs_benchmark_pct,
+          rsPercentile,
           weekly_adx: snapshotRow.weekly_adx as number | undefined,
           sector: snapshotRow.cluster_name as string | undefined,
         });
+
 
         signals.push({
           ticker,

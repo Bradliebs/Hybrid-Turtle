@@ -21,7 +21,7 @@ function countConsolidationDays(
 ): number {
   if (bars.length < 20) return 0;
   const twentyDayHigh = Math.max(...bars.slice(0, 20).map(b => b.high));
-  const threshold = twentyDayHigh * 0.95; // within 5%
+  const threshold = twentyDayHigh * 0.90; // within 10% of base high
   let count = 0;
   for (const bar of bars) {
     if (bar.close >= threshold) {
@@ -205,11 +205,18 @@ export async function scanEarlyBirds(
           // BPS: compute from available live data (some factors will be null — graceful degradation)
           const volumeBars = bars.slice(0, 20).map(b => b.volume);
           const consolidationDays = countConsolidationDays(bars);
+          // ATR compression ratio: currentATR / ATR 20 bars ago. Needs 34 bars (20 + 14 for ATR).
+          const atr20BarsAgo = bars.length >= 34 ? calculateATR(bars.slice(20), 14) : 0;
+          const atrCompressionRatio = atr20BarsAgo > 0 ? atr / atr20BarsAgo : undefined;
           const bpsResult = calcBPS({
-            atrPct: atrPercent,
+            atrCompressionRatio,
             volumeBars,
             sector: sector ?? undefined,
             consolidationDays,
+            // 12-week lookback return: (current close - close 60 bars ago) / close 60 bars ago * 100
+            priorTrendReturn: bars.length >= 60
+              ? ((bars[0].close - bars[59].close) / bars[59].close) * 100
+              : undefined,
             // weeklyAdx & rsVsBenchmarkPct not available in Early Bird live scan
             // failedBreakoutAt not available — defaults to full credit (no recent failure)
           });

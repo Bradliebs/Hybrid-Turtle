@@ -352,6 +352,7 @@ model SnapshotTicker {
   chasing55Last5             Boolean   @default(false)
   atrSpiking                 Boolean   @default(false)
   atrCollapsing              Boolean   @default(false)
+  atrCompressionRatio        Float?    // ATR now / ATR 20 bars ago — used by BPS Factor 1
 
   // ── Relative strength ──
   rsVsBenchmarkPct           Float     @default(0)
