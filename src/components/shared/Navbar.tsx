@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,7 @@ import {
   User,
   Shield,
   Activity,
+  Bell,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -32,6 +34,26 @@ const iconMap: Record<string, React.ReactNode> = {
 export default function Navbar() {
   const pathname = usePathname();
   const { riskProfile } = useStore();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Fetch unread notification count — polls every 60s
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications?unreadOnly=true&limit=1');
+      if (res.ok) {
+        const data = await res.json();
+        setUnreadCount(data.unreadCount ?? 0);
+      }
+    } catch {
+      // Non-critical — silently ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
 
   const profileConfig = RISK_PROFILES[riskProfile];
   const profileColor =
@@ -84,6 +106,20 @@ export default function Navbar() {
 
           {/* Right Section */}
           <div className="flex items-center gap-3">
+            {/* Notification Bell */}
+            <Link
+              href="/notifications"
+              className="relative flex items-center justify-center p-1.5 rounded-lg hover:bg-navy-600/50 transition-colors"
+              title={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}` : 'Notifications'}
+            >
+              <Bell className="w-5 h-5 text-muted-foreground" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-loss text-white text-[10px] font-bold px-1 leading-none">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </Link>
+
             {/* Risk Profile Badge */}
             <Link
               href="/settings"

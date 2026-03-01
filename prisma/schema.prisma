@@ -453,3 +453,23 @@ model ExecutionLog {
   @@index([createdAt])
   @@index([phase])
 }
+
+// ── Notification Centre — In-app Alerts ─────────────────────────────
+// Every alert is saved here first (Layer 1). Telegram delivery (Layer 2)
+// is optional and fires after the DB write succeeds.
+// Types: TRADE_TRIGGER | STOP_HIT | PYRAMID_ADD | WEEKLY_SUMMARY | SYSTEM
+
+model Notification {
+  id        Int       @id @default(autoincrement())
+  createdAt DateTime  @default(now())
+  readAt    DateTime?                         // null = unread
+  type      String                            // TRADE_TRIGGER | STOP_HIT | PYRAMID_ADD | WEEKLY_SUMMARY | SYSTEM
+  title     String
+  message   String
+  data      String?                           // JSON — optional extra context
+  priority  String    @default("INFO")        // INFO | WARNING | CRITICAL
+
+  @@index([readAt])                           // fast unread count query
+  @@index([createdAt])
+  @@index([type])
+}

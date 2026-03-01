@@ -851,60 +851,99 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        {/* Telegram */}
+        {/* Notifications */}
         <div className="card-surface p-6">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-4">
+          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2 mb-1">
             <Bell className="w-5 h-5 text-primary-400" />
-            Telegram Notifications
+            Notifications
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">Bot Token</label>
-              <div className="relative">
-                <input
-                  type={showToken ? 'text' : 'password'}
-                  value={telegramToken}
-                  onChange={(e) => setTelegramToken(e.target.value)}
-                  placeholder="Enter bot token"
-                  className="input-field w-full pr-10"
-                />
-                <button
-                  onClick={() => setShowToken(!showToken)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          <p className="text-xs text-muted-foreground mb-4">
+            Configure how you receive trade alerts, stop warnings, and weekly summaries.
+          </p>
+
+          {/* Layer 1: In-app — always on */}
+          <div className="border border-border rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center">
+                  <Bell className="w-4 h-4 text-primary-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">In-app notifications</h3>
+                  <p className="text-xs text-muted-foreground">Bell icon in navbar · Notification centre page</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <label className="block text-sm text-muted-foreground mb-1">Chat ID</label>
-              <input
-                type="text"
-                value={telegramChatId}
-                onChange={(e) => setTelegramChatId(e.target.value)}
-                placeholder="Enter chat ID"
-                className="input-field w-full"
-              />
+              <span className="px-2.5 py-1 rounded-full bg-profit/15 text-profit text-[10px] font-bold uppercase tracking-wider">
+                Always on
+              </span>
             </div>
           </div>
-          <div className="flex items-center gap-3 mt-3">
-            <button
-              onClick={handleTelegramTest}
-              disabled={telegramTesting}
-              className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 disabled:opacity-50"
-            >
-              {telegramTesting ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <TestTube className="w-3 h-3" />
+
+          {/* Layer 2: Telegram — optional */}
+          <div className="border border-border rounded-lg p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+                <span className="text-sm">✈</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Telegram alerts</h3>
+                <p className="text-xs text-muted-foreground">Optional — receive alerts via Telegram message</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">Bot Token</label>
+                <div className="relative">
+                  <input
+                    type={showToken ? 'text' : 'password'}
+                    value={telegramToken}
+                    onChange={(e) => setTelegramToken(e.target.value)}
+                    placeholder="Enter bot token"
+                    className="input-field w-full pr-10"
+                  />
+                  <button
+                    onClick={() => setShowToken(!showToken)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">Chat ID</label>
+                <input
+                  type="text"
+                  value={telegramChatId}
+                  onChange={(e) => setTelegramChatId(e.target.value)}
+                  placeholder="Enter chat ID"
+                  className="input-field w-full"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-3">
+              <button
+                onClick={handleTelegramTest}
+                disabled={telegramTesting}
+                className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 disabled:opacity-50"
+              >
+                {telegramTesting ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <TestTube className="w-3 h-3" />
+                )}
+                {telegramTesting ? 'Sending...' : 'Test connection'}
+              </button>
+              {telegramTestResult && (
+                <span className={cn('text-xs', telegramTestResult.success ? 'text-green-400' : 'text-red-400')}>
+                  {telegramTestResult.success ? '✓' : '✗'} {telegramTestResult.message}
+                </span>
               )}
-              {telegramTesting ? 'Sending...' : 'Send Test Message'}
-            </button>
-            {telegramTestResult && (
-              <span className={cn('text-xs', telegramTestResult.success ? 'text-green-400' : 'text-red-400')}>
-                {telegramTestResult.success ? '✓' : '✗'} {telegramTestResult.message}
-              </span>
-            )}
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              When enabled, you will also receive alerts via Telegram message.
+              Telegram credentials are read from environment variables.
+            </p>
           </div>
         </div>
 

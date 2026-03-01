@@ -45,6 +45,7 @@ import { computeCorrelationMatrix } from '@/lib/correlation-matrix';
 import { refreshSectorMomentumCache } from '@/lib/sector-etf-cache';
 import { getRiskBudget, canPyramid } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
+import { sendAlert } from '@/lib/alert-service';
 import type { RiskProfileType, Sleeve } from '@/types';
 
 async function runNightlyProcess() {
@@ -227,6 +228,43 @@ async function runNightlyProcess() {
       console.warn('  [3c] Gap risk detection failed:', (error as Error).message);
     }
     console.log(`        Gap risk: ${gapRiskAlerts.length} flagged`);
+
+    // Step 3d: Stop-hit detection — alert if any position price <= currentStop
+    const stopHitPositions: Array<{ ticker: string; name: string; currentStop: number; currentPrice: number; currency: string }> = [];
+    try {
+      for (const p of positions) {
+        const currentPrice = livePrices[p.stock.ticker];
+        if (!currentPrice || currentPrice <= 0) continue;
+        if (currentPrice <= p.currentStop) {
+          const isUK = p.stock.ticker.endsWith('.L') || /^[A-Z]{2,5}l$/.test(p.stock.ticker);
+          const currency = isUK ? 'GBX' : (p.stock.currency || 'USD').toUpperCase();
+          stopHitPositions.push({
+            ticker: p.stock.ticker,
+            name: p.stock.name || p.stock.ticker,
+            currentStop: p.currentStop,
+            currentPrice,
+            currency,
+          });
+        }
+      }
+      // Send stop-hit alerts (any day of the week)
+      for (const hit of stopHitPositions) {
+        const currSymbol = hit.currency === 'GBP' || hit.currency === 'GBX' ? '£' : hit.currency === 'EUR' ? '€' : '$';
+        await sendAlert({
+          type: 'STOP_HIT',
+          title: `⚠ Action needed — ${hit.ticker} may have hit its stop`,
+          message: `${hit.name} (${hit.ticker}) has fallen to or below your stop-loss level.\n\nStop price: ${currSymbol}${hit.currentStop.toFixed(2)}\nCurrent price: ${currSymbol}${hit.currentPrice.toFixed(2)}\n\nCheck Trading 212 and confirm whether the position has been closed. If not, close it manually now.`,
+          data: { ticker: hit.ticker, currentStop: hit.currentStop, currentPrice: hit.currentPrice },
+          priority: 'WARNING',
+        });
+      }
+      if (stopHitPositions.length > 0) {
+        alerts.push(`🔴 ${stopHitPositions.length} position(s) hit stop-loss — check Trading 212`);
+      }
+    } catch (error) {
+      console.warn('  [3d] Stop-hit detection failed:', (error as Error).message);
+    }
+    console.log(`        Stop hits: ${stopHitPositions.length} detected`);
 
     // Step 4: Detect laggards + collect alerts
     console.log('  [4/9] Detecting laggards...');
@@ -556,6 +594,21 @@ async function runNightlyProcess() {
       if (pyramidAlerts.length > 0) {
         alerts.push(`${pyramidAlerts.length} position(s) eligible for pyramid add`);
       }
+
+      // Send pyramid add alerts via notification centre (Tuesday only)
+      const dayOfWeekPyramid = new Date().getDay(); // 0=Sun, 2=Tue
+      if (dayOfWeekPyramid === 2 && pyramidAlerts.length > 0) {
+        for (const pa of pyramidAlerts) {
+          const currSymbol = pa.currency === 'GBP' || pa.currency === 'GBX' ? '£' : pa.currency === 'EUR' ? '€' : '$';
+          await sendAlert({
+            type: 'PYRAMID_ADD',
+            title: `${pa.ticker} is ready for a pyramid add`,
+            message: `Your position in ${pa.ticker} has moved up enough to add more shares.\n\nR-multiple: ${pa.rMultiple.toFixed(1)}R\nAdd number: #${pa.addNumber}\n${pa.triggerPrice ? `Trigger price: ${currSymbol}${pa.triggerPrice.toFixed(2)}` : ''}\n${pa.message}\n\nOpen the Portfolio page on Tuesday to review.`,
+            data: { ticker: pa.ticker, rMultiple: pa.rMultiple, addNumber: pa.addNumber },
+            priority: 'INFO',
+          });
+        }
+      }
     } catch (error) {
       hadFailure = true;
       console.warn('  [6] Pyramid check failed:', (error as Error).message);
@@ -659,6 +712,73 @@ async function runNightlyProcess() {
       } catch (error) {
         hadFailure = true;
         console.warn('  [7b] Failed to query READY tickers:', (error as Error).message);
+      }
+    }
+
+    // ── Alert Generation — In-app notifications via alert-service ────
+    const dayOfWeek = new Date().getDay(); // 0=Sunday, 2=Tuesday
+
+    // ALERT 1: Trade triggers (Tuesday only, max 3)
+    if (dayOfWeek === 2 && triggerMetCandidates.length > 0) {
+      try {
+        // Take top 3 by closest distance (already sorted by distanceTo20dHighPct asc)
+        const topTriggers = triggerMetCandidates.slice(0, 3);
+        const extraCount = triggerMetCandidates.length - topTriggers.length;
+
+        for (const t of topTriggers) {
+          const currSymbol = t.currency === 'GBP' || t.currency === 'GBX' ? '£' : t.currency === 'EUR' ? '€' : '$';
+          const riskPerShare = t.entryTrigger > 0 && t.stopLevel > 0 ? t.entryTrigger - t.stopLevel : 0;
+          await sendAlert({
+            type: 'TRADE_TRIGGER',
+            title: `${t.ticker} is ready to buy`,
+            message: `The system found a trade for Tuesday.\n${t.name} (${t.ticker})\nBuy price: ${currSymbol}${t.entryTrigger.toFixed(2)}\nStop-loss: ${currSymbol}${t.stopLevel.toFixed(2)}${riskPerShare > 0 ? `\nRisk per share: ${currSymbol}${riskPerShare.toFixed(2)}` : ''}\n\nOpen the Plan page to review.${extraCount > 0 ? `\n\nand ${extraCount} more in the app.` : ''}`,
+            data: { ticker: t.ticker, entryTrigger: t.entryTrigger, stopLevel: t.stopLevel, close: t.close },
+            priority: 'INFO',
+          });
+        }
+        console.log(`        Trade trigger alerts: ${topTriggers.length} sent${extraCount > 0 ? ` (+${extraCount} more in app)` : ''}`);
+      } catch (error) {
+        console.warn('  [7c] Trade trigger alerts failed:', (error as Error).message);
+      }
+    }
+
+    // ALERT 2: Weekly summary (Sunday only)
+    if (dayOfWeek === 0) {
+      try {
+        // Determine market mood from regime
+        const latestRegime = await prisma.regimeHistory.findFirst({ orderBy: { date: 'desc' } });
+        const mood = latestRegime?.regime === 'BULLISH' ? 'Positive ✓'
+          : latestRegime?.regime === 'BEARISH' ? 'Negative ✗'
+          : 'Neutral —';
+
+        // Position tickers as comma-separated
+        const positionTickers = positions.map((p) => p.stock.ticker).join(', ') || 'None';
+
+        // Portfolio value in GBP
+        const portfolioValue = positions.reduce((sum, p) => {
+          const rawPrice = livePrices[p.stock.ticker] || p.entryPrice;
+          const gbpPrice = gbpPrices[p.stock.ticker] ?? rawPrice;
+          return sum + gbpPrice * p.shares;
+        }, 0);
+
+        // Closest to triggering (top 3 from readyToBuy)
+        const closest = readyToBuy.slice(0, 3);
+        const closestLines = closest.length > 0
+          ? closest.map((c) => `· ${c.ticker} — ${c.distancePct.toFixed(2)}% away`).join('\n')
+          : 'None close to triggering';
+
+        const watchCount = readyToBuy.length;
+
+        await sendAlert({
+          type: 'WEEKLY_SUMMARY',
+          title: 'Weekly Summary',
+          message: `Market mood: ${mood}\nOpen positions: ${positions.length} (${positionTickers})\nPortfolio value: £${portfolioValue.toFixed(0)}\nCandidates watching: ${watchCount}\n\nClosest to triggering:\n${closestLines}\n\nYour trading window is Tuesday.`,
+          data: { mood, positionCount: positions.length, portfolioValue, watchCount },
+          priority: 'INFO',
+        });
+        console.log('        Weekly summary alert sent');
+      } catch (error) {
+        console.warn('  [7d] Weekly summary alert failed:', (error as Error).message);
       }
     }
 
