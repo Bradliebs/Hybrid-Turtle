@@ -444,6 +444,8 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
   { label: 'Scan', href: '/scan' },
   { label: 'Plan', href: '/plan' },
   { label: 'Trade Log', href: '/trade-log' },
+  { label: 'Journal', href: '/journal' },
+  { label: 'Results', href: '/performance' },
   { label: 'Risk', href: '/risk' },
   { label: 'Signals', href: '/backtest' },
   { label: 'Settings', href: '/settings' },

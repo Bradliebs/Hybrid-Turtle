@@ -1,7 +1,8 @@
-import { memo } from 'react';
+import { memo, type ReactNode } from 'react';
 import type { ScoredTicker } from '@/lib/dual-score';
 import { safeNum } from '@/lib/dual-score';
 import { Info } from 'lucide-react';
+import GlossaryTerm from '@/components/GlossaryTerm';
 
 interface WhyCardProps {
   ticker: ScoredTicker | null;
@@ -46,7 +47,7 @@ function FWSComponentRow({ label, value, max }: { label: string; value: number; 
   );
 }
 
-function ScoreBar({ value, label, color }: { value: number; label: string; color: string }) {
+function ScoreBar({ value, label, color }: { value: number; label: ReactNode; color: string }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -120,7 +121,7 @@ function WhyCard({ ticker }: WhyCardProps) {
 
       {/* BQS */}
       <div className="space-y-2">
-        <ScoreBar value={ticker.BQS} label="BQS" color={bqsColor} />
+        <ScoreBar value={ticker.BQS} label={<GlossaryTerm term="BQS">BQS</GlossaryTerm>} color={bqsColor} />
         <div className="bg-navy-800/50 rounded-lg p-2.5 space-y-1.5">
           <ComponentRow label="Trend (ADX)" value={ticker.bqs_trend} max={25} />
           <ComponentRow label="Direction (DI)" value={ticker.bqs_direction} max={10} />
@@ -145,7 +146,7 @@ function WhyCard({ ticker }: WhyCardProps) {
 
       {/* FWS */}
       <div className="space-y-2">
-        <ScoreBar value={ticker.FWS} label="FWS" color={fwsColor} />
+        <ScoreBar value={ticker.FWS} label={<GlossaryTerm term="FWS">FWS</GlossaryTerm>} color={fwsColor} />
         <div className="bg-navy-800/50 rounded-lg p-2.5 space-y-1.5">
           <FWSComponentRow label="Volume Risk" value={ticker.fws_volume} max={30} />
           <FWSComponentRow label="Extension Risk" value={ticker.fws_extension} max={25} />
@@ -157,7 +158,7 @@ function WhyCard({ ticker }: WhyCardProps) {
 
       {/* NCS Equation */}
       <div className="space-y-2">
-        <ScoreBar value={ticker.NCS} label="NCS" color={ncsColor} />
+        <ScoreBar value={ticker.NCS} label={<GlossaryTerm term="NCS">NCS</GlossaryTerm>} color={ncsColor} />
         <div className="bg-navy-800/50 rounded-lg p-2.5 space-y-1">
           <div className="text-xs text-muted-foreground">NCS Equation</div>
           <div className="text-sm font-mono text-foreground font-bold">

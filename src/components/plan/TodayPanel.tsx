@@ -29,6 +29,7 @@ import {
 } from '@/lib/signal-translations';
 import type { MarketRegime, WeeklyPhase } from '@/types';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import GlossaryTerm from '@/components/GlossaryTerm';
 
 // ── Approximate GBP value helper (display only) ──────────────
 // Converts shares × price in native currency to approximate GBP.
@@ -204,12 +205,12 @@ function TechnicalDetails({ candidate }: { candidate: TodayCandidate }) {
       </button>
       {open && (
         <div className="mt-2 px-3 py-2 bg-navy-900/60 rounded-lg text-xs font-mono text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-          {candidate.dualNCS != null && <span>NCS: <span className="text-foreground">{Math.round(candidate.dualNCS)}</span></span>}
-          {candidate.dualBQS != null && <span>BQS: <span className="text-foreground">{Math.round(candidate.dualBQS)}</span></span>}
-          {candidate.dualFWS != null && <span>FWS: <span className="text-foreground">{Math.round(candidate.dualFWS)}</span></span>}
-          {candidate.bps != null && <span>BPS: <span className="text-foreground">{candidate.bps}</span></span>}
-          {candidate.hurstExponent != null && <span>Hurst: <span className="text-foreground">{candidate.hurstExponent.toFixed(2)}</span></span>}
-          {candidate.scanAdx != null && <span>ADX: <span className="text-foreground">{candidate.scanAdx.toFixed(1)}</span></span>}
+          {candidate.dualNCS != null && <span><GlossaryTerm term="NCS">NCS</GlossaryTerm>: <span className="text-foreground">{Math.round(candidate.dualNCS)}</span></span>}
+          {candidate.dualBQS != null && <span><GlossaryTerm term="BQS">BQS</GlossaryTerm>: <span className="text-foreground">{Math.round(candidate.dualBQS)}</span></span>}
+          {candidate.dualFWS != null && <span><GlossaryTerm term="FWS">FWS</GlossaryTerm>: <span className="text-foreground">{Math.round(candidate.dualFWS)}</span></span>}
+          {candidate.bps != null && <span><GlossaryTerm term="BPS">BPS</GlossaryTerm>: <span className="text-foreground">{candidate.bps}</span></span>}
+          {candidate.hurstExponent != null && <span><GlossaryTerm term="Hurst">Hurst</GlossaryTerm>: <span className="text-foreground">{candidate.hurstExponent.toFixed(2)}</span></span>}
+          {candidate.scanAdx != null && <span><GlossaryTerm term="ADX">ADX</GlossaryTerm>: <span className="text-foreground">{candidate.scanAdx.toFixed(1)}</span></span>}
           <span>Distance: <span className="text-foreground">{candidate.distancePercent.toFixed(2)}%</span></span>
           {candidate.evModifier != null && candidate.evModifier !== 0 && (
             <span>EV: <span className={candidate.evModifier > 0 ? 'text-emerald-400' : 'text-amber-400'}>{candidate.evModifier > 0 ? '+' : ''}{candidate.evModifier}</span></span>

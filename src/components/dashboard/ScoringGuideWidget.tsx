@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import GlossaryTerm from '@/components/GlossaryTerm';
 
 const BPS_BANDS = [
   { range: '14–19', label: 'High probability', desc: 'Strong setup across most factors', color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
@@ -83,15 +84,15 @@ export default function ScoringGuideWidget() {
             </div>
             <div className="grid grid-cols-3 gap-2 text-[10px]">
               <div className="bg-navy-700 rounded px-2 py-1.5">
-                <div className="text-foreground font-semibold">BQS</div>
+                <div className="text-foreground font-semibold"><GlossaryTerm term="BQS">BQS</GlossaryTerm></div>
                 <div className="text-muted-foreground">Breakout Quality<br />0–100, higher = better</div>
               </div>
               <div className="bg-navy-700 rounded px-2 py-1.5">
-                <div className="text-foreground font-semibold">FWS</div>
+                <div className="text-foreground font-semibold"><GlossaryTerm term="FWS">FWS</GlossaryTerm></div>
                 <div className="text-muted-foreground">Fatal Weakness<br />0–95, higher = <span className="text-red-400">worse</span></div>
               </div>
               <div className="bg-navy-700 rounded px-2 py-1.5">
-                <div className="text-foreground font-semibold">NCS</div>
+                <div className="text-foreground font-semibold"><GlossaryTerm term="NCS">NCS</GlossaryTerm></div>
                 <div className="text-muted-foreground">Net Composite<br />BQS − 0.8×FWS + 10</div>
               </div>
             </div>

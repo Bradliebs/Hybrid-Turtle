@@ -18,6 +18,8 @@ import {
   Shield,
   Activity,
   Bell,
+  BookOpen,
+  BarChart3,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -26,6 +28,8 @@ const iconMap: Record<string, React.ReactNode> = {
   Scan: <Search className="w-4 h-4" />,
   Plan: <ClipboardList className="w-4 h-4" />,
   'Trade Log': <NotebookPen className="w-4 h-4" />,
+  Journal: <BookOpen className="w-4 h-4" />,
+  Results: <BarChart3 className="w-4 h-4" />,
   Risk: <ShieldAlert className="w-4 h-4" />,
   Signals: <Activity className="w-4 h-4" />,
   Settings: <Settings className="w-4 h-4" />,

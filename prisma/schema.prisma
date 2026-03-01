@@ -103,11 +103,11 @@ model Position {
   accountType               String?       @default("invest")
   breakoutFailureDetectedAt DateTime?
   entryTrigger              Float?
-  stock                     Stock         @relation(fields: [stockId], references: [id])
-  user                      User          @relation(fields: [userId], references: [id])
+  stock                     Stock          @relation(fields: [stockId], references: [id])
+  user                      User           @relation(fields: [userId], references: [id])
   stopHistory               StopHistory[]
   tradeLogs                 TradeLog[]
-  journal                   TradeJournal?
+  tradeJournal              TradeJournal?
 
   @@index([userId])
   @@index([stockId])
