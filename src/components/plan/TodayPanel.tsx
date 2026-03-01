@@ -30,6 +30,22 @@ import {
 import type { MarketRegime, WeeklyPhase } from '@/types';
 import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 
+// ── Approximate GBP value helper (display only) ──────────────
+// Converts shares × price in native currency to approximate GBP.
+// Uses hardcoded FX fallbacks — the ≈ symbol signals approximation.
+const APPROX_FX_TO_GBP: Record<string, number> = {
+  GBP: 1,
+  GBX: 0.01,   // pence to pounds
+  GBp: 0.01,
+  USD: 0.79,
+  EUR: 0.86,
+};
+
+function approxGbpValue(shares: number, price: number, currency?: string): number {
+  const fx = APPROX_FX_TO_GBP[currency ?? 'USD'] ?? 0.79;
+  return Math.round(shares * price * fx);
+}
+
 // ── Types ────────────────────────────────────────────────────
 
 interface TodayCandidate {
@@ -373,6 +389,10 @@ function TimeToActCard({ candidate, regime, advancedView }: {
                       ? candidate.shares.toFixed(2)
                       : candidate.shares.toFixed(candidate.shares % 1 > 0 ? 2 : 0)
                     } shares
+                  </span>
+                  {/* Approximate position value in GBP */}
+                  <span className="text-muted-foreground">
+                    {' '}(≈ £{approxGbpValue(candidate.shares, candidate.entryTrigger, currency)})
                   </span>
                 </span>
               </div>

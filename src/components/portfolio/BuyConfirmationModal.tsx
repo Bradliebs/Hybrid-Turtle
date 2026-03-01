@@ -590,7 +590,12 @@ export default function BuyConfirmationModal({
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground text-xs">Shares</span>
-                      <span className="font-mono text-foreground">{sizing.shares}</span>
+                      <span className="font-mono text-foreground">{sizing.shares} shares</span>
+                    </div>
+                    {/* Approximate GBP position value — totalCost is already in GBP (shares × price × fxToGbp) */}
+                    <div className="flex justify-between col-span-2">
+                      <span />
+                      <span className="text-xs text-muted-foreground font-mono">≈ £{Math.round(sizing.totalCost)} position</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground text-xs">Total cost</span>
@@ -604,6 +609,14 @@ export default function BuyConfirmationModal({
                       <span className="text-muted-foreground text-xs">Risk (%)</span>
                       <span className="font-mono text-foreground">{sizing.riskPercent.toFixed(2)}%</span>
                     </div>
+                  </div>
+
+                  {/* Educational info — explains why the system chose this share count */}
+                  <div className="flex items-start gap-2 mt-3 pt-3 border-t border-border/30 text-xs text-muted-foreground">
+                    <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-primary-400" />
+                    <span>
+                      The number of shares is calculated to risk exactly {formatCurrency(sizing.riskDollars)} ({sizing.riskPercent.toFixed(1)}% of your account) if the stop-loss triggers.
+                    </span>
                   </div>
                 </div>
               ) : (

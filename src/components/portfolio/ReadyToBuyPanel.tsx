@@ -42,6 +42,22 @@ import { cn } from '@/lib/utils';
 
 const DEFAULT_USER_ID = 'default-user';
 
+// ── Approximate GBP value helper (display only) ──────────────
+// Converts shares × price in native currency to approximate GBP.
+// Uses hardcoded FX fallbacks — the ≈ symbol signals approximation.
+const APPROX_FX_TO_GBP: Record<string, number> = {
+  GBP: 1,
+  GBX: 0.01,   // pence to pounds
+  GBp: 0.01,
+  USD: 0.79,
+  EUR: 0.86,
+};
+
+function approxGbpValue(shares: number, price: number, currency?: string): number {
+  const fx = APPROX_FX_TO_GBP[currency ?? 'USD'] ?? 0.79;
+  return Math.round(shares * price * fx);
+}
+
 // ── Types for API responses ──────────────────────────────────
 
 interface CrossRefResponse {
@@ -450,15 +466,29 @@ export default function ReadyToBuyPanel({
                         )}
                       </div>
 
-                      {/* Stop level + initial risk */}
+                      {/* Stop level + initial risk + approx position value */}
                       {candidate.scanStopPrice != null && candidate.scanEntryTrigger != null && (
                         <div className="text-[10px] text-muted-foreground">
-                          Stop {formatPrice(candidate.scanStopPrice, candidate.priceCurrency)}
-                          <span className="mx-1">·</span>
-                          Risk/share {formatPrice(
-                            candidate.scanEntryTrigger - candidate.scanStopPrice,
-                            candidate.priceCurrency
+                          {candidate.scanShares != null && candidate.scanShares > 0 && (
+                            <>
+                              <span className="text-foreground font-mono">
+                                {candidate.scanShares < 1
+                                  ? candidate.scanShares.toFixed(2)
+                                  : candidate.scanShares.toFixed(candidate.scanShares % 1 > 0 ? 2 : 0)
+                                } shares
+                              </span>
+                              <span className="mx-1">·</span>
+                              <span>≈ £{approxGbpValue(candidate.scanShares, candidate.scanEntryTrigger, candidate.priceCurrency)}</span>
+                              <span className="mx-1">·</span>
+                            </>
                           )}
+                          {candidate.scanRiskDollars != null && (
+                            <>
+                              <span>Risk £{candidate.scanRiskDollars.toFixed(2)}</span>
+                              <span className="mx-1">·</span>
+                            </>
+                          )}
+                          Stop {formatPrice(candidate.scanStopPrice, candidate.priceCurrency)}
                         </div>
                       )}
 
