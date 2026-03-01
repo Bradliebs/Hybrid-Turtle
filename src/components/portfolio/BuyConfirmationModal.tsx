@@ -200,51 +200,8 @@ export default function BuyConfirmationModal({
     };
   }, []);
 
-  if (!isOpen) return null;
-
-  // ── Manual Buy (existing legacy path — DB position only) ──
-
-  const handleManualConfirm = async () => {
-    if (!sizing || !candidate.scanPrice || !candidate.scanStopPrice) return;
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      await apiRequest('/api/positions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: DEFAULT_USER_ID,
-          stockId: candidate.ticker, // resolved server-side
-          entryPrice: candidate.scanPrice,
-          stopLoss: candidate.scanStopPrice,
-          shares: adjustedShares, // correlation-adjusted (scalar applied to position-sizer output)
-          accountType,
-          source: 'manual',
-          sleeve: candidate.sleeve || 'CORE',
-          bqsScore: candidate.dualBQS,
-          fwsScore: candidate.dualFWS,
-          ncsScore: candidate.dualNCS,
-          dualScoreAction: candidate.dualAction,
-          scanStatus: candidate.scanStatus,
-          rankScore: candidate.scanRankScore,
-        }),
-      });
-
-      setSuccess(true);
-      setTimeout(async () => {
-        await onConfirm();
-      }, 800);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create position';
-      setError(message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   // ── T212 Auto-Execute (SSE 3-phase) ──
-
+  // useCallback must live above the early return to satisfy Rules of Hooks
   const handleAutoExecute = useCallback(async () => {
     if (!sizing || !candidate.scanPrice || !candidate.scanStopPrice) return;
     // Synchronous ref guard — closes the race window before React re-renders
@@ -362,6 +319,49 @@ export default function BuyConfirmationModal({
       abortRef.current = null;
     }
   }, [sizing, candidate, accountType]);
+
+  if (!isOpen) return null;
+
+  // ── Manual Buy (existing legacy path — DB position only) ──
+
+  const handleManualConfirm = async () => {
+    if (!sizing || !candidate.scanPrice || !candidate.scanStopPrice) return;
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await apiRequest('/api/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: DEFAULT_USER_ID,
+          stockId: candidate.ticker, // resolved server-side
+          entryPrice: candidate.scanPrice,
+          stopLoss: candidate.scanStopPrice,
+          shares: adjustedShares, // correlation-adjusted (scalar applied to position-sizer output)
+          accountType,
+          source: 'manual',
+          sleeve: candidate.sleeve || 'CORE',
+          bqsScore: candidate.dualBQS,
+          fwsScore: candidate.dualFWS,
+          ncsScore: candidate.dualNCS,
+          dualScoreAction: candidate.dualAction,
+          scanStatus: candidate.scanStatus,
+          rankScore: candidate.scanRankScore,
+        }),
+      });
+
+      setSuccess(true);
+      setTimeout(async () => {
+        await onConfirm();
+      }, 800);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create position';
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // ── Close handler (respects dismissal rules) ──
 

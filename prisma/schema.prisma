@@ -8,109 +8,106 @@ datasource db {
 }
 
 model User {
-  id                    String        @id @default(cuid())
-  email                 String        @unique
-  name                  String?
-  password              String
-  riskProfile           String        @default("BALANCED")   // CONSERVATIVE | BALANCED | SMALL_ACCOUNT
-  equity                Float         @default(10000)
-  // Trading 212 integration
-  t212ApiKey            String?
-  t212ApiSecret         String?
-  t212Environment       String        @default("demo")       // demo | live
-  t212Connected         Boolean       @default(false)
-  t212LastSync          DateTime?
-  t212AccountId         String?
-  t212Currency          String?
-  t212Cash              Float?
-  t212Invested          Float?
-  t212UnrealisedPL      Float?
-  t212TotalValue        Float?
-  // Trading 212 ISA account integration
-  t212IsaApiKey         String?
-  t212IsaApiSecret      String?
-  t212IsaConnected      Boolean       @default(false)
-  t212IsaLastSync       DateTime?
-  t212IsaAccountId      String?
-  t212IsaCurrency       String?
-  t212IsaCash           Float?
-  t212IsaInvested       Float?
-  t212IsaUnrealisedPL   Float?
-  t212IsaTotalValue     Float?
-  // Market data provider — yahoo (default) or eodhd
-  marketDataProvider    String        @default("yahoo")     // yahoo | eodhd
-  eodhApiKey            String?                              // EODHD API key (only needed if provider=eodhd)
-  // Gap Guard config — controls anti-chase gap check in scan pipeline
-  gapGuardMode          String        @default("ALL")       // ALL | MONDAY_ONLY
-  gapGuardWeekendATR    Float         @default(0.75)        // ATR threshold for Monday (weekend gaps)
-  gapGuardWeekendPct    Float         @default(3.0)         // % threshold for Monday (weekend gaps)
-  gapGuardDailyATR      Float         @default(1.0)         // ATR threshold for Tue–Fri (daily gaps)
-  gapGuardDailyPct      Float         @default(4.0)         // % threshold for Tue–Fri (daily gaps)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-  positions             Position[]
-  scans                 Scan[]
-  plans                 ExecutionPlan[]
-  healthChecks          HealthCheck[]
-  equitySnapshots        EquitySnapshot[]
-  tradeLogs             TradeLog[]
+  id                  String           @id @default(cuid())
+  email               String           @unique
+  name                String?
+  password            String
+  riskProfile         String           @default("BALANCED")
+  equity              Float            @default(10000)
+  t212ApiKey          String?
+  t212ApiSecret       String?
+  t212Environment     String           @default("demo")
+  t212Connected       Boolean          @default(false)
+  t212LastSync        DateTime?
+  t212AccountId       String?
+  t212Currency        String?
+  t212Cash            Float?
+  t212Invested        Float?
+  t212UnrealisedPL    Float?
+  t212TotalValue      Float?
+  t212IsaApiKey       String?
+  t212IsaApiSecret    String?
+  t212IsaConnected    Boolean          @default(false)
+  t212IsaLastSync     DateTime?
+  t212IsaAccountId    String?
+  t212IsaCurrency     String?
+  t212IsaCash         Float?
+  t212IsaInvested     Float?
+  t212IsaUnrealisedPL Float?
+  t212IsaTotalValue   Float?
+  marketDataProvider  String           @default("yahoo")
+  eodhApiKey          String?
+  gapGuardMode        String           @default("ALL")
+  gapGuardWeekendATR  Float            @default(0.75)
+  gapGuardWeekendPct  Float            @default(3.0)
+  gapGuardDailyATR    Float            @default(1.0)
+  gapGuardDailyPct    Float            @default(4.0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  equitySnapshots     EquitySnapshot[]
+  plans               ExecutionPlan[]
+  healthChecks        HealthCheck[]
+  positions           Position[]
+  scans               Scan[]
+  tradeLogs           TradeLog[]
 }
 
 model Stock {
-  id            String       @id @default(cuid())
-  ticker        String       @unique
-  name          String
-  sleeve        String       // CORE | HIGH_RISK | ETF | HEDGE
-  sector        String?
-  cluster       String?
-  superCluster  String?
-  region        String?      // US | UK | EUROPE | ASIA | CHINA | ETF | COMMODITY
-  currency      String?      // USD | GBP | EUR | CHF | DKK | CNY
-  yahooTicker   String?      // Yahoo Finance symbol override (e.g. GSK.L, SIE.DE)
-  t212Ticker    String?      // Trading 212 ticker mapping e.g. AAPL_US_EQ
-  isaEligible   Boolean?     // null = unknown, true = ISA eligible, false = not ISA eligible
-  active        Boolean      @default(true)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  positions     Position[]
-  scanResults   ScanResult[]
+  id           String       @id @default(cuid())
+  ticker       String       @unique
+  name         String
+  sleeve       String
+  sector       String?
+  cluster      String?
+  superCluster String?
+  region       String?
+  currency     String?
+  t212Ticker   String?
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  yahooTicker  String?
+  isaEligible  Boolean?
+  positions    Position[]
+  scanResults  ScanResult[]
 }
 
 model Position {
-  id              String      @id @default(cuid())
-  userId          String
-  user            User        @relation(fields: [userId], references: [id])
-  stockId         String
-  stock           Stock       @relation(fields: [stockId], references: [id])
-  status          String      @default("OPEN")       // OPEN | CLOSED
-  source          String      @default("manual")     // manual | trading212
-  accountType     String?     @default("invest")     // invest | isa — which T212 account this position belongs to
-  t212Ticker      String?                             // Original Trading 212 ticker e.g. AAPL_US_EQ
-  entryPrice      Float
-  entryDate       DateTime
-  shares          Float
-  stopLoss        Float
-  initialRisk     Float
-  currentStop     Float
-  entry_price     Float?
-  initial_stop    Float?
-  initial_R       Float?
-  atr_at_entry    Float?
-  profile_used    String?
-  entry_type      String?     @default("BREAKOUT")
-  entryTrigger    Float?                              // 20-day high trigger price at time of entry (Donchian + ATR buffer)
-  protectionLevel String      @default("INITIAL")    // INITIAL | BREAKEVEN | LOCK_08R | LOCK_1R_TRAIL
-  breakoutFailureDetectedAt DateTime?                 // Set when price closes below entryTrigger within 5 days — never cleared
-  exitPrice       Float?
-  exitDate        DateTime?
-  exitReason      String?     // STOP_HIT | CLIMAX_TRIM | LAGGARD_PURGE | MANUAL | RE_ENTRY_FAIL | BREAKOUT_FAILURE
-  exitProfitR     Float?      // R-multiple at exit
-  whipsawCount    Int         @default(0)            // How many times stopped out in 30 days
-  notes           String?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  stopHistory     StopHistory[]
-  tradeLogs       TradeLog[]
+  id                        String        @id @default(cuid())
+  userId                    String
+  stockId                   String
+  status                    String        @default("OPEN")
+  source                    String        @default("manual")
+  t212Ticker                String?
+  entryPrice                Float
+  entryDate                 DateTime
+  shares                    Float
+  stopLoss                  Float
+  initialRisk               Float
+  currentStop               Float
+  protectionLevel           String        @default("INITIAL")
+  exitPrice                 Float?
+  exitDate                  DateTime?
+  exitReason                String?
+  exitProfitR               Float?
+  whipsawCount              Int           @default(0)
+  notes                     String?
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+  atr_at_entry              Float?
+  entry_price               Float?
+  entry_type                String?       @default("BREAKOUT")
+  initial_R                 Float?
+  initial_stop              Float?
+  profile_used              String?
+  accountType               String?       @default("invest")
+  breakoutFailureDetectedAt DateTime?
+  entryTrigger              Float?
+  stock                     Stock         @relation(fields: [stockId], references: [id])
+  user                      User          @relation(fields: [userId], references: [id])
+  stopHistory               StopHistory[]
+  tradeLogs                 TradeLog[]
+  journal                   TradeJournal?
 
   @@index([userId])
   @@index([stockId])
@@ -120,12 +117,12 @@ model Position {
 model StopHistory {
   id         String   @id @default(cuid())
   positionId String
-  position   Position @relation(fields: [positionId], references: [id])
   oldStop    Float
   newStop    Float
-  level      String   // INITIAL | BREAKEVEN | LOCK_08R | LOCK_1R_TRAIL
+  level      String
   reason     String
   createdAt  DateTime @default(now())
+  position   Position @relation(fields: [positionId], references: [id])
 
   @@index([positionId])
 }
@@ -133,20 +130,18 @@ model StopHistory {
 model Scan {
   id      String       @id @default(cuid())
   userId  String
-  user    User         @relation(fields: [userId], references: [id])
   runDate DateTime     @default(now())
-  regime  String       // BULLISH | SIDEWAYS | BEARISH
+  regime  String
+  user    User         @relation(fields: [userId], references: [id])
   results ScanResult[]
 
   @@index([userId])
 }
 
 model ScanResult {
-  id               String  @id @default(cuid())
+  id               String   @id @default(cuid())
   scanId           String
-  scan             Scan    @relation(fields: [scanId], references: [id])
   stockId          String
-  stock            Stock   @relation(fields: [stockId], references: [id])
   price            Float
   ma200            Float
   adx              Float
@@ -158,8 +153,8 @@ model ScanResult {
   entryTrigger     Float
   stopPrice        Float
   distancePercent  Float
-  status           String  // READY | WATCH | FAR
-  entryMode        String? // BREAKOUT | PULLBACK_CONTINUATION
+  status           String
+  entryMode        String?
   stage6Reason     String?
   rankScore        Float
   passesAllFilters Boolean
@@ -167,6 +162,8 @@ model ScanResult {
   passesAntiChase  Boolean?
   shares           Float?
   riskDollars      Float?
+  stock            Stock    @relation(fields: [stockId], references: [id])
+  scan             Scan     @relation(fields: [scanId], references: [id])
 
   @@index([scanId])
   @@index([stockId])
@@ -175,13 +172,13 @@ model ScanResult {
 model ExecutionPlan {
   id         String   @id @default(cuid())
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
   weekOf     DateTime
-  phase      String   // PLANNING | OBSERVATION | EXECUTION | MAINTENANCE
-  candidates String   // JSON stored as string
+  phase      String
+  candidates String
   notes      String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -189,11 +186,11 @@ model ExecutionPlan {
 model HealthCheck {
   id      String   @id @default(cuid())
   userId  String
-  user    User     @relation(fields: [userId], references: [id])
   runDate DateTime @default(now())
-  overall String   // GREEN | YELLOW | RED
-  checks  String   // JSON stored as string
-  details String   // JSON stored as string
+  overall String
+  checks  String
+  details String
+  user    User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
 }
@@ -202,66 +199,57 @@ model Heartbeat {
   id        String   @id @default(cuid())
   timestamp DateTime @default(now())
   status    String
-  details   String?  // JSON stored as string
+  details   String?
 
   @@index([timestamp])
 }
 
 model TradeLog {
-  id                  String    @id @default(cuid())
-  userId              String
-  user                User      @relation(fields: [userId], references: [id])
-  positionId          String?
-  position            Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
-
-  ticker              String
-  tradeDate           DateTime
-  tradeType           String    // ENTRY | EXIT | ADD | TRIM | STOP_HIT
-
-  scanStatus          String?   // READY | WATCH | TRIGGER_MET
-  bqsScore            Float?
-  fwsScore            Float?
-  ncsScore            Float?
-  dualScoreAction     String?   // AUTO_YES | AUTO_NO | CONDITIONAL
-  rankScore           Float?
-
-  entryPrice          Float?
-  initialStop         Float?
-  initialR            Float?
-  shares              Float?
-  positionSizeGbp     Float?
-  atrAtEntry          Float?
-  adxAtEntry          Float?
-  regime              String?   // BULLISH | BEARISH | SIDEWAYS
-
-  decision            String    // TAKEN | SKIPPED | PARTIAL
-  decisionReason      String?
-  hesitationLevel     Int?
-
-  plannedEntry        Float?
-  actualFill          Float?
-  slippagePct         Float?
-  fillTime            DateTime?
-
-  exitPrice           Float?
-  exitReason          String?   // STOP_HIT | PROFIT_TARGET | MANUAL | LAGGARD
-  finalRMultiple      Float?
-  gainLossGbp         Float?
-  daysHeld            Int?
-
-  whatWentWell        String?
-  whatWentWrong       String?
-  lessonsLearned      String?
-  wouldTakeAgain      Boolean?
-
-  climaxDetected      Boolean   @default(false)
-  whipsawBlocked      Boolean   @default(false)
-  breadthRestricted   Boolean   @default(false)
-  antiChaseTriggered  Boolean   @default(false)
-
-  tags                String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  userId             String
+  positionId         String?
+  ticker             String
+  tradeDate          DateTime
+  tradeType          String
+  scanStatus         String?
+  bqsScore           Float?
+  fwsScore           Float?
+  ncsScore           Float?
+  dualScoreAction    String?
+  rankScore          Float?
+  entryPrice         Float?
+  initialStop        Float?
+  initialR           Float?
+  shares             Float?
+  positionSizeGbp    Float?
+  atrAtEntry         Float?
+  adxAtEntry         Float?
+  regime             String?
+  decision           String
+  decisionReason     String?
+  hesitationLevel    Int?
+  plannedEntry       Float?
+  actualFill         Float?
+  slippagePct        Float?
+  fillTime           DateTime?
+  exitPrice          Float?
+  exitReason         String?
+  finalRMultiple     Float?
+  gainLossGbp        Float?
+  daysHeld           Int?
+  whatWentWell       String?
+  whatWentWrong      String?
+  lessonsLearned     String?
+  wouldTakeAgain     Boolean?
+  climaxDetected     Boolean   @default(false)
+  whipsawBlocked     Boolean   @default(false)
+  breadthRestricted  Boolean   @default(false)
+  antiChaseTriggered Boolean   @default(false)
+  tags               String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  position           Position? @relation(fields: [positionId], references: [id])
+  user               User      @relation(fields: [userId], references: [id])
 
   @@index([userId, tradeDate(sort: Desc)])
   @@index([positionId])
@@ -271,148 +259,111 @@ model TradeLog {
 
 model TradeTag {
   tag         String @id
-  category    String // SETUP | ERROR | MARKET_CONDITION | EXECUTION
+  category    String
   description String
 }
 
 model EquitySnapshot {
   id              String   @id @default(cuid())
   userId          String
-  user            User     @relation(fields: [userId], references: [id])
   equity          Float
   openRiskPercent Float?
   capturedAt      DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([capturedAt])
 }
 
 model RegimeHistory {
-  id           String   @id @default(cuid())
-  date         DateTime @default(now())
-  benchmark    String   @default("SPY")   // SPY | VWRL
-  regime       String   // BULLISH | BEARISH | CHOP
-  spyPrice     Float?
-  spyMa200     Float?
-  vwrlPrice    Float?
-  vwrlMa200    Float?
-  breadthPct   Float?   // % of universe above 50DMA
-  adx          Float?
-  consecutive  Int      @default(1)       // consecutive days in this regime
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  benchmark   String   @default("SPY")
+  regime      String
+  spyPrice    Float?
+  spyMa200    Float?
+  vwrlPrice   Float?
+  vwrlMa200   Float?
+  breadthPct  Float?
+  adx         Float?
+  consecutive Int      @default(1)
 
   @@index([date])
   @@index([benchmark])
 }
 
-// ── Dual Score Dashboard — Snapshot Ticker ──────────────────────────
-// Stores per-ticker data from master_snapshot.csv, synced via upload or
-// the nightly pipeline.  Scored columns (BQS/FWS/NCS) are computed at
-// query time by the scoring engine so the raw data is always the source
-// of truth.
-
 model SnapshotTicker {
-  id                        String   @id @default(cuid())
-  snapshotId                String
-  snapshot                  Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
-
-  // ── Identity ──
-  ticker                    String
-  name                      String?
-  sleeve                    String?   // STOCK_CORE | ETF_CORE | STOCK_HIGH_RISK | HEDGE
-  status                    String?   // READY | WATCH | FAR | IGNORE | TREND
-  currency                  String?
-
-  // ── Price & ATR ──
-  close                     Float     @default(0)
-  atr14                     Float     @default(0)
-  atrPct                    Float     @default(0)
-
-  // ── Trend / ADX ──
-  adx14                     Float     @default(0)
-  plusDi                     Float     @default(0)
-  minusDi                    Float     @default(0)
-  weeklyAdx                  Float     @default(0)  // ADX on weekly candles
-
-  // ── Volume ──
-  volRatio                   Float     @default(1)
-  dollarVol20                Float     @default(0)
-  liquidityOk                Boolean   @default(true)
-
-  // ── Breakout Integrity Score ──
-  bisScore                   Float     @default(0)  // 0–15, from latest candle OHLCV
-
-  // ── Market regime ──
-  marketRegime               String    @default("NEUTRAL")
-  marketRegimeStable         Boolean   @default(true)
-  volRegime                  String?   @default("NORMAL_VOL")   // LOW_VOL | NORMAL_VOL | HIGH_VOL
-  dualRegimeAligned          Boolean   @default(true)           // both SPY + VWRL above MA200
-
-  // ── Breakout levels ──
-  high20                     Float     @default(0)
-  high55                     Float     @default(0)
-  distanceTo20dHighPct       Float     @default(0)
-  distanceTo55dHighPct       Float     @default(0)
-  entryTrigger               Float     @default(0)
-  stopLevel                  Float     @default(0)
-
-  // ── Chasing / volatility flags ──
-  chasing20Last5             Boolean   @default(false)
-  chasing55Last5             Boolean   @default(false)
-  atrSpiking                 Boolean   @default(false)
-  atrCollapsing              Boolean   @default(false)
-  atrCompressionRatio        Float?    // ATR now / ATR 20 bars ago — used by BPS Factor 1
-
-  // ── Relative strength ──
-  rsVsBenchmarkPct           Float     @default(0)
-
-  // ── Earnings ──
-  daysToEarnings             Int?
-  earningsInNext5d           Boolean   @default(false)
-
-  // ── Cluster / concentration ──
-  clusterName                String?
-  superClusterName           String?
-  clusterExposurePct         Float     @default(0)
-  superClusterExposurePct    Float     @default(0)
-  maxClusterPct              Float     @default(0)
-  maxSuperClusterPct         Float     @default(0)
-
-  // ── Full row data (all 185 columns) stored as JSON ──
-  rawJson                    String?   // JSON blob of the entire CSV row
-
-  createdAt                  DateTime  @default(now())
+  id                      String   @id @default(cuid())
+  snapshotId              String
+  ticker                  String
+  name                    String?
+  sleeve                  String?
+  status                  String?
+  currency                String?
+  close                   Float    @default(0)
+  atr14                   Float    @default(0)
+  atrPct                  Float    @default(0)
+  adx14                   Float    @default(0)
+  plusDi                  Float    @default(0)
+  minusDi                 Float    @default(0)
+  weeklyAdx               Float    @default(0)
+  volRatio                Float    @default(1)
+  dollarVol20             Float    @default(0)
+  liquidityOk             Boolean  @default(true)
+  bisScore                Float    @default(0)
+  marketRegime            String   @default("NEUTRAL")
+  marketRegimeStable      Boolean  @default(true)
+  volRegime               String?  @default("NORMAL_VOL")
+  dualRegimeAligned       Boolean  @default(true)
+  high20                  Float    @default(0)
+  high55                  Float    @default(0)
+  distanceTo20dHighPct    Float    @default(0)
+  distanceTo55dHighPct    Float    @default(0)
+  entryTrigger            Float    @default(0)
+  stopLevel               Float    @default(0)
+  chasing20Last5          Boolean  @default(false)
+  chasing55Last5          Boolean  @default(false)
+  atrSpiking              Boolean  @default(false)
+  atrCollapsing           Boolean  @default(false)
+  rsVsBenchmarkPct        Float    @default(0)
+  daysToEarnings          Int?
+  earningsInNext5d        Boolean  @default(false)
+  clusterName             String?
+  superClusterName        String?
+  clusterExposurePct      Float    @default(0)
+  superClusterExposurePct Float    @default(0)
+  maxClusterPct           Float    @default(0)
+  maxSuperClusterPct      Float    @default(0)
+  rawJson                 String?
+  createdAt               DateTime @default(now())
+  atrCompressionRatio     Float?
+  snapshot                Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@index([snapshotId])
   @@index([ticker])
-  @@index([snapshotId, ticker])  // composite for common lookup pattern
+  @@index([snapshotId, ticker])
 }
 
 model Snapshot {
-  id        String            @id @default(cuid())
-  source    String            @default("upload")   // upload | nightly | manual
+  id        String           @id @default(cuid())
+  source    String           @default("upload")
   filename  String?
-  rowCount  Int               @default(0)
-  createdAt DateTime          @default(now())
+  rowCount  Int              @default(0)
+  createdAt DateTime         @default(now())
   tickers   SnapshotTicker[]
 }
 
-// ── EV Tracker — Expected Value Records ─────────────────────────────
-// Logs outcome data per closed trade for expectancy analysis.
-// Sliced by regime, ATR bucket, cluster, and sleeve to reveal
-// which setups actually produce +EV over time.
-// This is logging only — no actions or alerts.
-
 model EvRecord {
-  id         String   @id @default(cuid())
-  tradeId    String                         // TradeLog id that generated this record
-  regime     String                         // BULLISH | SIDEWAYS | BEARISH at entry
-  atrBucket  String                         // LOW | MEDIUM | HIGH | EXTREME
-  cluster    String?                        // Cluster name from Stock (nullable — some tickers lack cluster)
-  sleeve     String                         // CORE | HIGH_RISK | ETF | HEDGE
-  entryNCS   Float?                         // Net Composite Score at entry (nullable — pre-NCS trades)
-  outcome    String                         // WIN | LOSS | BREAKEVEN
-  rMultiple  Float                          // Final R-multiple at exit
-  closedAt   DateTime                       // When the trade was closed
+  id        String   @id @default(cuid())
+  tradeId   String
+  regime    String
+  atrBucket String
+  cluster   String?
+  sleeve    String
+  entryNCS  Float?
+  outcome   String
+  rMultiple Float
+  closedAt  DateTime
 
   @@index([regime])
   @@index([sleeve])
@@ -420,82 +371,76 @@ model EvRecord {
   @@index([closedAt])
 }
 
-// ── Correlation Matrix — Pairwise Flags ─────────────────────────────
-// Nightly-computed Pearson correlation on 90 days of daily returns.
-// Pairs with correlation > 0.75 are flagged HIGH_CORR.
-// Used by Module 7 (heatmap-swap) for warnings and the /risk page widget.
-
 model CorrelationFlag {
-  id            String   @id @default(cuid())
-  tickerA       String                         // Alphabetically first ticker
-  tickerB       String                         // Alphabetically second ticker
-  correlation   Float                          // Pearson r (−1 to +1)
-  flag          String                         // HIGH_CORR
-  computedAt    DateTime @default(now())       // When this batch was computed
+  id          String   @id @default(cuid())
+  tickerA     String
+  tickerB     String
+  correlation Float
+  flag        String
+  computedAt  DateTime @default(now())
 
-  @@unique([tickerA, tickerB])                 // One row per pair
+  @@unique([tickerA, tickerB])
   @@index([tickerA])
   @@index([tickerB])
   @@index([computedAt])
 }
 
-// ── Execution Log — Audit trail for T212 order execution ───────────
-// Every API call to Trading 212 during buy execution is logged here.
-// Covers: buy placement, fill polling, stop placement, and failures.
-// This is the safety net — if anything goes wrong, we have a full record.
-
 model ExecutionLog {
-  id              Int      @id @default(autoincrement())
-  createdAt       DateTime @default(now())
-  ticker          String                       // Ticker being traded (Yahoo format)
-  phase           String                       // BUY_PLACED | BUY_POLLING | BUY_FILLED | STOP_PLACED | BUY_TIMEOUT | STOP_FAILED | COMPLETE
-  orderId         String?                      // T212 order ID (if returned)
-  requestBody     String                       // JSON stringified request sent to T212
-  responseStatus  Int?                         // HTTP response status code
-  responseBody    String?                      // JSON stringified response from T212
-  stopPrice       Float?                       // Stop price used (if applicable)
-  quantity        Float?                       // Order quantity
-  accountType     String                       // invest | isa
-  error           String?                      // Error message if phase failed
+  id             Int      @id @default(autoincrement())
+  createdAt      DateTime @default(now())
+  ticker         String
+  phase          String
+  orderId        String?
+  requestBody    String
+  responseStatus Int?
+  responseBody   String?
+  stopPrice      Float?
+  quantity       Float?
+  accountType    String
+  error          String?
 
   @@index([ticker])
   @@index([createdAt])
   @@index([phase])
 }
 
-// ── Notification Centre — In-app Alerts ─────────────────────────────
-// Every alert is saved here first (Layer 1). Telegram delivery (Layer 2)
-// is optional and fires after the DB write succeeds.
-// Types: TRADE_TRIGGER | STOP_HIT | PYRAMID_ADD | WEEKLY_SUMMARY | SYSTEM
-
 model Notification {
   id        Int       @id @default(autoincrement())
   createdAt DateTime  @default(now())
-  readAt    DateTime?                         // null = unread
-  type      String                            // TRADE_TRIGGER | STOP_HIT | PYRAMID_ADD | WEEKLY_SUMMARY | SYSTEM
+  readAt    DateTime?
+  type      String
   title     String
   message   String
-  data      String?                           // JSON — optional extra context
-  priority  String    @default("INFO")        // INFO | WARNING | CRITICAL
+  data      String?
+  priority  String    @default("INFO")
 
-  @@index([readAt])                           // fast unread count query
+  @@index([readAt])
   @@index([createdAt])
   @@index([type])
 }
 
-// ── Earnings Calendar Cache ─────────────────────────────────
-// Pre-cached earnings dates from Yahoo Finance quoteSummary.
-// Populated nightly; consumed by scan engine to block/demote
-// candidates reporting earnings within 5 days.
-
 model EarningsCache {
   id               Int       @id @default(autoincrement())
   ticker           String    @unique
-  nextEarningsDate DateTime?               // null if no date available
-  confidence       String    @default("NONE")  // HIGH | LOW | NONE
+  nextEarningsDate DateTime?
+  confidence       String    @default("NONE")
   fetchedAt        DateTime  @default(now())
   source           String    @default("YAHOO")
 
   @@index([ticker])
   @@index([fetchedAt])
+}
+
+model TradeJournal {
+  id              Int       @id @default(autoincrement())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  positionId      String    @unique
+  position        Position  @relation(fields: [positionId], references: [id])
+  entryNote       String?
+  entryConfidence Int?
+  closeNote       String?
+  learnedNote     String?
+  entryNoteAt     DateTime?
+  closeNoteAt     DateTime?
 }
