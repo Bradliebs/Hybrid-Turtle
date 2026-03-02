@@ -220,109 +220,109 @@ if /i not "%SETUP_TELEGRAM%"=="Y" if /i not "%SETUP_TELEGRAM%"=="N" (
     echo         Input not recognized, defaulting to N.
     set "SETUP_TELEGRAM=N"
 )
-if /i "%SETUP_TELEGRAM%"=="Y" (
-    echo.
-    echo   --- Telegram Credentials ---
-    echo.
-    echo   To get your bot token:
-    echo     1. Open Telegram and message @BotFather
-    echo     2. Send /newbot and follow the prompts
-    echo     3. Copy the token it gives you
-    echo.
-    echo   To get your chat ID:
-    echo     1. Open Telegram and message @userinfobot
-    echo     2. It replies with your numeric ID
-    echo.
-
-    :: Check if credentials already exist in .env
-    set "HAS_TOKEN="
-    set "HAS_CHATID="
-    for /f "usebackq tokens=1,2 delims==" %%a in (".env") do (
-        if "%%a"=="TELEGRAM_BOT_TOKEN" if not "%%b"=="" if not "%%b"=="your-bot-token-here" set "HAS_TOKEN=1"
-        if "%%a"=="TELEGRAM_CHAT_ID" if not "%%b"=="" if not "%%b"=="your-chat-id-here" set "HAS_CHATID=1"
-    )
-
-    if defined HAS_TOKEN if defined HAS_CHATID (
-        echo         Telegram credentials already found in .env
-        echo.
-        set /p TG_REPLACE="  Replace existing credentials? (Y/N): "
-        if /i not "!TG_REPLACE!"=="Y" (
-            echo         Keeping existing credentials.
-            goto :skip_tg_creds
-        )
-    )
-
-    call :read_tg_token
-    if "!TG_TOKEN!"=="" (
-        echo         No token entered - skipping Telegram setup.
-        set "SETUP_TELEGRAM=N"
-        goto :skip_tg_setup
-    )
-
-    call :read_tg_chatid
-    if "!TG_CHATID!"=="" (
-        echo         No chat ID entered - skipping Telegram setup.
-        set "SETUP_TELEGRAM=N"
-        goto :skip_tg_setup
-    )
-
-    :: Remove any existing Telegram lines from .env, then append new ones
-    :: Credentials are passed via environment variables (not command-line args)
-    :: to avoid leaking them in process listings.
-    set "_TG_TOKEN=!TG_TOKEN!"
-    set "_TG_CHATID=!TG_CHATID!"
-    powershell -NoProfile -Command "$tok = $env:_TG_TOKEN; $cid = $env:_TG_CHATID; $f = Get-Content '.env' | Where-Object { $_ -notmatch '^TELEGRAM_BOT_TOKEN=' -and $_ -notmatch '^TELEGRAM_CHAT_ID=' }; $f += \"TELEGRAM_BOT_TOKEN=$tok\"; $f += \"TELEGRAM_CHAT_ID=$cid\"; Set-Content '.env' $f"
-    echo         Telegram credentials saved to .env
-
-    :: Send a test message to confirm it works
-    :: Token and chat ID are read from env vars, not embedded in args.
-    echo.
-    echo         Sending test message to your Telegram...
-    powershell -NoProfile -Command "$tok = $env:_TG_TOKEN; $cid = $env:_TG_CHATID; $r = Invoke-RestMethod -Uri \"https://api.telegram.org/bot$tok/sendMessage\" -Method Post -ContentType 'application/json' -Body ('{\"chat_id\":\"' + $cid + '\",\"text\":\"HybridTurtle connected! Nightly reports will arrive here at 21:10 Mon-Fri.\"}'); if ($r.ok) { Write-Output '         Test message sent successfully!' } else { Write-Output '         !! Test message failed - check your token and chat ID.' }" 2>nul || echo         !! Could not reach Telegram API - check your internet connection.
-
-    :skip_tg_creds
-    echo.
-    echo         Registering scheduled task...
-
-    :: Check for admin privileges (schtasks usually requires elevation)
-    net session >nul 2>&1
-    if !errorlevel! neq 0 (
-        echo.
-        echo  !! Creating a scheduled task requires Administrator privileges.
-        echo  !! Please re-run install.bat as Administrator to set up the nightly task.
-        echo  !! ^(Right-click install.bat ^> Run as administrator^)
-        echo  !! Everything else is installed — only the scheduled task was skipped.
-        >> "%LOG%" echo [%date% %time%] WARN: Skipped schtasks - no admin
-        goto :skip_tg_setup
-    )
-
-    :: Write nightly-task.bat using subroutine to avoid quoting pitfalls
-    call :create_nightly_bat
-    if errorlevel 1 (
-        echo  !! Failed to create nightly-task.bat. See install.log.
-        >> "%LOG%" echo [%date% %time%] FAIL: create nightly-task.bat
-        goto :fail
-    )
-
-    :: Create/replace scheduled task using schtasks (more robust across machines)
-    set "TASK_NAME=HybridTurtle-Nightly"
-    set "NIGHTLY_BAT=%SCRIPT_DIR%nightly-task.bat"
-    schtasks /Delete /TN "%TASK_NAME%" /F >> "%LOG%" 2>&1
-    schtasks /Create /TN "%TASK_NAME%" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 21:10 /TR "\"%NIGHTLY_BAT%\"" /RL HIGHEST /F >> "%LOG%" 2>&1
-
-    if !errorlevel! equ 0 (
-        echo         Scheduled task 'HybridTurtle-Nightly' created!
-        echo         Runs Mon-Fri at 21:10. View/edit in Task Scheduler.
-        >> "%LOG%" echo [%date% %time%] Scheduled task created
-    ) else (
-        echo         !! Could not create scheduled task.
-        echo         !! Try running this installer as Administrator.
-        >> "%LOG%" echo [%date% %time%] FAIL: schtasks create
-    )
-) else (
+if /i not "%SETUP_TELEGRAM%"=="Y" (
     echo         Skipped - you can set this up later by running:
     echo         install.bat or manually in Task Scheduler.
+    goto :skip_tg_setup
 )
+
+echo.
+echo   --- Telegram Credentials ---
+echo.
+echo   To get your bot token:
+echo     1. Open Telegram and message @BotFather
+echo     2. Send /newbot and follow the prompts
+echo     3. Copy the token it gives you
+echo.
+echo   To get your chat ID:
+echo     1. Open Telegram and message @userinfobot
+echo     2. It replies with your numeric ID
+echo.
+
+:: Check if credentials already exist in .env
+set "HAS_TOKEN="
+set "HAS_CHATID="
+for /f "usebackq tokens=1,2 delims==" %%a in (".env") do (
+    if "%%a"=="TELEGRAM_BOT_TOKEN" if not "%%b"=="" if not "%%b"=="your-bot-token-here" set "HAS_TOKEN=1"
+    if "%%a"=="TELEGRAM_CHAT_ID" if not "%%b"=="" if not "%%b"=="your-chat-id-here" set "HAS_CHATID=1"
+)
+
+if defined HAS_TOKEN if defined HAS_CHATID (
+    echo         Telegram credentials already found in .env
+    echo.
+    set /p TG_REPLACE="  Replace existing credentials? (Y/N): "
+    if /i not "!TG_REPLACE!"=="Y" (
+        echo         Keeping existing credentials.
+        goto :skip_tg_creds
+    )
+)
+
+call :read_tg_token
+if "!TG_TOKEN!"=="" (
+    echo         No token entered - skipping Telegram setup.
+    goto :skip_tg_setup
+)
+
+call :read_tg_chatid
+if "!TG_CHATID!"=="" (
+    echo         No chat ID entered - skipping Telegram setup.
+    goto :skip_tg_setup
+)
+
+:: Remove any existing Telegram lines from .env, then append new ones
+:: Credentials are passed via environment variables (not command-line args)
+:: to avoid leaking them in process listings.
+set "_TG_TOKEN=!TG_TOKEN!"
+set "_TG_CHATID=!TG_CHATID!"
+powershell -NoProfile -Command "$tok = $env:_TG_TOKEN; $cid = $env:_TG_CHATID; $f = Get-Content '.env' | Where-Object { $_ -notmatch '^TELEGRAM_BOT_TOKEN=' -and $_ -notmatch '^TELEGRAM_CHAT_ID=' }; $f += \"TELEGRAM_BOT_TOKEN=$tok\"; $f += \"TELEGRAM_CHAT_ID=$cid\"; Set-Content '.env' $f"
+echo         Telegram credentials saved to .env
+
+:: Send a test message to confirm it works
+:: Token and chat ID are read from env vars, not embedded in args.
+echo.
+echo         Sending test message to your Telegram...
+powershell -NoProfile -Command "$tok = $env:_TG_TOKEN; $cid = $env:_TG_CHATID; $r = Invoke-RestMethod -Uri \"https://api.telegram.org/bot$tok/sendMessage\" -Method Post -ContentType 'application/json' -Body ('{\"chat_id\":\"' + $cid + '\",\"text\":\"HybridTurtle connected! Nightly reports will arrive here at 21:10 Mon-Fri.\"}'); if ($r.ok) { Write-Output '         Test message sent successfully!' } else { Write-Output '         !! Test message failed - check your token and chat ID.' }" 2>nul || echo         !! Could not reach Telegram API - check your internet connection.
+
+:skip_tg_creds
+echo.
+echo         Registering scheduled task...
+
+:: Check for admin privileges (schtasks usually requires elevation)
+net session >nul 2>&1
+if !errorlevel! neq 0 (
+    echo.
+    echo  !! Creating a scheduled task requires Administrator privileges.
+    echo  !! Please re-run install.bat as Administrator to set up the nightly task.
+    echo  !! ^(Right-click install.bat ^> Run as administrator^)
+    echo  !! Everything else is installed — only the scheduled task was skipped.
+    >> "%LOG%" echo [%date% %time%] WARN: Skipped schtasks - no admin
+    goto :skip_tg_setup
+)
+
+:: Write nightly-task.bat using subroutine to avoid quoting pitfalls
+call :create_nightly_bat
+if errorlevel 1 (
+    echo  !! Failed to create nightly-task.bat. See install.log.
+    >> "%LOG%" echo [%date% %time%] FAIL: create nightly-task.bat
+    goto :fail
+)
+
+:: Create/replace scheduled task using schtasks (more robust across machines)
+set "TASK_NAME=HybridTurtle-Nightly"
+set "NIGHTLY_BAT=%SCRIPT_DIR%nightly-task.bat"
+schtasks /Delete /TN "%TASK_NAME%" /F >> "%LOG%" 2>&1
+schtasks /Create /TN "%TASK_NAME%" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 21:10 /TR "\"%NIGHTLY_BAT%\"" /RL HIGHEST /F >> "%LOG%" 2>&1
+
+if !errorlevel! equ 0 (
+    echo         Scheduled task 'HybridTurtle-Nightly' created!
+    echo         Runs Mon-Fri at 21:10. View/edit in Task Scheduler.
+    >> "%LOG%" echo [%date% %time%] Scheduled task created
+) else (
+    echo         !! Could not create scheduled task.
+    echo         !! Try running this installer as Administrator.
+    >> "%LOG%" echo [%date% %time%] FAIL: schtasks create
+)
+
 :skip_tg_setup
 
 :: ── Done! ──
