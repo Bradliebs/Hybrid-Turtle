@@ -9,7 +9,7 @@
  * Notes: Supports ?position=xxx query param to auto-open close note modal
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Navbar from '@/components/shared/Navbar';
 import { apiRequest } from '@/lib/api-client';
@@ -235,6 +235,21 @@ function daysHeld(entryDate: string, exitDate: string | null): number {
 }
 
 export default function JournalPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6">
+          <div className="text-center py-16 text-muted-foreground text-sm">Loading journal…</div>
+        </main>
+      </div>
+    }>
+      <JournalPageInner />
+    </Suspense>
+  );
+}
+
+function JournalPageInner() {
   const searchParams = useSearchParams();
   const targetPositionId = searchParams.get('position');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
