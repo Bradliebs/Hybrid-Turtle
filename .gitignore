@@ -43,3 +43,6 @@ nightly.log
 *.tsbuildinfo
 next-env.d.ts
 install.log
+
+# claude
+.claude/
