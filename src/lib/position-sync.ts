@@ -241,7 +241,92 @@ export async function syncClosedPositions(userId: string = 'default-user'): Prom
     }
   }
 
+  // 4. Detect untracked T212 sales — sells in order history that don't match any DB position
+  await detectUntrackedSales(orderHistory, openPositions, userId, result);
+
   return result;
+}
+
+// ── Untracked Sale Detection ─────────────────────────────────────────
+
+/**
+ * Check T212 order history for recent SELL orders that don't match any
+ * tracked open position. This catches stop-outs on positions that were
+ * never added to HybridTurtle (e.g. BESI).
+ */
+async function detectUntrackedSales(
+  orderHistory: T212HistoricalOrder[],
+  openPositions: Array<{ t212Ticker: string | null; stock: { t212Ticker: string | null; ticker: string } }>,
+  userId: string,
+  result: PositionSyncResult
+): Promise<void> {
+  if (orderHistory.length === 0) return;
+
+  // Build set of all tracked T212 tickers (from positions)
+  const trackedT212Tickers = new Set<string>();
+  for (const pos of openPositions) {
+    const t = pos.t212Ticker || pos.stock.t212Ticker;
+    if (t) trackedT212Tickers.add(t);
+  }
+
+  // Also include recently-closed positions (last 7 days) to avoid repeat alerts
+  const recentlyClosed = await prisma.position.findMany({
+    where: {
+      userId,
+      status: 'CLOSED',
+      exitDate: { gte: new Date(Date.now() - 7 * 86400000) },
+    },
+    select: { t212Ticker: true, stock: { select: { t212Ticker: true } } },
+  });
+  for (const pos of recentlyClosed) {
+    const t = pos.t212Ticker || pos.stock.t212Ticker;
+    if (t) trackedT212Tickers.add(t);
+  }
+
+  // Find recent sells (last 48 hours) that are not tracked
+  const cutoff = new Date(Date.now() - 48 * 3600000);
+  const recentSells = orderHistory.filter(o =>
+    o.type === 'SELL' &&
+    o.status === 'FILLED' &&
+    o.filledQuantity > 0 &&
+    o.dateExecuted &&
+    new Date(o.dateExecuted) >= cutoff
+  );
+
+  const untrackedSells = recentSells.filter(o => !trackedT212Tickers.has(o.ticker));
+
+  for (const sell of untrackedSells) {
+    const fillPrice = sell.filledQuantity > 0
+      ? sell.filledValue / sell.filledQuantity
+      : 0;
+    const baseTicker = sell.ticker
+      .replace(/_US_EQ$/, '')
+      .replace(/_UK_EQ$/, '')
+      .replace(/_NL_EQ$/, '')
+      .replace(/_DE_EQ$/, '')
+      .replace(/_FR_EQ$/, '')
+      .replace(/_CH_EQ$/, '')
+      .replace(/_DK_EQ$/, '')
+      .replace(/_SE_EQ$/, '')
+      .replace(/_FI_EQ$/, '')
+      .replace(/_IT_EQ$/, '')
+      .replace(/_EQ$/, '')
+      .replace(/_ETF$/, '');
+
+    try {
+      await sendAlert({
+        type: 'SYSTEM',
+        title: `Untracked sale detected — ${baseTicker}`,
+        message: `Trading 212 shows a recent SELL for ${baseTicker} (${sell.ticker}) that is not tracked in HybridTurtle.\n\nFill price: ${fillPrice.toFixed(2)} · Qty: ${sell.filledQuantity}\nDate: ${sell.dateExecuted}\n\nThis position was not in your portfolio. Use "Record Past Trade" on the Trade Review page to log it.`,
+        data: { t212Ticker: sell.ticker, baseTicker, fillPrice, quantity: sell.filledQuantity, dateExecuted: sell.dateExecuted },
+        priority: 'WARNING',
+      });
+    } catch {
+      // Alert send failure — non-blocking
+    }
+
+    result.errors.push(`${baseTicker}: untracked T212 sale detected (not in portfolio) — use Record Past Trade to log it`);
+  }
 }
 
 // ── Closure Flow ─────────────────────────────────────────────────────

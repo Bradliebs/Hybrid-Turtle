@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Navbar from '@/components/shared/Navbar';
 import { apiRequest } from '@/lib/api-client';
-import { Loader2 } from 'lucide-react';
+import { Loader2, BookOpen } from 'lucide-react';
+import RecordPastTradeModal from '@/components/trade-log/RecordPastTradeModal';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -85,6 +86,7 @@ export default function TradeLogPage() {
   const [toDate, setToDate] = useState('');
   const [activePreset, setActivePreset] = useState<PresetType | null>(null);
   const [presetLoading, setPresetLoading] = useState(false);
+  const [showRecordModal, setShowRecordModal] = useState(false);
   const hasLoadedOnce = useRef(false);
 
   const fetchData = useCallback(async (overrides?: Partial<QueryFilters>) => {
@@ -223,10 +225,26 @@ export default function TradeLogPage() {
       <Navbar />
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Trade Review</h1>
-          <p className="text-sm text-muted-foreground">See what worked, what failed, and why.</p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Trade Review</h1>
+            <p className="text-sm text-muted-foreground">See what worked, what failed, and why.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowRecordModal(true)}
+            className="btn-primary inline-flex items-center gap-2"
+          >
+            <BookOpen className="w-4 h-4" />
+            Record Past Trade
+          </button>
         </div>
+
+        <RecordPastTradeModal
+          isOpen={showRecordModal}
+          onClose={() => setShowRecordModal(false)}
+          onSaved={() => void fetchData()}
+        />
 
         <div className="card-surface p-4 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
           <input
