@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { parseJsonBody } from '@/lib/request-validation';
 import { isNightlyRunning } from '@/lib/nightly-guard';
 import { normalizePersistedPassFlag } from '@/lib/scan-pass-flags';
+import { updateScanProgress, clearScanProgress } from '@/lib/scan-progress';
 
 const scanRequestSchema = z.object({
   userId: z.string().trim().min(1),
@@ -64,12 +65,15 @@ export async function POST(request: NextRequest) {
       dailyThresholdPct: userSettings?.gapGuardDailyPct ?? DEFAULT_GAP_GUARD_CONFIG.dailyThresholdPct,
     };
 
+    clearScanProgress();
     const result = await runFullScan(
       userId,
       riskProfile as RiskProfileType,
       equity,
-      gapGuardConfig
+      gapGuardConfig,
+      (stage, processed, total) => updateScanProgress(stage, processed, total)
     );
+    clearScanProgress();
 
     // ── Persist to database ──────────────────────────────────────────
     try {

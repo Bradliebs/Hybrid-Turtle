@@ -659,30 +659,65 @@ const INDEX_MAP: { name: string; ticker: string }[] = [
   { name: 'VIX', ticker: '^VIX' },
 ];
 
+// Cache for market indices — avoids hammering Yahoo on every page load
+const INDEX_TTL = 10 * 60_000; // 10 minutes
+let indicesCache: { data: MarketIndex[]; expiry: number } | null = null;
+
 export async function getMarketIndices(): Promise<MarketIndex[]> {
   // Route to EODHD if configured
   if (isEodhd()) return eodhd.getMarketIndices();
 
-  const indexTickers = INDEX_MAP.map(idx => idx.ticker);
-  try {
-    const rawResults = await yf.quote(indexTickers) as YahooQuoteResult[];
-    return INDEX_MAP.map(idx => {
-      const q = rawResults.find(r => r.symbol === idx.ticker);
-      return {
-        name: idx.name,
-        ticker: idx.ticker,
-        value: q?.regularMarketPrice || 0,
-        change: q?.regularMarketChange || 0,
-        changePercent: q?.regularMarketChangePercent || 0,
-      };
-    });
-  } catch (error) {
-    console.warn('[YF] Batch index fetch failed:', (error as Error).message);
-    // Fallback: return zeroed entries
-    return INDEX_MAP.map(idx => ({
-      name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0,
-    }));
+  // Return cached indices if still fresh
+  if (indicesCache && Date.now() < indicesCache.expiry) {
+    return indicesCache.data;
   }
+
+  const indexTickers = INDEX_MAP.map(idx => idx.ticker);
+  const MAX_RETRIES = 2;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const rawResults = await yf.quote(indexTickers) as YahooQuoteResult[];
+      const indices = INDEX_MAP.map(idx => {
+        const q = rawResults.find(r => r.symbol === idx.ticker);
+        return {
+          name: idx.name,
+          ticker: idx.ticker,
+          value: q?.regularMarketPrice || 0,
+          change: q?.regularMarketChange || 0,
+          changePercent: q?.regularMarketChangePercent || 0,
+        };
+      });
+      // Only cache if we got at least one non-zero value
+      if (indices.some(idx => idx.value > 0)) {
+        indicesCache = { data: indices, expiry: Date.now() + INDEX_TTL };
+      }
+      return indices;
+    } catch (error) {
+      const msg = (error as Error).message || '';
+      // Retry on 429 rate limit with exponential backoff
+      if (attempt < MAX_RETRIES && msg.includes('429')) {
+        const delay = 2000 * (attempt + 1);
+        console.warn(`[YF] Index fetch 429, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      console.warn('[YF] Batch index fetch failed:', msg);
+      // Return stale cache if available, otherwise zeros
+      if (indicesCache) {
+        console.warn('[YF] Returning stale cached indices');
+        return indicesCache.data;
+      }
+      return INDEX_MAP.map(idx => ({
+        name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0,
+      }));
+    }
+  }
+
+  // Shouldn't reach here, but TypeScript needs it
+  return indicesCache?.data || INDEX_MAP.map(idx => ({
+    name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0,
+  }));
 }
 
 // ── Fear & Greed — approximation from VIX ──

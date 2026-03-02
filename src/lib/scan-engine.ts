@@ -145,7 +145,8 @@ export async function runFullScan(
   userId: string,
   riskProfile: RiskProfileType,
   equity: number,
-  gapGuardConfig: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG
+  gapGuardConfig: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG,
+  onProgress?: (stage: string, processed: number, total: number) => void
 ): Promise<{
   regime: MarketRegime;
   candidates: ScanCandidate[];
@@ -159,6 +160,8 @@ export async function runFullScan(
 }> {
   const universe = await getUniverse();
   const candidates: ScanCandidate[] = [];
+
+  onProgress?.('Loading universe', 0, universe.length);
 
   // Determine market regime from SPY vs 200 MA (live data)
   const [regime, volRegimeResult] = await Promise.all([
@@ -516,11 +519,15 @@ export async function runFullScan(
       if (result) candidates.push(result);
     }
 
+    onProgress?.('Scanning tickers', Math.min(batch + BATCH_SIZE, universe.length), universe.length);
+
     // Brief pause between batches to be respectful to Yahoo
     if (batch + BATCH_SIZE < universe.length) {
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
   }
+
+  onProgress?.('Ranking & sorting', universe.length, universe.length);
 
   // Sort: triggered first → READY → WATCH → FAR/failed, then by rank score
   const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, COOLDOWN: 2, EARNINGS_BLOCK: 2, FAR: 3 };
