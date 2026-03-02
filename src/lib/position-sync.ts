@@ -338,14 +338,51 @@ async function closePosition(
   const now = new Date();
 
   // 1. Determine exit price from order history
-  const { exitPrice, confidence } = determineExitPrice(candidate, orderHistory);
+  const { exitPrice, confidence, matchedOrder } = determineExitPrice(candidate, orderHistory);
 
   // 2. Determine exit reason
   const exitReason = determineExitReason(exitPrice, candidate.currentStop);
 
-  // 3. Calculate P&L
-  const fxRate = await getCloseFxRate(candidate.ticker, candidate.stockCurrency);
-  const realisedPnlGbp = (exitPrice - candidate.entryPrice) * candidate.shares * fxRate;
+  // 3. Calculate P&L — prefer T212's own walletImpact if available
+  let realisedPnlGbp: number;
+  let fxRateUsed: number | null = null;
+  let netValueGbp: number | null = null;
+  let realisedPnlT212: number | null = null;
+
+  if (matchedOrder?.fills && matchedOrder.fills.length > 0) {
+    // Use T212's real P&L data from fills
+    let totalPnl = 0;
+    let totalNetValue = 0;
+    let hasPnl = false;
+    for (const fill of matchedOrder.fills) {
+      if (fill.walletImpact) {
+        if (fill.walletImpact.realisedProfitLoss != null) {
+          totalPnl += fill.walletImpact.realisedProfitLoss;
+          hasPnl = true;
+        }
+        if (fill.walletImpact.netValue != null) {
+          totalNetValue += fill.walletImpact.netValue;
+        }
+        if (fill.walletImpact.fxRate != null) {
+          fxRateUsed = fill.walletImpact.fxRate;
+        }
+      }
+    }
+    if (hasPnl) {
+      realisedPnlT212 = totalPnl;
+      realisedPnlGbp = totalPnl;
+      netValueGbp = totalNetValue > 0 ? totalNetValue : null;
+    } else {
+      // Fills present but no walletImpact — fallback to manual calc
+      const fxRate = await getCloseFxRate(candidate.ticker, candidate.stockCurrency);
+      realisedPnlGbp = (exitPrice - candidate.entryPrice) * candidate.shares * fxRate;
+    }
+  } else {
+    // No fills data — use manual calculation
+    const fxRate = await getCloseFxRate(candidate.ticker, candidate.stockCurrency);
+    realisedPnlGbp = (exitPrice - candidate.entryPrice) * candidate.shares * fxRate;
+  }
+
   const initialR = candidate.initial_R ?? candidate.initialRisk;
   const realisedPnlR = initialR > 0
     ? (exitPrice - candidate.entryPrice) / initialR
@@ -371,8 +408,9 @@ async function closePosition(
       },
     });
 
-    // Create trade log entry
+    // Create trade log entry with T212-specific fields
     const tradeType = exitReason === 'STOP_HIT' ? 'STOP_HIT' : 'EXIT';
+    const fillDate = matchedOrder?.dateExecuted ? new Date(matchedOrder.dateExecuted) : null;
     try {
       await tx.tradeLog.create({
         data: {
@@ -392,6 +430,16 @@ async function closePosition(
           gainLossGbp: realisedPnlGbp,
           daysHeld,
           atrAtEntry: candidate.atr_at_entry,
+          // T212-specific fields for confirmed fills
+          t212OrderId: matchedOrder ? matchedOrder.id.toString() : null,
+          t212Ticker: candidate.t212Ticker,
+          fillPrice: exitPrice,
+          fillQuantity: matchedOrder?.filledQuantity ?? candidate.shares,
+          fillTimestamp: fillDate,
+          fxRateAtFill: fxRateUsed,
+          netValueGbp,
+          realisedPnlT212,
+          initiatedFrom: matchedOrder?.initiatedFrom ?? null,
         },
       });
     } catch (logError) {
@@ -431,12 +479,12 @@ async function closePosition(
 function determineExitPrice(
   candidate: ClosureCandidate,
   orderHistory: T212HistoricalOrder[]
-): { exitPrice: number; confidence: 'CONFIRMED' | 'ESTIMATED' | 'UNKNOWN' } {
+): { exitPrice: number; confidence: 'CONFIRMED' | 'ESTIMATED' | 'UNKNOWN'; matchedOrder: T212HistoricalOrder | null } {
   // Look for the most recent SELL order matching this T212 ticker
   const sellOrders = orderHistory
     .filter(o =>
       o.ticker === candidate.t212Ticker &&
-      o.type === 'SELL' &&
+      (o.type === 'SELL' || o.side === 'SELL') &&
       o.status === 'FILLED' &&
       o.filledQuantity > 0
     )
@@ -449,22 +497,36 @@ function determineExitPrice(
 
   if (sellOrders.length > 0) {
     const order = sellOrders[0];
-    // filledValue / filledQuantity = average fill price
+
+    // Prefer per-fill price if available
+    if (order.fills && order.fills.length > 0) {
+      let totalValue = 0;
+      let totalQty = 0;
+      for (const fill of order.fills) {
+        totalValue += fill.price * fill.quantity;
+        totalQty += fill.quantity;
+      }
+      if (totalQty > 0) {
+        return { exitPrice: totalValue / totalQty, confidence: 'CONFIRMED', matchedOrder: order };
+      }
+    }
+
+    // Fallback: filledValue / filledQuantity
     const fillPrice = order.filledQuantity > 0
       ? order.filledValue / order.filledQuantity
       : 0;
     if (fillPrice > 0) {
-      return { exitPrice: fillPrice, confidence: 'CONFIRMED' };
+      return { exitPrice: fillPrice, confidence: 'CONFIRMED', matchedOrder: order };
     }
   }
 
   // Fallback: use the last live price we have for this position
   // (not ideal but better than nothing)
   if (candidate.entryPrice > 0) {
-    return { exitPrice: candidate.entryPrice, confidence: 'UNKNOWN' };
+    return { exitPrice: candidate.entryPrice, confidence: 'UNKNOWN', matchedOrder: null };
   }
 
-  return { exitPrice: 0, confidence: 'UNKNOWN' };
+  return { exitPrice: 0, confidence: 'UNKNOWN', matchedOrder: null };
 }
 
 // ── Exit Reason Determination ────────────────────────────────────────

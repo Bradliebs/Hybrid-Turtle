@@ -73,10 +73,22 @@ export interface T212Instrument {
   addedOn: string;
 }
 
+export interface T212HistoricalOrderFill {
+  price: number;
+  quantity: number;
+  filledAt: string;
+  walletImpact?: {
+    fxRate?: number;
+    netValue?: number;
+    realisedProfitLoss?: number;
+  };
+}
+
 export interface T212HistoricalOrder {
   id: number;
   ticker: string;
   type: string;
+  side?: 'BUY' | 'SELL';
   status: string;
   limitPrice?: number;
   stopPrice?: number;
@@ -86,6 +98,8 @@ export interface T212HistoricalOrder {
   dateCreated: string;
   dateExecuted?: string;
   dateModified?: string;
+  initiatedFrom?: string;
+  fills?: T212HistoricalOrderFill[];
 }
 
 export interface T212PendingOrder {

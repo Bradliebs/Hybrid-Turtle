@@ -30,6 +30,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import T212ImportPanel from '@/components/settings/T212ImportPanel';
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -794,6 +795,9 @@ export default function SettingsPage() {
             </a>
           </p>
         </div>
+
+        {/* T212 History Import */}
+        <T212ImportPanel />
 
         {/* Market Data Provider */}
         <div className="card-surface p-6">

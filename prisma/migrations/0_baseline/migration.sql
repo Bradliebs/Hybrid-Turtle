@@ -517,25 +517,3 @@ CREATE INDEX "EarningsCache_fetchedAt_idx" ON "EarningsCache"("fetchedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "TradeJournal_positionId_key" ON "TradeJournal"("positionId");
-
-node.exe : ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
-ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÉ
-At line:1 char:1
-+ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (ΓöîΓöÇΓöÇΓöÇΓöÇ...ΓöÇΓöÇΓöÇΓöÇΓöÉ 
-   :String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-Γöé  Update available 5.22.0 -> 7.4.2                       Γöé
-Γöé                                                         Γöé
-Γöé  This is a major update - please follow the guide at    Γöé
-Γöé  https://pris.ly/d/major-version-upgrade                Γöé
-Γöé                                                         Γöé
-Γöé  Run the following to update                            Γöé
-Γöé    npm i --save-dev prisma@latest                       Γöé
-Γöé    npm i @prisma/client@latest                          Γöé
-ΓööΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓ
-öÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓö
-ÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÿ

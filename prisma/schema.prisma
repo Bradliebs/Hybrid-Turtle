@@ -250,6 +250,18 @@ model TradeLog {
   breadthRestricted  Boolean   @default(false)
   antiChaseTriggered Boolean   @default(false)
   tags               String?
+  // T212 import fields
+  t212OrderId        String?   @unique
+  t212Ticker         String?
+  fillPrice          Float?
+  fillQuantity       Float?
+  fillTimestamp      DateTime?
+  fxRateAtFill       Float?
+  netValueGbp        Float?
+  realisedPnlT212    Float?
+  initiatedFrom      String?
+  importedFromT212   Boolean   @default(false)
+  importedAt         DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   position           Position? @relation(fields: [positionId], references: [id])
