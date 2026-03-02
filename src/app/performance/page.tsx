@@ -19,6 +19,7 @@ import {
   Trophy,
   Target,
   AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import {
   LineChart,
@@ -42,6 +43,9 @@ interface PerformanceData {
   winRate: number | null;
   bestTrade: { ticker: string; gainLoss: number } | null;
   worstTrade: { ticker: string; gainLoss: number } | null;
+  totalRealisedPnl: number | null;
+  exitReasonBreakdown: { stopLoss: number; manualSale: number; unknown: number } | null;
+  avgDaysHeld: number | null;
   openPositions: { ticker: string; unrealisedGainLoss: number | null }[];
   equityCurve: { date: string; value: number }[];
   tradeList: {
@@ -49,6 +53,7 @@ interface PerformanceData {
     tradeDate: string;
     daysHeld: number | null;
     gainLoss: number | null;
+    exitReason: string | null;
   }[];
 }
 
@@ -81,6 +86,13 @@ export default function PerformancePage() {
   const isPositive = data?.totalGainLoss != null && data.totalGainLoss > 0;
   const hasEquity = data?.startingEquity != null && data?.currentEquity != null;
   const hasClosedTrades = (data?.totalTrades ?? 0) > 0;
+
+  // Compute unrealised total from open positions
+  const unrealisedTotal = data?.openPositions?.reduce(
+    (sum, p) => sum + (p.unrealisedGainLoss ?? 0), 0
+  ) ?? 0;
+  const realisedTotal = data?.totalRealisedPnl ?? 0;
+  const combinedTotal = realisedTotal + unrealisedTotal;
   const hasChartData = (data?.equityCurve?.length ?? 0) >= 7;
 
   return (
@@ -137,6 +149,31 @@ export default function PerformancePage() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Realised / Unrealised breakdown */}
+                  {hasClosedTrades && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-border/30">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Realised (closed trades)</p>
+                        <p className={cn('text-sm font-semibold font-mono', realisedTotal >= 0 ? 'text-gain' : 'text-loss')}>
+                          {realisedTotal >= 0 ? '+' : ''}£{Math.abs(realisedTotal).toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Unrealised (open positions)</p>
+                        <p className={cn('text-sm font-semibold font-mono', unrealisedTotal >= 0 ? 'text-gain' : 'text-loss')}>
+                          {unrealisedTotal >= 0 ? '+' : ''}£{Math.abs(unrealisedTotal).toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-0.5">Total</p>
+                        <p className={cn('text-sm font-semibold font-mono', combinedTotal >= 0 ? 'text-gain' : 'text-loss')}>
+                          {combinedTotal >= 0 ? '+' : ''}£{Math.abs(combinedTotal).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <p className="text-sm mt-3 text-muted-foreground">
                     {isPositive
                       ? 'Your system is working.'
@@ -158,7 +195,7 @@ export default function PerformancePage() {
 
             {/* SECTION 2: Stat tiles */}
             {hasClosedTrades ? (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
                 <div className="card-surface p-4 text-center">
                   <Target className="w-5 h-5 text-primary-400 mx-auto mb-1" />
                   <p className="text-2xl font-bold text-foreground">{data!.totalTrades}</p>
@@ -194,6 +231,13 @@ export default function PerformancePage() {
                   </p>
                   <p className="text-xs text-muted-foreground">Worst trade</p>
                 </div>
+                {data!.avgDaysHeld != null && (
+                  <div className="card-surface p-4 text-center">
+                    <Clock className="w-5 h-5 text-primary-400 mx-auto mb-1" />
+                    <p className="text-2xl font-bold text-foreground">{data!.avgDaysHeld}</p>
+                    <p className="text-xs text-muted-foreground">Avg days held</p>
+                  </div>
+                )}
               </div>
             ) : (
               !loading && (
@@ -204,6 +248,24 @@ export default function PerformancePage() {
                   </p>
                 </div>
               )
+            )}
+
+            {/* Exit reason breakdown — only shown when closed trades exist */}
+            {hasClosedTrades && data!.exitReasonBreakdown && (
+              <div className="card-surface p-5">
+                <h2 className="text-sm font-semibold text-foreground mb-2">How trades closed</h2>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+                  {data!.exitReasonBreakdown.stopLoss > 0 && (
+                    <span>Stop-loss triggered: <strong className="text-foreground">{data!.exitReasonBreakdown.stopLoss}</strong> trade{data!.exitReasonBreakdown.stopLoss !== 1 ? 's' : ''}</span>
+                  )}
+                  {data!.exitReasonBreakdown.manualSale > 0 && (
+                    <span>Manual sale: <strong className="text-foreground">{data!.exitReasonBreakdown.manualSale}</strong> trade{data!.exitReasonBreakdown.manualSale !== 1 ? 's' : ''}</span>
+                  )}
+                  {data!.exitReasonBreakdown.unknown > 0 && (
+                    <span>Unknown: <strong className="text-foreground">{data!.exitReasonBreakdown.unknown}</strong> trade{data!.exitReasonBreakdown.unknown !== 1 ? 's' : ''}</span>
+                  )}
+                </div>
+              </div>
             )}
 
             {/* SECTION 3: Equity curve */}

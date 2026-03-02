@@ -169,12 +169,12 @@ export default function PositionsPage() {
     }
   }, [fetchPositions]);
 
-  const handleExitPosition = useCallback(async (positionId: string, exitPrice: number): Promise<boolean> => {
+  const handleExitPosition = useCallback(async (positionId: string, exitPrice: number, exitReason?: string, closeNote?: string): Promise<boolean> => {
     try {
       await apiRequest('/api/positions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ positionId, exitPrice }),
+        body: JSON.stringify({ positionId, exitPrice, exitReason, closeNote }),
       });
       await Promise.all([fetchPositions(), fetchAccount()]);
       return true;

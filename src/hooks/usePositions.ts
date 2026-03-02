@@ -79,7 +79,7 @@ export function usePositions(statusFilter?: string) {
     }
   }, [fetchPositions]);
 
-  const closePosition = useCallback(async (positionId: string, exitPrice: number) => {
+  const closePosition = useCallback(async (positionId: string, exitPrice: number, exitReason?: string, closeNote?: string) => {
     try {
       await apiRequest('/api/positions', {
         method: 'PATCH',
@@ -87,6 +87,8 @@ export function usePositions(statusFilter?: string) {
         body: JSON.stringify({
           positionId,
           exitPrice,
+          exitReason,
+          closeNote,
         }),
       });
 

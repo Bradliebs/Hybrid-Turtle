@@ -41,7 +41,7 @@ interface Position {
 interface PositionsTableProps {
   positions: Position[];
   onUpdateStop?: (positionId: string, newStop: number, reason: string) => Promise<boolean>;
-  onExitPosition?: (positionId: string, exitPrice: number) => Promise<boolean>;
+  onExitPosition?: (positionId: string, exitPrice: number, exitReason?: string, closeNote?: string) => Promise<boolean>;
 }
 
 export default function PositionsTable({ positions, onUpdateStop, onExitPosition }: PositionsTableProps) {
@@ -74,6 +74,8 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   const [exitError, setExitError] = useState<string | null>(null);
   const [exitSubmitting, setExitSubmitting] = useState(false);
   const [exitConfirmStep, setExitConfirmStep] = useState(false); // Two-step exit confirmation
+  const [exitReasonInput, setExitReasonInput] = useState('');
+  const [exitNoteInput, setExitNoteInput] = useState('');
 
   // Reset from T212 state
   const [resettingId, setResettingId] = useState<string | null>(null);
@@ -1015,6 +1017,34 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                 </p>
               </div>
 
+              {/* Exit reason dropdown */}
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">Exit Reason</label>
+                <select
+                  value={exitReasonInput}
+                  onChange={(e) => setExitReasonInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-navy-900 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-loss/50"
+                >
+                  <option value="">Auto-detect from price</option>
+                  <option value="STOP_HIT">Stop-loss triggered</option>
+                  <option value="MANUAL_PROFIT">Sold manually — profit</option>
+                  <option value="MANUAL_LOSS">Sold manually — cutting loss</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+
+              {/* Close note */}
+              <div>
+                <label className="block text-sm text-muted-foreground mb-1">Close Note (optional)</label>
+                <textarea
+                  value={exitNoteInput}
+                  onChange={(e) => setExitNoteInput(e.target.value)}
+                  placeholder="Why did you close? What did you learn?"
+                  rows={2}
+                  className="w-full px-3 py-2 bg-navy-900 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-loss/50 resize-none"
+                />
+              </div>
+
               {/* Preview realised P&L */}
               {!isNaN(parseFloat(exitInput)) && parseFloat(exitInput) > 0 && (
                 <div className="bg-navy-900 rounded-lg p-3">
@@ -1067,7 +1097,12 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                           return;
                         }
                         setExitSubmitting(true);
-                        const ok = await onExitPosition(exitModal.id, price);
+                        const ok = await onExitPosition(
+                          exitModal.id,
+                          price,
+                          exitReasonInput || undefined,
+                          exitNoteInput || undefined
+                        );
                         setExitSubmitting(false);
                         if (ok) {
                           setExitModal(null);

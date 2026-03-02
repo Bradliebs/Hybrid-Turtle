@@ -90,6 +90,9 @@ model Position {
   exitDate                  DateTime?
   exitReason                String?
   exitProfitR               Float?
+  realisedPnlGbp            Float?
+  realisedPnlR              Float?
+  closedBy                  String?
   whipsawCount              Int           @default(0)
   notes                     String?
   createdAt                 DateTime      @default(now())

@@ -35,6 +35,8 @@ import { getBatchQuotes, normalizeBatchPricesToGBP, getDailyPrices, calculateADX
 import { fetchWithFallback, toPriceRecord } from '@/lib/data-provider';
 import type { DataSourceHealth } from '@/lib/data-provider';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
+import { syncClosedPositions } from '@/lib/position-sync';
+import type { PositionSyncResult } from '@/lib/position-sync';
 import { syncSnapshot } from '@/lib/snapshot-sync';
 import { detectLaggards } from '@/lib/laggard-detector';
 import { detectBreakoutFailures } from '@/lib/breakout-failure-detector';
@@ -169,6 +171,34 @@ async function runNightlyProcess() {
       console.error('  [2] FX normalisation failed, using raw prices as fallback:', (error as Error).message);
     }
     console.log(`        ${positions.length} positions, ${Object.keys(livePrices).length} prices fetched`);
+
+    // Step 2b: Position sync — detect T212 closures before downstream steps
+    console.log('  [2b] Syncing positions against Trading 212...');
+    let positionSyncResult: PositionSyncResult = { checked: 0, closed: 0, skipped: 0, updated: 0, errors: [] };
+    try {
+      positionSyncResult = await syncClosedPositions(userId);
+      console.log(`        Position sync: ${positionSyncResult.checked} checked, ${positionSyncResult.closed} closed, ${positionSyncResult.skipped} skipped`);
+      if (positionSyncResult.errors.length > 0) {
+        for (const err of positionSyncResult.errors) {
+          console.warn(`        Sync: ${err}`);
+        }
+      }
+      if (positionSyncResult.closed > 0) {
+        alerts.push(`${positionSyncResult.closed} position(s) auto-closed via T212 sync`);
+        // Re-fetch open positions so downstream steps work with accurate status
+        positions = await prisma.position.findMany({
+          where: { userId, status: 'OPEN' },
+          include: { stock: true },
+        });
+      }
+      if (positionSyncResult.errors.length > 0 && positionSyncResult.closed === 0) {
+        alerts.push(`T212 position sync: ${positionSyncResult.errors[0]}`);
+      }
+    } catch (error) {
+      // Position sync failure is non-blocking — nightly continues
+      console.error('  [2b] Position sync failed:', (error as Error).message);
+      alerts.push('T212 position sync failed — positions not updated. Check manually.');
+    }
 
     // Step 3: Generate stop recommendations (isolated)
     console.log('  [3/9] Generating stop recommendations...');
@@ -1019,6 +1049,12 @@ async function runNightlyProcess() {
           telegramSent,
           hadFailure,
           snapshotSync,
+          positionSync: {
+            checked: positionSyncResult.checked,
+            closed: positionSyncResult.closed,
+            skipped: positionSyncResult.skipped,
+            errors: positionSyncResult.errors,
+          },
           // Data source fallback chain health
           dataSource: {
             health: dataSourceHealth,
