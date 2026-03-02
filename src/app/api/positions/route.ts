@@ -443,6 +443,7 @@ const closePositionSchema = z.object({
   positionId: z.string().trim().min(1),
   exitPrice: z.coerce.number().positive(),
   exitReason: z.string().optional(),
+  closeNote: z.string().optional(),
 });
 
 /**
@@ -455,7 +456,7 @@ export async function PATCH(request: NextRequest) {
     if (!parsed.ok) {
       return parsed.response;
     }
-    const { positionId, exitPrice, exitReason } = parsed.data;
+    const { positionId, exitPrice, exitReason, closeNote } = parsed.data;
 
     const position = await prisma.position.findUnique({
       where: { id: positionId },
@@ -490,6 +491,11 @@ export async function PATCH(request: NextRequest) {
       closeFxToGbp = await getFXRate(closeCurrency, 'GBP');
     }
 
+    // Pre-compute P&L fields for Position record
+    const closeInitialR = position.initial_R ?? position.initialRisk ?? null;
+    const closeRealisedPnlGbp = (exitPrice - position.entryPrice) * position.shares * closeFxToGbp;
+    const closeRealisedPnlR = closeInitialR ? (exitPrice - position.entryPrice) / closeInitialR : null;
+
     // Atomic: position close + trade log in one transaction
     const updated = await prisma.$transaction(async (tx) => {
       const upd = await tx.position.update({
@@ -499,6 +505,11 @@ export async function PATCH(request: NextRequest) {
           exitPrice,
           exitReason: resolvedExitReason,
           exitDate: new Date(),
+          exitProfitR: closeRealisedPnlR,
+          realisedPnlGbp: closeRealisedPnlGbp,
+          realisedPnlR: closeRealisedPnlR,
+          closedBy: 'MANUAL',
+          notes: closeNote || position.notes || null,
         },
         include: { stock: true },
       });

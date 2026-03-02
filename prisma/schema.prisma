@@ -42,6 +42,7 @@ model User {
   gapGuardWeekendPct  Float            @default(3.0)
   gapGuardDailyATR    Float            @default(1.0)
   gapGuardDailyPct    Float            @default(4.0)
+  startingEquityOverride Float?
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   equitySnapshots     EquitySnapshot[]
@@ -90,6 +91,9 @@ model Position {
   exitDate                  DateTime?
   exitReason                String?
   exitProfitR               Float?
+  realisedPnlGbp            Float?
+  realisedPnlR              Float?
+  closedBy                  String?
   whipsawCount              Int           @default(0)
   notes                     String?
   createdAt                 DateTime      @default(now())

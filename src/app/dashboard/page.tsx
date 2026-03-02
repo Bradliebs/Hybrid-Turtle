@@ -69,6 +69,7 @@ export default function DashboardPage() {
   const nightlyResult = useStore((s) => s.nightlyResult);
   const setNightlyRunning = useStore((s) => s.setNightlyRunning);
   const setNightlyResult = useStore((s) => s.setNightlyResult);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const fetchLiveMarketData = useCallback(async () => {
     try {
@@ -126,17 +127,26 @@ export default function DashboardPage() {
 
   // Fetch market data + publications in parallel on mount (no auto-polling — manual refresh via MarketIndicesBar)
   useEffect(() => {
-    fetchLiveMarketData();
-    fetchPublications();
-    fetchTriggerStatus();
+    Promise.allSettled([
+      fetchLiveMarketData(),
+      fetchPublications(),
+      fetchTriggerStatus(),
+    ]).finally(() => setInitialLoading(false));
   }, [fetchLiveMarketData, fetchPublications, fetchTriggerStatus]);
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
+      {initialLoading && (
+        <div className="flex flex-col items-center justify-center py-32 gap-3 animate-fade-in">
+          <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+          <p className="text-sm text-muted-foreground">Loading dashboard…</p>
+        </div>
+      )}
+
       {/* RED Health Warning Banner */}
-      {healthStatus === 'RED' && !healthOverlayDismissed && (
+      {!initialLoading && healthStatus === 'RED' && !healthOverlayDismissed && (
         <div className="health-overlay">
           <div className="text-center max-w-lg mx-auto p-8">
             <div className="w-20 h-20 rounded-full bg-warning/20 mx-auto mb-6 flex items-center justify-center animate-pulse-red">
@@ -162,6 +172,7 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {!initialLoading && (
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
         {/* Market Indices Row */}
         <MarketIndicesBar />
@@ -369,6 +380,7 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+      )}
     </div>
   );
 }

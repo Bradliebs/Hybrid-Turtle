@@ -20,6 +20,8 @@ export type NotificationType =
   | 'PYRAMID_ADD'
   | 'WEEKLY_SUMMARY'
   | 'BREAKOUT_FAILURE'
+  | 'POSITION_CLOSED'
+  | 'JOURNAL_PROMPT'
   | 'SYSTEM';
 
 export type AlertPriority = 'INFO' | 'WARNING' | 'CRITICAL';

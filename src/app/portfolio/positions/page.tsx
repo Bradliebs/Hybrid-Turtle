@@ -6,6 +6,7 @@ import Navbar from '@/components/shared/Navbar';
 import KPIBanner from '@/components/portfolio/KPIBanner';
 import PositionsTable from '@/components/portfolio/PositionsTable';
 import T212SyncPanel from '@/components/portfolio/T212SyncPanel';
+import PositionSyncButton from '@/components/portfolio/PositionSyncButton';
 import StopUpdateQueue from '@/components/plan/StopUpdateQueue';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 import Link from 'next/link';
@@ -169,12 +170,12 @@ export default function PositionsPage() {
     }
   }, [fetchPositions]);
 
-  const handleExitPosition = useCallback(async (positionId: string, exitPrice: number): Promise<boolean> => {
+  const handleExitPosition = useCallback(async (positionId: string, exitPrice: number, exitReason?: string, closeNote?: string): Promise<boolean> => {
     try {
       await apiRequest('/api/positions', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ positionId, exitPrice }),
+        body: JSON.stringify({ positionId, exitPrice, exitReason, closeNote }),
       });
       await Promise.all([fetchPositions(), fetchAccount()]);
       return true;
@@ -253,6 +254,11 @@ export default function PositionsPage() {
 
         {/* Trading 212 Sync Panel */}
         <T212SyncPanel onSyncComplete={handleSyncComplete} />
+
+        {/* Manual closed-position sync with T212 */}
+        <div className="flex items-start">
+          <PositionSyncButton onSyncComplete={handleSyncComplete} />
+        </div>
 
         {/* Stop-Loss Recommendations — fetches live from /api/stops */}
         <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} refreshTrigger={stopRefreshKey} />
