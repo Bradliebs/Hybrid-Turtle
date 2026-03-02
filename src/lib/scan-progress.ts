@@ -4,7 +4,9 @@
  * Consumes: nothing
  * Risk-sensitive: NO
  * Last modified: 2026-03-02
- * Notes: In-memory progress store for scan SSE streaming
+ * Notes: In-memory progress store for scan SSE streaming.
+ *        Uses globalThis to survive Next.js dev-mode module reloads
+ *        so the SSE GET handler and scan POST handler share state.
  */
 
 export interface ScanProgress {
@@ -14,23 +16,35 @@ export interface ScanProgress {
   timestamp: number;
 }
 
-let currentProgress: ScanProgress | null = null;
-const listeners = new Set<(progress: ScanProgress) => void>();
+interface ScanProgressStore {
+  currentProgress: ScanProgress | null;
+  listeners: Set<(progress: ScanProgress) => void>;
+}
+
+// globalThis survives HMR — ensures SSE handler and scan handler share the same store
+const globalForProgress = globalThis as unknown as { __scanProgressStore?: ScanProgressStore };
+if (!globalForProgress.__scanProgressStore) {
+  globalForProgress.__scanProgressStore = {
+    currentProgress: null,
+    listeners: new Set(),
+  };
+}
+const store = globalForProgress.__scanProgressStore;
 
 export function updateScanProgress(stage: string, processed: number, total: number): void {
-  currentProgress = { stage, processed, total, timestamp: Date.now() };
-  listeners.forEach((listener) => listener(currentProgress!));
+  store.currentProgress = { stage, processed, total, timestamp: Date.now() };
+  store.listeners.forEach((listener) => listener(store.currentProgress!));
 }
 
 export function getScanProgress(): ScanProgress | null {
-  return currentProgress;
+  return store.currentProgress;
 }
 
 export function clearScanProgress(): void {
-  currentProgress = null;
+  store.currentProgress = null;
 }
 
 export function subscribeScanProgress(listener: (progress: ScanProgress) => void): () => void {
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  store.listeners.add(listener);
+  return () => { store.listeners.delete(listener); };
 }

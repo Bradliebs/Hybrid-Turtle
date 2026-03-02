@@ -212,21 +212,20 @@ export default function ScanPage() {
     setScanProgress(null);
     setLivePrices({}); // Clear stale live prices when re-scanning
 
-    // Open SSE connection for real-time progress updates
-    let eventSource: EventSource | null = null;
-    try {
-      eventSource = new EventSource('/api/scan/progress');
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          setScanProgress(data);
-        } catch {
-          // Ignore malformed events
+    // Poll /api/scan/progress every 800ms for real-time stage updates.
+    // Polling is more reliable than SSE in Next.js dev mode where
+    // module-level state can diverge between request handlers.
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/scan/progress');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.stage) setScanProgress(data);
         }
-      };
-    } catch {
-      // SSE not available — scan still works, just no progress
-    }
+      } catch {
+        // Poll failed — not critical, progress is cosmetic
+      }
+    }, 800);
 
     try {
       const data = await apiRequest<ScanApiResult>('/api/scan', {
@@ -245,7 +244,7 @@ export default function ScanPage() {
     } catch {
       // Silent fail
     } finally {
-      eventSource?.close();
+      clearInterval(pollInterval);
       setScanProgress(null);
       setIsRunning(false);
     }
@@ -336,9 +335,9 @@ export default function ScanPage() {
           </div>
         </div>
 
-        {/* Scan Progress Bar */}
+        {/* Scan Progress Bar — sticky so it stays visible while scrolling */}
         {isRunning && (
-          <div className="card-surface p-4">
+          <div className="sticky top-0 z-30 card-surface p-4 border border-primary/30 shadow-lg shadow-primary/10">
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-foreground flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-primary-400" />
@@ -347,12 +346,14 @@ export default function ScanPage() {
               {scanProgress && scanProgress.total > 0 && (
                 <span className="text-xs text-muted-foreground font-mono">
                   {scanProgress.processed} / {scanProgress.total}
+                  {' · '}
+                  {Math.round((scanProgress.processed / scanProgress.total) * 100)}%
                 </span>
               )}
             </div>
-            <div className="w-full bg-navy-700 rounded-full h-2 overflow-hidden">
+            <div className="w-full bg-navy-700 rounded-full h-2.5 overflow-hidden">
               <div
-                className="bg-primary h-2 rounded-full transition-all duration-300 ease-out"
+                className="bg-primary h-2.5 rounded-full transition-all duration-500 ease-out"
                 style={{
                   width: scanProgress && scanProgress.total > 0
                     ? `${Math.round((scanProgress.processed / scanProgress.total) * 100)}%`

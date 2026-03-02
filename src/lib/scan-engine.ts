@@ -161,9 +161,10 @@ export async function runFullScan(
   const universe = await getUniverse();
   const candidates: ScanCandidate[] = [];
 
-  onProgress?.('Loading universe', 0, universe.length);
+  onProgress?.('Stage 1: Loading universe', 0, universe.length);
 
   // Determine market regime from SPY vs 200 MA (live data)
+  onProgress?.('Stage 1: Detecting regime', 0, universe.length);
   const [regime, volRegimeResult] = await Promise.all([
     getMarketRegime(),
     getVolRegime(),
@@ -519,7 +520,7 @@ export async function runFullScan(
       if (result) candidates.push(result);
     }
 
-    onProgress?.('Scanning tickers', Math.min(batch + BATCH_SIZE, universe.length), universe.length);
+    onProgress?.('Stage 2–6: Scanning tickers', Math.min(batch + BATCH_SIZE, universe.length), universe.length);
 
     // Brief pause between batches to be respectful to Yahoo
     if (batch + BATCH_SIZE < universe.length) {
@@ -527,7 +528,7 @@ export async function runFullScan(
     }
   }
 
-  onProgress?.('Ranking & sorting', universe.length, universe.length);
+  onProgress?.('Stage 7: Ranking & sorting', universe.length, universe.length);
 
   // Sort: triggered first → READY → WATCH → FAR/failed, then by rank score
   const statusOrder: Record<string, number> = { READY: 0, WATCH: 1, WAIT_PULLBACK: 1, COOLDOWN: 2, EARNINGS_BLOCK: 2, FAR: 3 };
