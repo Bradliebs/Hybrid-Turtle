@@ -48,7 +48,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (report.errors.length > 0 && report.filledOrders === 0) {
-      return NextResponse.json({ ok: false, report }, { status: 502 });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: { code: 'IMPORT_FAILED', message: report.errors.join('; ') },
+          report,
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({ ok: true, report });

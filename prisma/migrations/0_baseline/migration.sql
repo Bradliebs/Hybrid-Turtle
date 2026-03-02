@@ -222,17 +222,6 @@ CREATE TABLE "TradeLog" (
     "breadthRestricted" BOOLEAN NOT NULL DEFAULT false,
     "antiChaseTriggered" BOOLEAN NOT NULL DEFAULT false,
     "tags" TEXT,
-    "t212OrderId" TEXT,
-    "t212Ticker" TEXT,
-    "fillPrice" REAL,
-    "fillQuantity" REAL,
-    "fillTimestamp" DATETIME,
-    "fxRateAtFill" REAL,
-    "netValueGbp" REAL,
-    "realisedPnlT212" REAL,
-    "initiatedFrom" TEXT,
-    "importedFromT212" BOOLEAN NOT NULL DEFAULT false,
-    "importedAt" DATETIME,
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "TradeLog_positionId_fkey" FOREIGN KEY ("positionId") REFERENCES "Position" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
@@ -453,9 +442,6 @@ CREATE INDEX "TradeLog_ticker_idx" ON "TradeLog"("ticker");
 
 -- CreateIndex
 CREATE INDEX "TradeLog_decision_idx" ON "TradeLog"("decision");
-
--- CreateIndex
-CREATE UNIQUE INDEX "TradeLog_t212OrderId_key" ON "TradeLog"("t212OrderId");
 
 -- CreateIndex
 CREATE INDEX "EquitySnapshot_userId_idx" ON "EquitySnapshot"("userId");

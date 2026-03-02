@@ -482,11 +482,29 @@ export async function importT212History(options: ImportOptions): Promise<ImportR
     return report;
   }
 
-  // 2. Fetch orders from requested account(s)
-  const allOrders: OrderWithAccount[] = [];
-
+  // Validate that requested account(s) actually have credentials
   const investCreds = getCredentialsForAccount(user, 'invest');
   const isaCreds = getCredentialsForAccount(user, 'isa');
+
+  if (options.accountType === 'isa' && !isaCreds) {
+    report.errors.push(
+      'ISA account not connected. Go to Settings → Trading 212 and add your ISA API key first.'
+    );
+    return report;
+  }
+  if (options.accountType === 'invest' && !investCreds) {
+    report.errors.push(
+      'Invest account not connected. Go to Settings → Trading 212 and add your Invest API key first.'
+    );
+    return report;
+  }
+  if (options.accountType === 'both' && !investCreds && !isaCreds) {
+    report.errors.push('No T212 credentials configured for either account');
+    return report;
+  }
+
+  // 2. Fetch orders from requested account(s)
+  const allOrders: OrderWithAccount[] = [];
 
   if ((options.accountType === 'invest' || options.accountType === 'both') && investCreds) {
     try {

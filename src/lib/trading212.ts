@@ -84,6 +84,52 @@ export interface T212HistoricalOrderFill {
   };
 }
 
+/** Raw T212 API response shape for each history item: { order, fill } */
+interface T212RawHistoryItem {
+  order: {
+    id: number;
+    ticker: string;
+    type: string;
+    strategy?: string;
+    side?: 'BUY' | 'SELL';
+    status: string;
+    limitPrice?: number;
+    stopPrice?: number;
+    quantity?: number;
+    filledQuantity?: number;
+    value?: number;
+    filledValue?: number;
+    currency?: string;
+    extendedHours?: boolean;
+    initiatedFrom?: string;
+    createdAt: string;
+    instrument?: {
+      ticker: string;
+      name: string;
+      isin: string;
+      currency: string;
+    };
+  };
+  fill?: {
+    id: number;
+    quantity: number;
+    price: number;
+    type: string;
+    tradingMethod?: string;
+    filledAt: string;
+    walletImpact?: {
+      currency?: string;
+      netValue?: number;
+      realisedProfitLoss?: number;
+      fxRate?: number;
+    };
+  };
+}
+
+/**
+ * Flattened historical order — produced by getOrderHistory() from T212 raw response.
+ * This is the format consumed by the importer.
+ */
 export interface T212HistoricalOrder {
   id: number;
   ticker: string;
@@ -97,7 +143,6 @@ export interface T212HistoricalOrder {
   filledValue: number;
   dateCreated: string;
   dateExecuted?: string;
-  dateModified?: string;
   initiatedFrom?: string;
   fills?: T212HistoricalOrderFill[];
 }
@@ -268,15 +313,71 @@ export class Trading212Client {
 
   // ---- Historical Orders (paginated) ----
 
-  /** Fetch all historical orders with automatic pagination */
+  /**
+   * Fetch all historical orders with automatic pagination.
+   * T212 API returns { order, fill } pairs — we flatten them into T212HistoricalOrder
+   * for the importer to consume.
+   */
   async getOrderHistory(limit: number = 50): Promise<T212HistoricalOrder[]> {
     const allOrders: T212HistoricalOrder[] = [];
     let nextPath: string | null = `/equity/history/orders?limit=${limit}`;
 
     while (nextPath) {
-      const page: T212PaginatedResponse<T212HistoricalOrder> = await this.request(nextPath);
-      allOrders.push(...page.items);
-      nextPath = page.nextPagePath;
+      const page: T212PaginatedResponse<T212RawHistoryItem> = await this.request(nextPath);
+
+      for (const item of page.items) {
+        const o = item.order;
+        const f = item.fill;
+
+        // Flatten the { order, fill } pair into a single T212HistoricalOrder
+        const filledQty = f
+          ? Math.abs(f.quantity)
+          : Math.abs(o.filledQuantity ?? 0);
+        const filledVal = f
+          ? Math.abs(f.quantity) * f.price
+          : (o.filledValue ?? 0);
+
+        const flat: T212HistoricalOrder = {
+          id: o.id,
+          ticker: o.ticker,
+          type: o.type,
+          side: o.side,
+          status: o.status,
+          limitPrice: o.limitPrice,
+          stopPrice: o.stopPrice,
+          quantity: Math.abs(o.quantity ?? filledQty),
+          filledQuantity: filledQty,
+          filledValue: filledVal,
+          dateCreated: o.createdAt,
+          dateExecuted: f?.filledAt,
+          initiatedFrom: o.initiatedFrom,
+        };
+
+        // Attach fill data in the fills[] format the importer expects
+        if (f) {
+          flat.fills = [{
+            price: f.price,
+            quantity: Math.abs(f.quantity),
+            filledAt: f.filledAt,
+            walletImpact: f.walletImpact ? {
+              fxRate: f.walletImpact.fxRate,
+              netValue: f.walletImpact.netValue,
+              realisedProfitLoss: f.walletImpact.realisedProfitLoss,
+            } : undefined,
+          }];
+        }
+
+        allOrders.push(flat);
+      }
+
+      // T212 nextPagePath includes /api/v0/ prefix — strip it to avoid doubling
+      // since baseUrl already contains /api/v0
+      const raw = page.nextPagePath;
+      if (raw) {
+        nextPath = raw.startsWith('/api/v0') ? raw.replace('/api/v0', '') : raw;
+      } else {
+        nextPath = null;
+      }
     }
 
     return allOrders;

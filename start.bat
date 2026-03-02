@@ -74,6 +74,32 @@ if not exist "prisma\dev.db" (
     )
 )
 
+:: Pre-flight: verify critical source files exist
+if not exist "src\components\shared\Navbar.tsx" (
+    echo.
+    echo  !! Critical file missing: src\components\shared\Navbar.tsx
+    echo  !! The installation appears incomplete.
+    echo  !! Please re-extract the HybridTurtle zip and run install.bat again.
+    pause
+    exit /b 1
+)
+if not exist "src\app\layout.tsx" (
+    echo.
+    echo  !! Critical file missing: src\app\layout.tsx
+    echo  !! The installation appears incomplete.
+    echo  !! Please re-extract the HybridTurtle zip and run install.bat again.
+    pause
+    exit /b 1
+)
+if not exist "tsconfig.json" (
+    echo.
+    echo  !! Critical file missing: tsconfig.json
+    echo  !! The installation appears incomplete.
+    echo  !! Please re-extract the HybridTurtle zip and run install.bat again.
+    pause
+    exit /b 1
+)
+
 :: Kill any stale node processes on port 3000
 echo  Checking for stale processes...
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1

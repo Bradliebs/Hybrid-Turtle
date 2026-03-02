@@ -169,6 +169,25 @@ if errorlevel 1 (
 )
 >> "%LOG%" echo [%date% %time%] Database setup OK
 
+:: ── Step 5b: Verify build compiles ──
+echo.
+echo         Verifying dashboard compiles correctly...
+call npx next build >> "%LOG%" 2>&1
+if errorlevel 1 (
+    echo.
+    echo  !! Build verification failed.
+    echo  !! This usually means some files are missing from the install.
+    echo  !! Try these steps:
+    echo  !!   1. Re-extract the HybridTurtle zip to a fresh folder
+    echo  !!   2. Make sure you extract ALL files ^(not just some^)
+    echo  !!   3. Run install.bat again from the new folder
+    echo  !! See install.log for the specific error.
+    >> "%LOG%" echo [%date% %time%] FAIL: next build verification
+    goto :fail
+)
+echo         Build OK
+>> "%LOG%" echo [%date% %time%] Build verification OK
+
 :: ── Step 6: Create desktop shortcut ──
 echo  [6/7] Creating desktop shortcut...
 set "SCRIPT_DIR=%~dp0"
