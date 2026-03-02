@@ -5,10 +5,12 @@
  * Consumed by: app router (navigation)
  * Consumes: /api/journal, /api/journal/[positionId]/entry, /api/journal/[positionId]/close
  * Risk-sensitive: NO — journal notes only
- * Last modified: 2026-03-01
+ * Last modified: 2026-03-02
+ * Notes: Supports ?position=xxx query param to auto-open close note modal
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Navbar from '@/components/shared/Navbar';
 import { apiRequest } from '@/lib/api-client';
 import { formatDate, cn } from '@/lib/utils';
@@ -233,10 +235,14 @@ function daysHeld(entryDate: string, exitDate: string | null): number {
 }
 
 export default function JournalPage() {
+  const searchParams = useSearchParams();
+  const targetPositionId = searchParams.get('position');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingEntry, setEditingEntry] = useState<string | null>(null);
   const [editingClose, setEditingClose] = useState<string | null>(null);
+  const autoOpenedRef = useRef(false);
+  const targetRef = useRef<HTMLDivElement | null>(null);
 
   const fetchEntries = useCallback(async () => {
     try {
@@ -252,6 +258,21 @@ export default function JournalPage() {
   useEffect(() => {
     fetchEntries();
   }, [fetchEntries]);
+
+  // Auto-open close note modal when ?position=xxx is in URL
+  useEffect(() => {
+    if (!loading && targetPositionId && !autoOpenedRef.current && entries.length > 0) {
+      const match = entries.find((e) => e.positionId === targetPositionId);
+      if (match) {
+        autoOpenedRef.current = true;
+        setEditingClose(targetPositionId);
+        // Scroll to the target entry card
+        setTimeout(() => {
+          targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+    }
+  }, [loading, targetPositionId, entries]);
 
   const handleSaved = () => {
     setEditingEntry(null);
@@ -290,8 +311,14 @@ export default function JournalPage() {
               const isClosed = entry.status === 'CLOSED';
 
               return (
-                <div key={entry.id} className="card-surface p-5">
-                  {/* Header */}
+                <div
+                  key={entry.id}
+                  ref={entry.positionId === targetPositionId ? targetRef : undefined}
+                  className={cn(
+                    'card-surface p-5',
+                    entry.positionId === targetPositionId && 'ring-1 ring-primary/40'
+                  )}
+                >                  {/* Header */}
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div>
                       <h3 className="text-base font-semibold text-foreground">
