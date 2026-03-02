@@ -11,6 +11,7 @@ const settingsPutSchema = z.object({
   userId: z.string().trim().min(1).optional(),
   riskProfile: z.enum(['CONSERVATIVE', 'BALANCED', 'SMALL_ACCOUNT', 'AGGRESSIVE']).optional(),
   equity: z.number().positive('Equity must be positive').optional(),
+  startingEquityOverride: z.number().positive('Starting equity must be positive').nullable().optional(),
   marketDataProvider: z.enum(['yahoo', 'eodhd']).optional(),
   eodhApiKey: z.string().nullable().optional(),
   // Gap guard settings
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
       select: {
         riskProfile: true,
         equity: true,
+        startingEquityOverride: true,
         marketDataProvider: true,
         eodhApiKey: true,
         // Gap Guard config
@@ -111,7 +113,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { riskProfile, equity, marketDataProvider, eodhApiKey,
+    const { riskProfile, equity, startingEquityOverride, marketDataProvider, eodhApiKey,
       gapGuardMode, gapGuardWeekendATR, gapGuardWeekendPct, gapGuardDailyATR, gapGuardDailyPct,
     } = parsed.data;
     const id = parsed.data.userId || 'default-user';
@@ -119,6 +121,7 @@ export async function PUT(request: NextRequest) {
     const data: Record<string, unknown> = {};
     if (riskProfile) data.riskProfile = riskProfile;
     if (equity !== undefined) data.equity = equity;
+    if (startingEquityOverride !== undefined) data.startingEquityOverride = startingEquityOverride;
     if (marketDataProvider) data.marketDataProvider = marketDataProvider;
     // Only update eodhApiKey if explicitly provided (not the masked version)
     if (eodhApiKey !== undefined && eodhApiKey !== null && !eodhApiKey.startsWith('****')) {

@@ -36,6 +36,7 @@ const DEFAULT_USER_ID = 'default-user';
 export default function SettingsPage() {
   const { riskProfile, setRiskProfile, equity, setEquity } = useStore();
   const [equityInput, setEquityInput] = useState(equity.toString());
+  const [startingEquityOverride, setStartingEquityOverride] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
   const [telegramChatId, setTelegramChatId] = useState('');
   const [showToken, setShowToken] = useState(false);
@@ -137,6 +138,7 @@ export default function SettingsPage() {
           marketDataProvider?: string;
           eodhApiKey?: string | null;
           eodhApiKeySet?: boolean;
+          startingEquityOverride?: number | null;
           // T212 Invest
           t212ApiKey?: string | null;
           t212ApiSecret?: string | null;
@@ -161,6 +163,9 @@ export default function SettingsPage() {
         }>(`/api/settings?userId=${DEFAULT_USER_ID}`);
         if (data.marketDataProvider === 'eodhd') setMarketDataProvider('eodhd');
         if (data.eodhApiKeySet) setEodhApiKeySet(true);
+        if (data.startingEquityOverride != null) {
+          setStartingEquityOverride(data.startingEquityOverride.toString());
+        }
 
         // Restore gap guard config
         if (data.gapGuardMode === 'ALL' || data.gapGuardMode === 'MONDAY_ONLY') {
@@ -260,6 +265,9 @@ export default function SettingsPage() {
           userId: DEFAULT_USER_ID,
           riskProfile,
           equity: !isNaN(newEquity) && newEquity > 0 ? newEquity : equity,
+          startingEquityOverride: startingEquityOverride.trim()
+            ? parseFloat(startingEquityOverride) || null
+            : null,
           marketDataProvider,
           // Only send eodhApiKey if user entered a new one (not the masked placeholder)
           ...(eodhApiKey && !eodhApiKey.startsWith('****') ? { eodhApiKey } : {}),
@@ -496,6 +504,23 @@ export default function SettingsPage() {
                 Max positions: {profile.maxPositions} · Max total risk: {formatPercent(profile.maxOpenRisk)}
               </p>
             </div>
+          </div>
+          {/* Starting equity override */}
+          <div className="mt-4 pt-4 border-t border-border/30">
+            <label className="block text-sm text-muted-foreground mb-1">Starting equity override</label>
+            <div className="relative max-w-xs">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">£</span>
+              <input
+                type="number"
+                value={startingEquityOverride}
+                onChange={(e) => setStartingEquityOverride(e.target.value)}
+                placeholder="Leave blank to use first snapshot"
+                className="input-field pl-7 w-full"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Used for performance calculations if no snapshot data exists from when you started. Leave blank to use the earliest nightly snapshot.
+            </p>
           </div>
         </div>
 

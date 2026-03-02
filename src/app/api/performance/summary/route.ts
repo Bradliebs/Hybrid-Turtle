@@ -22,7 +22,16 @@ export async function GET() {
       select: { equity: true, capturedAt: true },
     });
 
-    const startingEquity = snapshots.length > 0 ? snapshots[0].equity : null;
+    // Use startingEquityOverride from user settings as fallback
+    // when no snapshots exist (e.g. account started before nightly runs)
+    const user = await prisma.user.findUnique({
+      where: { id: 'default-user' },
+      select: { startingEquityOverride: true },
+    });
+
+    const startingEquity = snapshots.length > 0
+      ? snapshots[0].equity
+      : user?.startingEquityOverride ?? null;
     const currentEquity = snapshots.length > 0 ? snapshots[snapshots.length - 1].equity : null;
     const totalGainLoss =
       startingEquity != null && currentEquity != null
