@@ -36,7 +36,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Regenerate Prisma client
+:: Regenerate Prisma client and apply migrations
 echo  [3/4] Updating database schema...
 call npx prisma generate
 if %errorlevel% neq 0 (
@@ -44,11 +44,15 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-call npx prisma db push
+call npx prisma migrate deploy
 if %errorlevel% neq 0 (
-    echo  !! Database push failed.
-    pause
-    exit /b 1
+    echo  !! Migration deploy failed, falling back to db push...
+    call npx prisma db push
+    if %errorlevel% neq 0 (
+        echo  !! Database push also failed.
+        pause
+        exit /b 1
+    )
 )
 
 :: Re-seed (upserts, so safe to re-run)
