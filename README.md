@@ -217,7 +217,7 @@ npm run audit:harness
 
 # Prisma workflow
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy     # Apply pending schema migrations
 npx prisma db seed
 npm run db:studio         # launch Prisma Studio GUI
 ```

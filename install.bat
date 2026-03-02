@@ -156,14 +156,9 @@ if errorlevel 1 (
 
 call npx prisma migrate deploy >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo         Migration deploy failed, falling back to db push...
-    >> "%LOG%" echo [%date% %time%] WARN: migrate deploy failed, trying db push
-    call npx prisma db push >> "%LOG%" 2>&1
-    if errorlevel 1 (
-        echo  !! Database setup failed. See install.log for details.
-        >> "%LOG%" echo [%date% %time%] FAIL: prisma db push
-        goto :fail
-    )
+    echo  !! Database migration failed. See install.log for details.
+    >> "%LOG%" echo [%date% %time%] FAIL: prisma migrate deploy
+    goto :fail
 )
 
 :: Seed the database with stock universe (idempotent — safe to re-run)

@@ -167,6 +167,18 @@ HEDGE positions excluded from open risk and position counting.
 - Equity snapshots are **rate-limited to once per 6 hours** — do not remove this guard
 - `dev.db` is local only — no cloud sync, no concurrent access assumptions
 
+### Database Schema Changes (MANDATORY)
+- **NEVER** use `prisma db push` for schema changes
+- **ALWAYS** use: `npx prisma migrate dev --name description`
+- After any schema change:
+  - Commit the migration file with the code change
+  - The migration file IS the schema change record
+  - Other machines run: `npx prisma migrate deploy`
+- `prisma migrate deploy` is safe — it never resets, never prompts, just applies pending migrations
+- On a fresh machine with no `dev.db`: `npx prisma migrate deploy` creates the DB and applies all migrations
+- The `start.bat` and `nightly-task.bat` scripts auto-run `prisma migrate deploy` before starting
+- The dashboard shows a warning banner if pending migrations are detected (`/api/db-status`)
+
 ### Position Sizing
 - Always use `floorShares()` on share count — never `Math.round()` or `Math.ceil()`, never raw `Math.floor()`
 - FX conversion (GBP↔USD↔EUR) must be applied **before** the sizing formula, not after

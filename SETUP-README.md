@@ -121,9 +121,9 @@ npm run dev
 npm run build && npm start
 
 # Database management
-npx prisma studio      # Visual database browser
-npx prisma db push     # Apply schema changes
-npx prisma db seed     # Re-seed stock universe
+npx prisma studio              # Visual database browser
+npx prisma migrate deploy      # Apply pending schema migrations
+npx prisma db seed             # Re-seed stock universe
 ```
 
 ---

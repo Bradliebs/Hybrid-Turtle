@@ -54,11 +54,24 @@ if not exist "node_modules\.prisma" (
     )
 )
 
-:: Ensure database exists
+:: Ensure database exists and schema is up to date
 if not exist "prisma\dev.db" (
-    echo  Setting up database...
-    call npx prisma db push
+    echo  Setting up database for the first time...
+    call npx prisma migrate deploy
+    if %errorlevel% neq 0 (
+        echo  !! Database migration failed.
+        pause
+        exit /b 1
+    )
     call npx prisma db seed 2>nul
+) else (
+    echo  Applying any pending migrations...
+    call npx prisma migrate deploy
+    if %errorlevel% neq 0 (
+        echo  !! Database migration failed.
+        pause
+        exit /b 1
+    )
 )
 
 :: Kill any stale node processes on port 3000

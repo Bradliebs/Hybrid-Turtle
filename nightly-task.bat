@@ -35,6 +35,9 @@ if not exist ".env" (
 echo  [%date% %time%] Starting nightly process...
 echo.
 
+:: Apply any pending database migrations before running
+call npx prisma migrate deploy >nul 2>&1
+
 :: Log start timestamp
 echo [%date% %time%] Starting nightly process... >> nightly.log
 

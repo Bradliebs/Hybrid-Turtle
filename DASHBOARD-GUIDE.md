@@ -37,9 +37,9 @@
 
 ```bash
 cd hybridturtle
-npm install                   # Install dependencies
-npx prisma generate           # Generate Prisma client
-npx prisma db push             # Create database tables
+npm install                    # Install dependencies
+npx prisma generate            # Generate Prisma client
+npx prisma migrate deploy      # Create/update database tables
 npx prisma db seed             # Import stock universe from Planning/ CSVs
 npm run dev                    # Start dashboard at http://localhost:3000
 ```
@@ -864,7 +864,7 @@ All modules run via `GET /api/modules?userId=X` and report to the Dashboard's Mo
 
 ## Quick-Start Checklist
 
-- [ ] Run `npm install` and `npx prisma db push`
+- [ ] Run `npm install` and `npx prisma migrate deploy`
 - [ ] Seed the stock universe: `npx prisma db seed`
 - [ ] Start the dashboard: `npm run dev`
 - [ ] Go to `/settings` and set your equity + risk profile

@@ -46,13 +46,9 @@ if %errorlevel% neq 0 (
 )
 call npx prisma migrate deploy
 if %errorlevel% neq 0 (
-    echo  !! Migration deploy failed, falling back to db push...
-    call npx prisma db push
-    if %errorlevel% neq 0 (
-        echo  !! Database push also failed.
-        pause
-        exit /b 1
-    )
+    echo  !! Database migration failed.
+    pause
+    exit /b 1
 )
 
 :: Re-seed (upserts, so safe to re-run)

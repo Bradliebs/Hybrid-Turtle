@@ -16,6 +16,7 @@ import RiskModulesWidget from '@/components/dashboard/RiskModulesWidget';
 import PyramidAlertsWidget from '@/components/dashboard/PyramidAlertsWidget';
 import HedgeCard from '@/components/dashboard/HedgeCard';
 import ScoringGuideWidget from '@/components/dashboard/ScoringGuideWidget';
+import MigrationBanner from '@/components/dashboard/MigrationBanner';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { useStore } from '@/store/useStore';
 import { formatDate } from '@/lib/utils';
@@ -144,6 +145,9 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">Loading dashboard…</p>
         </div>
       )}
+
+      {/* Database Migration Banner */}
+      {!initialLoading && <MigrationBanner />}
 
       {/* RED Health Warning Banner */}
       {!initialLoading && healthStatus === 'RED' && !healthOverlayDismissed && (

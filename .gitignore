@@ -39,6 +39,9 @@ nightly.log
 *.db
 *.db-journal
 
+# script logs (may contain account data)
+scripts/*.log
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
