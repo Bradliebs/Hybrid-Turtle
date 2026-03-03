@@ -1,15 +1,16 @@
 /**
  * DEPENDENCIES
  * Consumed by: Dashboard migration banner (client-side fetch)
- * Consumes: prisma/migrations/ directory
+ * Consumes: prisma/migrations/ directory, scripts/auto-migrate.mjs
  * Risk-sensitive: NO
- * Last modified: 2026-03-02
- * Notes: Checks whether there are pending Prisma migrations that haven't been applied
+ * Last modified: 2026-03-03
+ * Notes: GET checks migration status, POST triggers auto-migrate to fix issues
  */
 
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,51 @@ export async function GET() {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
       { status: 'error', message: `Failed to check migration status: ${message}` },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/db-status — Run auto-migrate to fix pending/failed migrations
+ * Called by the "Fix Now" button in the MigrationBanner component
+ */
+export async function POST() {
+  try {
+    const scriptPath = path.join(process.cwd(), 'scripts', 'auto-migrate.mjs');
+    
+    // Check script exists
+    try {
+      await fs.access(scriptPath);
+    } catch {
+      return NextResponse.json(
+        { success: false, message: 'Auto-migrate script not found. Run: npx prisma migrate deploy' },
+        { status: 500 }
+      );
+    }
+
+    // Run the auto-migrate script
+    const output = execSync('node scripts/auto-migrate.mjs', {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      timeout: 120_000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Migrations applied successfully. Refresh the page.',
+      output: output.trim(),
+    });
+  } catch (err) {
+    const error = err as { stdout?: string; stderr?: string; message?: string };
+    const output = ((error.stdout || '') + '\n' + (error.stderr || '')).trim();
+    return NextResponse.json(
+      {
+        success: false,
+        message: 'Auto-migrate failed. You may need to restart the app.',
+        output,
+      },
       { status: 500 }
     );
   }

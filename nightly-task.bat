@@ -36,7 +36,7 @@ echo  [%date% %time%] Starting nightly process...
 echo.
 
 :: Apply any pending database migrations before running
-call npx prisma migrate deploy >nul 2>&1
+call node scripts/auto-migrate.mjs --quiet
 
 :: Log start timestamp
 echo [%date% %time%] Starting nightly process... >> nightly.log

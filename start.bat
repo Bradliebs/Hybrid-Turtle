@@ -55,23 +55,24 @@ if not exist "node_modules\.prisma" (
 )
 
 :: Ensure database exists and schema is up to date
-if not exist "prisma\dev.db" (
+set FIRST_RUN=0
+if not exist "prisma\dev.db" set FIRST_RUN=1
+
+if %FIRST_RUN%==1 (
     echo  Setting up database for the first time...
-    call npx prisma migrate deploy
-    if %errorlevel% neq 0 (
-        echo  !! Database migration failed.
-        pause
-        exit /b 1
-    )
-    call npx prisma db seed 2>nul
 ) else (
-    echo  Applying any pending migrations...
-    call npx prisma migrate deploy
-    if %errorlevel% neq 0 (
-        echo  !! Database migration failed.
-        pause
-        exit /b 1
-    )
+    echo  Checking database migrations...
+)
+
+call node scripts/auto-migrate.mjs
+if %errorlevel% neq 0 (
+    echo  !! Database migration failed.
+    pause
+    exit /b 1
+)
+
+if %FIRST_RUN%==1 (
+    call npx prisma db seed 2>nul
 )
 
 :: Pre-flight: verify critical source files exist

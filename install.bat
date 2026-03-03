@@ -154,10 +154,10 @@ if errorlevel 1 (
     goto :fail
 )
 
-call npx prisma migrate deploy >> "%LOG%" 2>&1
+call node scripts/auto-migrate.mjs >> "%LOG%" 2>&1
 if errorlevel 1 (
     echo  !! Database migration failed. See install.log for details.
-    >> "%LOG%" echo [%date% %time%] FAIL: prisma migrate deploy
+    >> "%LOG%" echo [%date% %time%] FAIL: auto-migrate
     goto :fail
 )
 
