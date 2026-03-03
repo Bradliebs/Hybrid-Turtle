@@ -38,6 +38,8 @@ nightly.log
 # database files
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # script logs (may contain account data)
 scripts/*.log
