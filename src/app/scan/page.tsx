@@ -19,7 +19,7 @@ import RegimeBadge from '@/components/shared/RegimeBadge';
 import { cn, formatPrice } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
-import { Search, Play, Filter, Check, X, AlertTriangle, BarChart3, GitMerge, RefreshCw } from 'lucide-react';
+import { Search, Play, Filter, Check, X, AlertTriangle, BarChart3, GitMerge, RefreshCw, XCircle } from 'lucide-react';
 
 // Tab definitions
 const TABS = [
@@ -120,6 +120,7 @@ function ScanPageInner() {
   const [livePricesFetchedAt, setLivePricesFetchedAt] = useState<string | null>(null);
   const [isLoadingLive, setIsLoadingLive] = useState(false);
   const { marketRegime, riskProfile, equity } = useStore();
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const stages = [
     { num: 1, label: 'Universe' },
@@ -290,8 +291,9 @@ function ScanPageInner() {
       setCachedAt(data.cachedAt || new Date().toISOString());
       // Persist to sessionStorage for instant recovery on navigation
       try { sessionStorage.setItem('scanResult', JSON.stringify(data)); } catch {}
-    } catch {
-      // Silent fail
+      setFetchError(null);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Scan failed. Check your connection and try again.');
     } finally {
       clearInterval(pollInterval);
       setScanProgress(null);
@@ -377,6 +379,20 @@ function ScanPageInner() {
         </div>
 
         {/* Tab Bar */}
+        {/* Fetch Error Banner */}
+        {fetchError && (
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+            <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-300 flex-1">{fetchError}</p>
+            <button
+              onClick={() => { setFetchError(null); runScan(); }}
+              className="px-3 py-1 text-xs font-medium rounded bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         <div className="card-surface p-1 flex gap-1">
           {TABS.map((tab) => {
             const TabIcon = tab.icon;

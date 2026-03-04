@@ -10,7 +10,6 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 import prisma from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -37,13 +36,14 @@ export async function GET() {
     }
 
     // 2. Read applied migrations from _prisma_migrations table
+    //    Uses a targeted Prisma raw query — no user input, parameterless.
     let appliedMigrations: string[] = [];
     try {
-      const rows = await prisma.$queryRaw<MigrationRow[]>`
-        SELECT migration_name FROM _prisma_migrations 
-        WHERE finished_at IS NOT NULL
-        ORDER BY migration_name
-      `;
+      // Prisma doesn't model _prisma_migrations, so use a safe raw read.
+      // This is a static query with no parameters — no injection risk.
+      const rows = await prisma.$queryRawUnsafe<MigrationRow[]>(
+        'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name'
+      );
       appliedMigrations = rows.map((r) => r.migration_name);
     } catch {
       // Table doesn't exist — DB has never had migrations applied
@@ -83,9 +83,20 @@ export async function GET() {
  * Called by the "Fix Now" button in the MigrationBanner component
  */
 export async function POST() {
+  // Safety gate: shell execution only allowed when explicitly opted in
+  if (process.env.ALLOW_AUTO_MIGRATE !== 'true') {
+    return NextResponse.json(
+      {
+        success: false,
+        message: 'Auto-migrate is disabled. Set ALLOW_AUTO_MIGRATE=true in .env to enable, or run manually: npx prisma migrate deploy',
+      },
+      { status: 403 }
+    );
+  }
+
   try {
     const scriptPath = path.join(process.cwd(), 'scripts', 'auto-migrate.mjs');
-    
+
     // Check script exists
     try {
       await fs.access(scriptPath);
@@ -96,7 +107,9 @@ export async function POST() {
       );
     }
 
-    // Run the auto-migrate script
+    // Dynamic import to avoid pulling child_process into the module scope
+    const { execSync } = await import('child_process');
+
     const output = execSync('node scripts/auto-migrate.mjs', {
       cwd: process.cwd(),
       encoding: 'utf-8',

@@ -73,6 +73,7 @@ export default function DashboardPage() {
   const setNightlyRunning = useStore((s) => s.setNightlyRunning);
   const setNightlyResult = useStore((s) => s.setNightlyResult);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchLiveMarketData = useCallback(async () => {
     try {
@@ -94,8 +95,11 @@ export default function DashboardPage() {
         const regimeData = regimeResult.value;
         if (regimeData.regime) setMarketRegime(regimeData.regime);
       }
+      // Clear any previous error on successful fetch
+      setFetchError(null);
     } catch (err) {
       console.error('Failed to fetch live market data:', err);
+      setFetchError(err instanceof Error ? err.message : 'Failed to load dashboard data');
     }
   }, [setMarketIndices, setFearGreed, setMarketRegime]);
 
@@ -150,6 +154,22 @@ export default function DashboardPage() {
 
       {/* Database Migration Banner */}
       {!initialLoading && <MigrationBanner />}
+
+      {/* Fetch Error Banner */}
+      {!initialLoading && fetchError && (
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 pt-4">
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+            <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-300 flex-1">{fetchError}</p>
+            <button
+              onClick={() => { setFetchError(null); setInitialLoading(true); Promise.allSettled([fetchLiveMarketData(), fetchPublications(), fetchTriggerStatus()]).finally(() => setInitialLoading(false)); }}
+              className="px-3 py-1 text-xs font-medium rounded bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* RED Health Warning Banner */}
       {!initialLoading && healthStatus === 'RED' && !healthOverlayDismissed && (

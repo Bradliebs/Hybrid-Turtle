@@ -9,6 +9,7 @@ const REGIME_CONFIG = {
   BULLISH: { color: 'text-profit', bg: 'bg-profit/10', icon: TrendingUp },
   BEARISH: { color: 'text-loss', bg: 'bg-loss/10', icon: TrendingDown },
   SIDEWAYS: { color: 'text-warning', bg: 'bg-warning/10', icon: Minus },
+  NEUTRAL: { color: 'text-warning', bg: 'bg-warning/10', icon: Minus },
 } as const;
 
 export default function DualRegimeWidget() {

@@ -127,7 +127,7 @@ model StopHistory {
   level      String
   reason     String
   createdAt  DateTime @default(now())
-  position   Position @relation(fields: [positionId], references: [id])
+  position   Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
 
   @@index([positionId])
 }
@@ -265,7 +265,7 @@ model TradeLog {
   importedAt         DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
-  position           Position? @relation(fields: [positionId], references: [id])
+  position           Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
   user               User      @relation(fields: [userId], references: [id])
 
   @@index([userId, tradeDate(sort: Desc)])
@@ -453,7 +453,7 @@ model TradeJournal {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   positionId      String    @unique
-  position        Position  @relation(fields: [positionId], references: [id])
+  position        Position  @relation(fields: [positionId], references: [id], onDelete: Cascade)
   entryNote       String?
   entryConfidence Int?
   closeNote       String?

@@ -8,6 +8,8 @@ import { buildInitialRiskFields } from '@/lib/risk-fields';
 import { validateRiskGates } from '@/lib/risk-gates';
 import { apiError } from '@/lib/api-response';
 import { logEVRecord } from '@/lib/ev-tracker';
+import { clearScanCache } from '@/lib/scan-cache';
+import { clearModulesCache } from '@/lib/modules-cache';
 import { getCurrentWeeklyPhase } from '@/types';
 import { OPPORTUNISTIC_GATES } from '@/types';
 import { getCurrentExecutionMode } from '@/lib/execution-mode';
@@ -465,6 +467,10 @@ export async function POST(request: NextRequest) {
       return pos;
     });
 
+    // Invalidate scan and module caches so stale candidates are not shown
+    clearScanCache();
+    clearModulesCache();
+
     return NextResponse.json(position, { status: 201 });
   } catch (error) {
     console.error('Create position error:', error);
@@ -607,6 +613,10 @@ export async function PATCH(request: NextRequest) {
       rMultiple: evRMultiple,
       closedAt: updated.exitDate ?? new Date(),
     }).catch(() => { /* already logged inside logEVRecord */ });
+
+    // Invalidate scan and module caches so risk gates reflect the closure
+    clearScanCache();
+    clearModulesCache();
 
     return NextResponse.json({ success: true, position: updated });
   } catch (error) {

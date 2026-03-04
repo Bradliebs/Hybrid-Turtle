@@ -20,6 +20,7 @@ import {
   ChevronDown,
   ChevronUp,
   HardDrive,
+  RotateCcw,
 } from 'lucide-react';
 
 interface BackupFile {
@@ -57,6 +58,8 @@ export default function BackupPanel() {
   const [backing, setBacking] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [listExpanded, setListExpanded] = useState(false);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
 
   const fetchBackups = useCallback(async () => {
     try {
@@ -94,6 +97,31 @@ export default function BackupPanel() {
   };
 
   const latest = backups.length > 0 ? backups[0] : null;
+
+  const handleRestore = async (filename: string) => {
+    setRestoring(filename);
+    setConfirmRestore(null);
+    setResult(null);
+    try {
+      const data = await apiRequest<{ success: boolean; restoredFrom: string; preRestoreBackup: string | null; error: string | null; message?: string }>(
+        '/api/backup/restore',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename }) }
+      );
+      if (data.success) {
+        setResult({
+          ok: true,
+          message: `Restored from ${data.restoredFrom}. ${data.preRestoreBackup ? `Safety backup saved as ${data.preRestoreBackup}. ` : ''}Restart the app for full effect.`,
+        });
+      } else {
+        setResult({ ok: false, message: data.error ?? 'Restore failed' });
+      }
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : 'Restore failed' });
+    } finally {
+      setRestoring(null);
+      fetchBackups();
+    }
+  };
 
   return (
     <div className="card-surface p-6">
@@ -189,7 +217,40 @@ export default function BackupPanel() {
                   className="flex items-center justify-between text-xs py-1.5 px-2 rounded bg-navy-800/50"
                 >
                   <span className="font-mono text-foreground">{b.filename}</span>
-                  <span className="text-muted-foreground">{formatBytes(b.sizeBytes)}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-muted-foreground">{formatBytes(b.sizeBytes)}</span>
+                    {confirmRestore === b.filename ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-warning">Restore this backup?</span>
+                        <button
+                          onClick={() => handleRestore(b.filename)}
+                          disabled={restoring !== null}
+                          className="px-2 py-0.5 text-[11px] font-medium rounded bg-warning/20 text-warning hover:bg-warning/30 transition-colors"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={() => setConfirmRestore(null)}
+                          className="px-2 py-0.5 text-[11px] font-medium rounded bg-navy-700 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmRestore(b.filename)}
+                        disabled={restoring !== null}
+                        className="flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-navy-700 text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+                      >
+                        {restoring === b.filename ? (
+                          <RefreshCw className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-3 h-3" />
+                        )}
+                        Restore
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

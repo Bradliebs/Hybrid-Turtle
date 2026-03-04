@@ -164,8 +164,22 @@ export type Sleeve = 'CORE' | 'HIGH_RISK' | 'ETF' | 'HEDGE';
 export type PositionStatus = 'OPEN' | 'CLOSED';
 /** Historical naming: LOCK_08R originally used a +0.8R formula. Actual formula is entry + 0.5 × initialRisk. Name kept for DB compatibility. */
 export type ProtectionLevel = 'INITIAL' | 'BREAKEVEN' | 'LOCK_08R' | 'LOCK_1R_TRAIL';
-export type MarketRegime = 'BULLISH' | 'SIDEWAYS' | 'BEARISH';
+export type MarketRegime = 'BULLISH' | 'SIDEWAYS' | 'BEARISH' | 'NEUTRAL';
 export type VolRegime = 'LOW_VOL' | 'NORMAL_VOL' | 'HIGH_VOL';
+
+/**
+ * Normalise a raw regime string from the DB or API into a canonical MarketRegime.
+ * 'NEUTRAL' (used as a DB default) is treated as 'SIDEWAYS' for logic/display.
+ * Unknown values also map to 'SIDEWAYS'.
+ */
+export function normaliseRegime(raw: string | null | undefined): MarketRegime {
+  if (!raw) return 'SIDEWAYS';
+  const upper = raw.toUpperCase();
+  if (upper === 'BULLISH') return 'BULLISH';
+  if (upper === 'BEARISH') return 'BEARISH';
+  if (upper === 'NEUTRAL' || upper === 'SIDEWAYS') return upper as MarketRegime;
+  return 'SIDEWAYS';
+}
 export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'COOLDOWN' | 'FAR' | 'EARNINGS_BLOCK';
 export type WeeklyPhase = 'PLANNING' | 'OBSERVATION' | 'EXECUTION' | 'MAINTENANCE';
 export type HealthStatus = 'GREEN' | 'YELLOW' | 'RED';

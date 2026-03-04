@@ -258,8 +258,8 @@ async function runNightlyProcess() {
             reason: rec.reason,
             currency: cur,
           });
-        } catch {
-          // Monotonic violation or other error — skip silently
+        } catch (err) {
+          console.warn(`  [nightly] Stop update skipped due to error: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } catch (error) {
@@ -282,8 +282,8 @@ async function runNightlyProcess() {
             reason: rec.reason,
             currency: rec.priceCurrency,
           });
-        } catch {
-          // Stop might violate monotonic rule — skip silently
+        } catch (err) {
+          console.warn(`  [nightly] Trailing stop update skipped due to error: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
     } catch (error) {
@@ -386,8 +386,8 @@ async function runNightlyProcess() {
             where: { id: f.positionId },
             data: { breakoutFailureDetectedAt: new Date() },
           });
-        } catch {
-          // Non-critical — flag best-effort
+        } catch (err) {
+          console.warn(`  [nightly] Breakout failure flag skipped due to error: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -452,8 +452,8 @@ async function runNightlyProcess() {
             const adxYesterday = calculateADX(bars.slice(1), 14).adx;
             laggardExtras.set(p.stock.ticker, { ma20, adxToday, adxYesterday });
           }
-        } catch {
-          // Non-critical — recovery exemption just won't activate for this ticker
+        } catch (err) {
+          console.warn(`  [nightly] Laggard extra data skipped due to error: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
@@ -731,7 +731,7 @@ async function runNightlyProcess() {
           if (bars.length >= 15) {
             atr = calculateATR(bars, 14);
           }
-        } catch { /* ATR unavailable */ }
+        } catch (err) { console.warn(`  [nightly] Pyramid ATR fetch skipped: ${err instanceof Error ? err.message : String(err)}`); }
 
         const pyramidCheck = canPyramid(
           currentPrice,
@@ -1106,7 +1106,7 @@ async function runNightlyProcess() {
           details: JSON.stringify({ error: (error as Error).message }),
         },
       });
-    } catch { /* ignore */ }
+    } catch (err) { console.warn(`  [nightly] Heartbeat write skipped: ${err instanceof Error ? err.message : String(err)}`); }
   } finally {
     // Safety net: if latest heartbeat is still RUNNING, mark as FAILED
     try {
@@ -1120,7 +1120,7 @@ async function runNightlyProcess() {
         });
         console.warn('  [!!!] RUNNING heartbeat found in finally — forced to FAILED');
       }
-    } catch { /* best-effort */ }
+    } catch (err) { console.warn(`  [nightly] Safety-net heartbeat skipped: ${err instanceof Error ? err.message : String(err)}`); }
     await prisma.$disconnect();
   }
 }

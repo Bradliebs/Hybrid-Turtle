@@ -37,6 +37,13 @@ const regimeConfig: Record<MarketRegime, {
     borderColor: 'border-loss/30',
     icon: TrendingDown,
   },
+  NEUTRAL: {
+    label: 'NEUTRAL',
+    color: 'text-warning',
+    bgColor: 'bg-warning/15',
+    borderColor: 'border-warning/30',
+    icon: Minus,
+  },
 };
 
 const sizeStyles = {

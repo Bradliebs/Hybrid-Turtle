@@ -14,7 +14,7 @@ import type { JournalPositionContext } from '@/components/shared/JournalDrawer';
 import { formatCurrency, formatPercent } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
-import { Loader2, Briefcase, PieChart, BarChart3 } from 'lucide-react';
+import { Loader2, Briefcase, PieChart, BarChart3, XCircle } from 'lucide-react';
 
 // Dynamic import keeps ~ReadyToBuyPanel out of initial bundle (only loads when visible)
 const ReadyToBuyPanel = dynamic(() => import('@/components/portfolio/ReadyToBuyPanel'), { ssr: false });
@@ -125,6 +125,7 @@ function PositionsPageInner() {
   const [positions, setPositions] = useState<PositionData[]>([]);
   const [account, setAccount] = useState<AccountData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [currency, setCurrency] = useState<string>('GBP');
   const [stopRefreshKey, setStopRefreshKey] = useState(0);
@@ -167,6 +168,7 @@ function PositionsPageInner() {
       setPositions(mapped);
     } catch (err) {
       console.error('Failed to fetch positions:', err);
+      setFetchError(err instanceof Error ? err.message : 'Failed to load positions');
     }
   }, []);
 
@@ -192,6 +194,7 @@ function PositionsPageInner() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      setFetchError(null);
       await Promise.all([fetchPositions(), fetchAccount()]);
       setLoading(false);
     };
@@ -335,6 +338,20 @@ function PositionsPageInner() {
       {activeTab === 'positions' && (
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
+        {/* Fetch Error Banner */}
+        {fetchError && (
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+            <XCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-300 flex-1">{fetchError}</p>
+            <button
+              onClick={() => { setFetchError(null); setLoading(true); Promise.all([fetchPositions(), fetchAccount()]).finally(() => setLoading(false)); }}
+              className="px-3 py-1 text-xs font-medium rounded bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* KPI Row */}
         <KPIBanner
           items={[

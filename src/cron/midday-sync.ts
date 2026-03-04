@@ -24,6 +24,12 @@ async function runMiddaySync() {
   const ukDay = getUKDayOfWeek();
   if (ukDay === 0 || ukDay === 6) {
     console.log('  Weekend — skipping sync.');
+    await prisma.heartbeat.create({
+      data: {
+        status: 'SKIPPED',
+        details: JSON.stringify({ type: 'midday-sync', reason: 'weekend', ranAt: new Date().toISOString() }),
+      },
+    });
     await prisma.$disconnect();
     return;
   }
@@ -35,6 +41,12 @@ async function runMiddaySync() {
     const openCount = await prisma.position.count({ where: { userId, status: 'OPEN' } });
     if (openCount === 0) {
       console.log('  No open positions — nothing to sync.');
+      await prisma.heartbeat.create({
+        data: {
+          status: 'SKIPPED',
+          details: JSON.stringify({ type: 'midday-sync', reason: 'no-open-positions', ranAt: new Date().toISOString() }),
+        },
+      });
       await prisma.$disconnect();
       return;
     }

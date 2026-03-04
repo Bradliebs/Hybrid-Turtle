@@ -1,12 +1,13 @@
 /**
  * DEPENDENCIES
- * Consumed by: /api/backup/route.ts, nightly.ts
+ * Consumed by: /api/backup/route.ts, /api/backup/restore/route.ts, nightly.ts
  * Consumes: fs, path (Node built-ins)
- * Risk-sensitive: NO (read-only copy of DB file — never modifies the source)
- * Last modified: 2026-03-03
+ * Risk-sensitive: RESTORE IS DESTRUCTIVE (replaces live DB with a backup copy)
+ * Last modified: 2026-03-04
  * Notes: SQLite DB backup utility. Copies dev.db to prisma/backups/ with a
  *        timestamped filename. Keeps only the 7 most recent backups.
- *        Never throws — always returns a BackupResult.
+ *        Restore copies a backup file OVER dev.db (creates a pre-restore backup first).
+ *        Never throws — always returns a result object.
  */
 
 import fs from 'fs';
@@ -185,4 +186,86 @@ export function listBackups(): BackupFileInfo[] {
       createdAt,
     };
   });
+}
+
+// ── Restore function ──
+
+export interface RestoreResult {
+  success: boolean;
+  restoredFrom: string;
+  preRestoreBackup: string | null;
+  error: string | null;
+  timestamp: string;
+}
+
+/**
+ * Restore the database from a named backup file.
+ * Safety: creates a pre-restore backup of the current DB first so the user
+ * can undo if the restore was a mistake.
+ */
+export async function restoreDatabase(backupFilename: string): Promise<RestoreResult> {
+  const timestamp = new Date().toISOString();
+
+  try {
+    // Validate filename — must match the expected pattern (no path traversal)
+    if (!backupFilename.startsWith(`${DB_FILENAME}.backup-`) || backupFilename.includes('..') || backupFilename.includes('/') || backupFilename.includes('\\')) {
+      return { success: false, restoredFrom: backupFilename, preRestoreBackup: null, error: 'Invalid backup filename', timestamp };
+    }
+
+    const backupDir = projectPath(BACKUP_DIR);
+    const backupPath = path.join(backupDir, backupFilename);
+    const dbPath = projectPath('prisma', DB_FILENAME);
+
+    // 1. Check backup file exists
+    if (!fs.existsSync(backupPath)) {
+      return { success: false, restoredFrom: backupFilename, preRestoreBackup: null, error: `Backup file not found: ${backupFilename}`, timestamp };
+    }
+
+    // 2. Check backup is a reasonable size (> 1 KB — catches empty/corrupt files)
+    const backupStats = fs.statSync(backupPath);
+    if (backupStats.size < 1024) {
+      return { success: false, restoredFrom: backupFilename, preRestoreBackup: null, error: `Backup file too small (${backupStats.size} bytes) — likely corrupt`, timestamp };
+    }
+
+    // 3. Create a pre-restore safety backup of the current DB
+    let preRestoreBackup: string | null = null;
+    if (fs.existsSync(dbPath)) {
+      const preRestoreName = `${DB_FILENAME}.pre-restore-${Date.now()}`;
+      const preRestorePath = path.join(backupDir, preRestoreName);
+      fs.mkdirSync(backupDir, { recursive: true });
+      fs.copyFileSync(dbPath, preRestorePath);
+      preRestoreBackup = preRestoreName;
+    }
+
+    // 4. Copy backup over the live DB
+    fs.copyFileSync(backupPath, dbPath);
+
+    // 5. Verify the copy succeeded
+    const restoredStats = fs.statSync(dbPath);
+    if (restoredStats.size !== backupStats.size) {
+      return {
+        success: false,
+        restoredFrom: backupFilename,
+        preRestoreBackup,
+        error: `Restore size mismatch: backup ${backupStats.size} bytes, restored ${restoredStats.size} bytes`,
+        timestamp,
+      };
+    }
+
+    return {
+      success: true,
+      restoredFrom: backupFilename,
+      preRestoreBackup,
+      error: null,
+      timestamp,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      restoredFrom: backupFilename,
+      preRestoreBackup: null,
+      error: (err as Error).message || 'Unknown restore error',
+      timestamp,
+    };
+  }
 }

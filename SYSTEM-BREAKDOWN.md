@@ -17,15 +17,15 @@ A self-hosted systematic trading dashboard for momentum/trend-following across ~
 
 ---
 
-## 2. Screens (10 Pages)
+## 2. Screens (18 Pages)
 
 ### `/dashboard` — Command Centre
 
-**Components:** `MarketIndicesBar`, `QuickActions`, `FearGreedGauge`, `WeeklyPhaseIndicator`, `HealthTrafficLight`, `HeartbeatMonitor`, `DataSourceTile`, `ModuleStatusPanel`, `ActionCardWidget`, `DualRegimeWidget`, `RiskModulesWidget`, `PyramidAlertsWidget`, `HedgeCard`, `ScoringGuideWidget`, `MigrationBanner`
+**Components:** `MarketIndicesBar`, `QuickActions`, `FearGreedGauge`, `WeeklyPhaseIndicator`, `HealthTrafficLight`, `HeartbeatMonitor`, `DataSourceTile`, `ModuleStatusPanel`, `ActionCardWidget`, `DualRegimeWidget`, `RiskModulesWidget`, `PyramidAlertsWidget`, `HedgeCard`, `ScoringGuideWidget`, `MigrationBanner`, `TodayDirectiveCard`, `OnboardingBanner`
 
 Shows at a glance:
 
-- Market regime (BULLISH / SIDEWAYS / BEARISH) with dual-benchmark (SPY + VWRL) status
+- Market regime (BULLISH / SIDEWAYS / BEARISH / NEUTRAL) with dual-benchmark (SPY + VWRL) status
 - Weekly phase indicator (PLANNING → OBSERVATION → EXECUTION → MAINTENANCE)
 - 16-point health check traffic light (GREEN / YELLOW / RED)
 - Heartbeat monitor (last nightly run status + timestamp)
@@ -188,7 +188,7 @@ Risk management:
 
 ---
 
-## 3. API Routes (26 Route Groups)
+## 3. API Routes (32 Route Groups, 59 Route Files)
 
 | Route | Method | Purpose |
 |-------|--------|---------|
@@ -223,12 +223,22 @@ Risk management:
 | `/api/stocks` | GET | Stock universe management |
 | `/api/trading212` | Various | T212 connection test, position fetch |
 | `/api/t212-import` | POST | T212 trade history CSV import |
-| `/api/db-status` | GET | Migration status check |
+| `/api/db-status` | GET / POST | Migration status check / Auto-migrate (gated behind `ALLOW_AUTO_MIGRATE` env var) |
 | `/api/data-source` | GET | Data provider health |
 | `/api/ev-stats` | GET | Expected value statistics |
 | `/api/ev-modifiers` | GET | EV modifier lookup |
 | `/api/backtest` | GET | Signal replay data |
 | `/api/publications` | GET | Publication feed |
+| `/api/backup` | GET / POST | Database backup |
+| `/api/cache-status` | GET / POST | Cache status check / Clear all caches |
+| `/api/dashboard/today-directive` | GET | AI-generated daily trading directive |
+| `/api/onboarding` | GET / POST | Onboarding state management |
+| `/api/portfolio/summary` | GET | Portfolio summary stats |
+| `/api/plan` | GET / POST | Weekly execution plan CRUD |
+| `/api/feature-flags` | GET | Feature flag status |
+| `/api/stops/apply` | POST | Apply stop recommendations to T212 |
+| `/api/stops/sync` | GET / POST / PUT | Sync stops from CSV / T212 |
+| `/api/stops/t212` | GET / POST / DELETE / PUT | Direct T212 stop management |
 
 ---
 
@@ -325,15 +335,15 @@ Runs via `nightly-task.bat` → `src/cron/nightly.ts` through Windows Task Sched
 | **8** | Send Telegram summary with: positions, stops, ready candidates, triggers met, laggards, climax, swaps, breadth, pyramids, gap risks, breakout failures, data source health |
 | **9** | Write heartbeat to DB (SUCCESS or FAILED with error details) |
 
-**Failure handling:** Each step wraps in try/catch. Failures log, set `hadFailure = true`, and continue remaining steps. Final heartbeat records partial failure.
+**Failure handling:** Each step wraps in try/catch. Failures log, set `hadFailure = true`, and continue remaining steps. Final heartbeat records partial failure. All inner catch blocks include `console.warn` logging (no silent suppression).
 
-There is also a `midday-sync.ts` (`midday-sync-task.bat`) for mid-day data refresh.
+There is also a `midday-sync.ts` (`midday-sync-task.bat`) for mid-day position sync against T212. It writes a `SKIPPED` heartbeat when exiting early (weekend or zero open positions) so the dashboard can distinguish a skip from a silent crash.
 
 ---
 
 ## 7. Database Schema (SQLite + Prisma)
 
-**20 tables** defined in `prisma/schema.prisma`:
+**21 tables** defined in `prisma/schema.prisma`:
 
 | Table | Purpose |
 |-------|---------|
@@ -474,8 +484,10 @@ Components: volume risk (max 30) + extension/chasing risk (max 25) + marginal tr
 
 - **Server:** Prisma ORM → SQLite (`dev.db`). All truth lives in the database
 - **Client:** Zustand store (`src/store/useStore.ts`) for ephemeral UI state (equity, risk profile, selected items)
-- **Caching:** In-memory caches with TTL: scan results, module results (5 min), Yahoo quotes (30 min), scan progress
+- **Caching:** In-memory caches with TTL: scan results, module results (5 min), Yahoo quotes (30 min), scan progress. Scan and module caches are **auto-invalidated** when positions are created or closed
 - **API:** RESTful JSON, Zod-validated requests, standardised error responses via `apiError()`
+- **Auth:** Lightweight NextAuth JWT middleware (`src/middleware.ts`) protects all `/api/*` routes except `/api/auth/*` and `/api/health`
+- **Error Boundaries:** React `error.tsx` files at root and key route segments (dashboard, scan, positions, distribution, risk) catch runtime exceptions and show recovery UI
 
 ---
 
@@ -484,7 +496,7 @@ Components: volume risk (max 30) + extension/chasing risk (max 25) + marginal tr
 | Component | Purpose |
 |-----------|---------|
 | `Navbar` | Top navigation across all pages |
-| `RegimeBadge` | Colour-coded regime indicator (BULLISH=green, SIDEWAYS=amber, BEARISH=red) |
+| `RegimeBadge` | Colour-coded regime indicator (BULLISH=green, SIDEWAYS/NEUTRAL=amber, BEARISH=red) |
 | `StatusBadge` | READY/WATCH/FAR status pills |
 | `TrafficLight` | Green/yellow/red health indicator |
 | `LiveDataBootstrap` | Root-level component that hydrates client store on app load |
@@ -524,22 +536,29 @@ No cloud deployment — fully self-hosted, single-user, local Windows machine.
 
 ```
 prisma/
-  schema.prisma          — 16-table SQLite schema
+  schema.prisma          — 21-table SQLite schema
   seed.ts                — Stock universe seeder
   migrations/            — Prisma migration history
 
 src/
+  middleware.ts          — API auth middleware (NextAuth JWT, protects /api/*)
   app/
     page.tsx             — Root redirect → /dashboard
     layout.tsx           — Root layout (dark theme, Inter font, LiveDataBootstrap)
+    error.tsx             — Root error boundary (recovery UI)
     dashboard/page.tsx   — Command centre
+    dashboard/error.tsx  — Dashboard error boundary
     scan/page.tsx        — 7-stage scan
+    scan/error.tsx       — Scan error boundary
     scan/scores/page.tsx — Dual score dashboard
     scan/cross-ref/      — Cross-reference view
     plan/page.tsx        — Weekly execution board
     portfolio/positions/ — Position management
+    portfolio/positions/error.tsx — Positions error boundary
     portfolio/distribution/ — Charts & allocation
+    portfolio/distribution/error.tsx — Distribution error boundary
     risk/page.tsx        — Risk budget & stops
+    risk/error.tsx       — Risk error boundary
     settings/page.tsx    — Configuration
     trade-log/page.tsx   — Trade journal
     journal/page.tsx     — Position journal
@@ -548,7 +567,7 @@ src/
     notifications/page.tsx — Alert centre
     login/page.tsx       — Login
     register/page.tsx    — Registration
-    api/                 — 26 route groups (see Section 3)
+    api/                 — 32 route groups, 59 route files (see Section 3)
 
   lib/
     stop-manager.ts      — Monotonic stop ladder (SACRED)
@@ -584,4 +603,4 @@ src/
 
 ---
 
-*Last updated: 3 March 2026*
+*Last updated: 4 March 2026*
