@@ -44,7 +44,7 @@ if %errorlevel% neq 0 (
     pause
     exit /b 1
 )
-call npx prisma migrate deploy
+call node scripts/auto-migrate.mjs
 if %errorlevel% neq 0 (
     echo  !! Database migration failed.
     pause

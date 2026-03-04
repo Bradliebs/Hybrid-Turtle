@@ -21,7 +21,7 @@
  *   node scripts/auto-migrate.mjs --quiet    # silent (nightly/scheduled use)
  */
 
-import { execSync } from 'child_process';
+import { execSync, fork } from 'child_process';
 import { existsSync, readdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -121,6 +121,25 @@ function extractMigrationName(output) {
   return null;
 }
 
+// ── Schema drift verification ────────────────────────────────
+
+/** Run db-verify.mjs to catch any missing columns the migrations missed */
+function runSchemaVerify() {
+  const verifyScript = path.join(__dirname, 'db-verify.mjs');
+  if (!existsSync(verifyScript)) return;
+  try {
+    const args = QUIET ? ['--quiet'] : [];
+    execSync(`node "${verifyScript}" ${args.join(' ')}`, {
+      cwd: ROOT,
+      encoding: 'utf-8',
+      stdio: 'inherit',
+      timeout: 30_000,
+    });
+  } catch {
+    // Non-fatal — don't block startup
+  }
+}
+
 // ── Main ────────────────────────────────────────────────────
 
 async function main() {
@@ -147,6 +166,7 @@ async function main() {
     } else {
       log('Database is up to date.');
     }
+    runSchemaVerify();
     process.exit(0);
   }
 
@@ -214,6 +234,7 @@ async function main() {
     result = runMigrateDeploy();
     if (result.success) {
       log('All migrations applied successfully after auto-resolve.');
+      runSchemaVerify();
       process.exit(0);
     }
   }
