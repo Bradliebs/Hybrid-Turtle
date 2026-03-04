@@ -259,9 +259,11 @@ Risk management:
 
 | Module | File | Purpose |
 |--------|------|---------|
-| **Market Data** | `src/lib/market-data.ts` | Yahoo Finance wrapper: prices, quotes, historical bars, MA, ADX, ATR, efficiency, volume ratio, relative strength. 30-min quote cache. Batch pre-caching |
+| **Market Data** | `src/lib/market-data.ts` | Yahoo Finance wrapper: prices, quotes, historical bars, MA, ADX, ATR, efficiency, volume ratio, relative strength. 30-min quote cache. Batch pre-caching. Retry with exponential backoff (3 attempts via `fetch-retry.ts`). `forceRefresh` parameter bypasses cache on Tuesdays. Data freshness tracking (`getDataFreshness()` → LIVE/CACHE/STALE_CACHE) |
+| **Fetch Retry** | `src/lib/fetch-retry.ts` | `withRetry()` utility: 3 attempts, 1s→2s→4s backoff. Retries on 429, 5xx, network errors. No retry on 4xx client errors |
 | **Data Provider** | `src/lib/data-provider.ts` | Resilient fallback chain: Yahoo → AV → EODHD → DB cache. Tracks health (LIVE/STALE/CACHED) |
-| **Scan Guards** | `src/lib/scan-guards.ts` | Anti-chase guard (gap > 0.75 ATR or > 3% above trigger → block). Pullback continuation entry detection |
+| **Scan Guards** | `src/lib/scan-guards.ts` | Anti-chase guard (gap > 0.75 ATR or > 3% above trigger → block). Pullback continuation entry detection. Optional slippage buffer tightens ATR threshold based on historical trade slippage |
+| **Slippage Tracker** | `src/lib/slippage-tracker.ts` | Queries last 20 trades for avg/median/max slippage. When avg > 0.15%, tightens anti-chase ATR threshold (floor 0.5 ATR) |
 | **Correlation Matrix** | `src/lib/correlation-matrix.ts` | Cross-position correlation computation, stored in DB |
 | **Correlation Scalar** | `src/lib/correlation-scalar.ts` | Reduces position size when high correlation with existing holdings |
 | **Risk Fields** | `src/lib/risk-fields.ts` | Computes GBP-normalised initial risk, open risk for portfolio aggregation |
@@ -288,6 +290,8 @@ Risk management:
 | **Glossary** | `src/lib/glossary.ts` | Trading term definitions |
 | **Nightly Guard** | `src/lib/nightly-guard.ts` | Prevents manual scans while nightly is running |
 | **Scan Cache** | `src/lib/scan-cache.ts` | In-memory scan result caching with TTL |
+| **Scan Progress** | `src/lib/scan-progress.ts` | In-memory progress store using `globalThis` for SSE/polling. Updated by scan engine, polled by `/api/scan/progress` |
+| **Secrets** | `src/lib/secrets.ts` | Centralised credential loading: ENV vars → DB fallback. `getT212Credentials()`, `getTelegramCredentials()`, `isT212FromEnv()` |
 
 ---
 
@@ -330,14 +334,16 @@ Runs via `nightly-task.bat` → `src/cron/nightly.ts` through Windows Task Sched
 | **3** | Generate R-based stop recommendations. Auto-apply trailing ATR stops for LOCK_1R_TRAIL positions only |
 | **4** | Detect laggards (underperformers) + breakout failures |
 | **5** | Run risk modules: climax, swap suggestions, whipsaw blocks, breadth safety, correlation matrix, sector momentum, earnings cache |
-| **6** | Record equity snapshot (rate-limited 6h). Check pyramid opportunities for positions ≥ 2R |
+| **6** | Record equity snapshot (rate-limited 6h). Check pyramid opportunities for positions ≥ 2R. Check equity milestones (£1K/£2K/£5K) for advisory notifications |
 | **7** | Full universe snapshot sync (Yahoo → DB) + query top 15 READY candidates + trigger-met detection |
 | **8** | Send Telegram summary with: positions, stops, ready candidates, triggers met, laggards, climax, swaps, breadth, pyramids, gap risks, breakout failures, data source health |
-| **9** | Write heartbeat to DB (SUCCESS or FAILED with error details) |
+| **9** | Write heartbeat to DB (SUCCESS, PARTIAL, or FAILED with step-level results) |
 
-**Failure handling:** Each step wraps in try/catch. Failures log, set `hadFailure = true`, and continue remaining steps. Final heartbeat records partial failure. All inner catch blocks include `console.warn` logging (no silent suppression).
+**Failure handling:** Each step wraps in try/catch with `startStep()`/`finalizeSteps()` timing. Failures set `hadFailure = true` and continue. Heartbeat status is ternary: **SUCCESS** (all OK), **PARTIAL** (some steps failed, pipeline completed), **FAILED** (critical). Step-level results with timing stored in heartbeat details JSON.
 
 There is also a `midday-sync.ts` (`midday-sync-task.bat`) for mid-day position sync against T212. It writes a `SKIPPED` heartbeat when exiting early (weekend or zero open positions) so the dashboard can distinguish a skip from a silent crash.
+
+A `watchdog.ts` (`watchdog-task.bat`) runs daily at 10:00 AM to check for missed nightly/midday heartbeats and sends a Telegram alert if the nightly hasn't run in 26+ hours.
 
 ---
 
@@ -508,7 +514,7 @@ Components: volume risk (max 30) + extension/chasing risk (max 25) + marginal tr
 
 - **Framework:** Vitest
 - **Test files:** Co-located with source (`.test.ts` alongside `.ts`)
-- **Coverage areas:** Position sizer, risk gates, stop manager, dual score, scan guards, regime detector, correlation scalar, breakout probability, risk fields, hurst exponent, EV modifier, laggard detector, breakout failure detector, breakout integrity, adaptive ATR buffer, scan pass flags, scan DB reconstruction, trading 212 dual, market data trigger window
+- **Coverage areas:** Position sizer, risk gates, stop manager, dual score, scan guards, regime detector, correlation scalar, breakout probability, risk fields, hurst exponent, EV modifier, laggard detector, breakout failure detector, breakout integrity, adaptive ATR buffer, scan pass flags, scan DB reconstruction, trading 212 dual, market data trigger window, fetch retry (8 tests)
 - **Validation:** Zod schemas on every API endpoint and external data source
 
 ---
@@ -524,6 +530,8 @@ Components: volume risk (max 30) + extension/chasing risk (max 25) + marginal tr
 | `midday-sync-task.bat` | Scheduled midday data refresh |
 | `register-nightly-task.bat` | Create Windows scheduled task for nightly automation |
 | `register-midday-sync.bat` | Create Windows scheduled task for midday sync |
+| `watchdog-task.bat` | Check for missed nightly/midday heartbeats, send Telegram alert |
+| `register-watchdog-task.bat` | Create Windows scheduled task for watchdog (10:00 AM daily) |
 | `seed-tickers.bat` | Seed stock universe into DB |
 | `run-dashboard.bat` | Start dashboard only |
 | `package-for-distribution.bat` | Package for deployment to another machine |
@@ -591,14 +599,15 @@ src/
     trade-log/           — RecordPastTradeModal
 
   cron/
-    nightly.ts           — Standalone nightly automation (9 steps)
+    nightly.ts           — Standalone nightly automation (9 steps, step-level tracking)
     midday-sync.ts       — Mid-day data refresh
+    watchdog.ts          — Missed heartbeat detection + Telegram alert
 
   store/
     useStore.ts          — Zustand client state
 
   types/
-    index.ts             — All TypeScript types, risk profiles, constants
+    index.ts             — All TypeScript types, risk profiles, constants, EQUITY_REVIEW_THRESHOLDS, DISABLED_MODULES
 ```
 
 ---

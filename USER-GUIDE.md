@@ -58,7 +58,8 @@ Use this as your control center.
 Check these first:
 - Health traffic light (green/yellow/red)
 - Market regime (bullish/sideways/bearish)
-- Heartbeat freshness (nightly job health)
+- Heartbeat freshness (nightly job health — green = SUCCESS, amber = PARTIAL, red = STALE/FAILED)
+- Data source freshness (Live / Cache / Stale Cache indicator)
 - Module panel statuses
 - Fear & Greed and dual benchmark context
 
@@ -179,10 +180,13 @@ The platform enforces hard safety constraints, including:
 
 - stops never move down
 - no entries on Monday
-- anti-chasing blocks excessive gap entries
+- anti-chasing blocks excessive gap entries (tightened by historical slippage data)
 - position sizing is risk-capped and rounded down
 - total risk and concentration caps are enforced
 - stale heartbeat/data triggers warnings or failures
+- Yahoo Finance calls retry automatically on transient errors (3 attempts with backoff)
+- on Tuesdays (execution day), price data is force-refreshed to bypass cache
+- a watchdog script alerts via Telegram if the nightly pipeline fails to run
 
 Treat these rules as safeguards, not optional suggestions.
 

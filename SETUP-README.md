@@ -35,6 +35,10 @@ A systematic trading dashboard built on the Turtle Trading methodology with mode
 | `start.bat` | Daily launcher — starts the server and opens your browser |
 | `run-dashboard.bat` | Compatibility alias — redirects to `start.bat` |
 | `update.bat` | Run after getting new code — updates deps and database |
+| `nightly-task.bat` | Run nightly automation checks (schedulable via Task Scheduler) |
+| `watchdog-task.bat` | Check for missed nightly heartbeats, send Telegram alert |
+| `register-nightly-task.bat` | Register nightly as a Windows Scheduled Task |
+| `register-watchdog-task.bat` | Register watchdog as a Windows Scheduled Task (10:00 AM daily) |
 
 ---
 

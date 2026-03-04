@@ -280,7 +280,7 @@ The dashboard is your daily command centre. Data refreshes automatically every 6
 | **Weekly Phase** | Current phase: 📋 Think (Sun) → 👁️ Observe (Mon) → ⚡ Act (Tue) → 🔧 Manage (Wed–Fri) |
 | **Health Traffic Light** | Overall system health: 🟢 GREEN / 🟡 YELLOW / 🔴 RED |
 | **Market Regime** | BULLISH / SIDEWAYS / BEARISH (SPY vs 200-day MA) |
-| **Heartbeat Monitor** | Timestamp of last successful nightly run |
+| **Heartbeat Monitor** | Timestamp of last nightly run. Green = SUCCESS, Amber = PARTIAL (some steps degraded), Red = STALE/FAILED |
 | **Trigger Status Card** | Count of triggered candidates ready to buy |
 | **Nightly Snapshot Runner** | Manual "Run Nightly" button for on-demand execution |
 | **Quick Actions** | Shortcut buttons to key pages |
@@ -376,7 +376,7 @@ The scan runs a 7-stage pipeline against your entire ticker universe. Click **Ru
 | 3 | **Classification** | Tags each passing candidate: **READY** (≤ 2% from breakout), **WATCH** (≤ 3%), **FAR** (> 3%). Also flags **TRIGGERED** if price is at/above entry trigger. **COOLDOWN** blocks re-entry for tickers with a recent failed breakout. |
 | 4 | **Ranking** | Scores candidates: Sleeve priority (Core 40, ETF 20, High-Risk 10, Hedge 5) + Status bonus (READY +30, WATCH +10) + ADX + Volume + Efficiency + Relative Strength |
 | 5 | **Risk Gates** | Checks: Total open risk ≤ max, positions < max, sleeve within cap, cluster ≤ cap (20% default, 25% SMALL_ACCOUNT, 35% AGGRESSIVE), sector ≤ cap (25% default, 30% SMALL_ACCOUNT, 45% AGGRESSIVE), position size cap |
-| 6 | **Anti-Chase Guard** | Monday gap guard: blocks if gapped > 0.75 ATR or > 3% above trigger. Also applies an **all-days** volatility extension check: extATR > 0.8 → WAIT_PULLBACK. Plus COOLDOWN block for failed breakouts. |
+| 6 | **Anti-Chase Guard** | Configurable gap guard: blocks if gapped beyond ATR or % thresholds. Monday uses weekend thresholds; Tue–Fri uses daily thresholds. Optional slippage buffer tightens ATR threshold based on historical trade slippage (from `slippage-tracker.ts`). Also applies an **all-days** volatility extension check: extATR > 0.8 → WAIT_PULLBACK. Plus COOLDOWN block for failed breakouts. |
 | 7 | **Position Sizing** | Calculates shares = floor((Equity × Risk%) / ((Entry − Stop) × FX)), fractional to 0.01 (T212). Skips if result ≤ 0 |
 
 ### Entry Trigger Formula
@@ -621,7 +621,7 @@ The nightly cron executes at **9:30 PM UK time**, Monday–Friday.
 |------|-------------|
 | 0 | Pre-cache historical data for all active tickers |
 | 1 | Run 16-point health check |
-| 2 | Fetch live prices for all open positions |
+| 2 | Fetch live prices for all open positions + check data freshness |
 | 3 | R-based stop recommendations (breakeven / lock levels) |
 | 3b | Trailing ATR stop recommendations + **auto-apply** if stop moves up |
 | 3c | Gap risk detection for HIGH_RISK positions (advisory) |
@@ -629,11 +629,19 @@ The nightly cron executes at **9:30 PM UK time**, Monday–Friday.
 | 4 | Detect laggards + collect alerts |
 | 5 | Risk-signal modules (breadth, momentum, whipsaw, climax, etc.) |
 | 6 | Equity snapshot + pyramid-up checks (rate-limited: once per 6 hours) |
+| 6b | Equity milestone advisory (£1K/£2K/£5K thresholds → Telegram + in-app notification) |
 | 7 | Snapshot sync — full universe refresh + top 15 READY candidates |
 | 8 | Send Telegram summary with health, regime, positions, stops, alerts |
-| 9 | Write heartbeat (SUCCESS or FAILED) |
+| 9 | Write heartbeat (SUCCESS / PARTIAL / FAILED with step-level results) |
 
-**If any step fails:** error is logged, FAILED written to heartbeat, remaining steps continue where possible.
+**Step-level tracking:** Each step is timed via `startStep()`/`finalizeSteps()`. Failed steps are recorded individually in the heartbeat details JSON.
+
+**Heartbeat status is ternary:**
+- **SUCCESS** — all steps completed without error (green on dashboard)
+- **PARTIAL** — some steps failed but pipeline completed (amber on dashboard)
+- **FAILED** — critical failure (red on dashboard)
+
+**Watchdog:** A separate `watchdog.ts` script (`watchdog-task.bat`) runs daily at 10:00 AM. If no nightly heartbeat exists within 26 hours, it sends a Telegram alert.
 
 ### Manual Trigger
 

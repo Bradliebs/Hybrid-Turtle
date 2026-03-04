@@ -61,7 +61,7 @@ Do not add, remove, or reorder stages without being asked explicitly.
 3. **Status Classification** — ≤2% to trigger = READY, ≤3% = WATCH, >3% = FAR
 4. **Ranking** — Composite: sleeve priority + status bonus + ADX + volume ratio + efficiency + relative strength
 5. **Risk Gates** — All 6 must pass (see risk-gates.ts)
-6. **Anti-Chase Guard** — Monday only: blocks if gap > 0.75 ATR or > 3% above trigger
+6. **Anti-Chase Guard** — Configurable gap thresholds (ATR + %). Blocks if price extended too far above trigger. Optional slippage buffer tightens thresholds based on historical trade slippage. Monday uses weekend thresholds; Tue–Fri uses daily thresholds
 7. **Position Sizing** — `floor(Equity × Risk% / (Entry − Stop) × FX)`
 
 ---
@@ -155,6 +155,10 @@ HEDGE positions excluded from open risk and position counting.
 - European tickers require exchange suffix (e.g., `.AS`, `.PA`, `.DE`)
 - Occasionally returns stale or null data — Module 18 validates but always add null guards
 - No SLA — if Yahoo is down, the nightly task must fail gracefully, not crash
+- All Yahoo calls are wrapped in `withRetry()` (3 attempts, exponential backoff: 1s→2s→4s). Only retries on transient errors (429, 5xx, network). See `src/lib/fetch-retry.ts`
+- Staleness tracked via `getDataFreshness()` — returns `LIVE`, `CACHE`, or `STALE_CACHE` with age in minutes
+- On Tuesdays (EXECUTION phase), key fetch functions accept `forceRefresh: true` to bypass cache
+- If a live fetch fails, stale cached data is served (with `STALE_CACHE` tracking) rather than returning null
 
 ### Technical Indicators
 - ADX calculation requires **minimum 28 candles** of history — always check data length before calculating
@@ -196,16 +200,25 @@ HEDGE positions excluded from open risk and position counting.
 Runs via `nightly-task.bat` / Task Scheduler. Runs unattended. Failures must be caught and written to DB heartbeat, not allowed to throw unhandled.
 
 1. Health Check (16-point audit)
-2. Live Prices (open positions only)
+2. Live Prices (open positions only) + data freshness check
 3. Stop Management (R-based recs + auto-apply trailing ATR only)
 4. Laggard Detection
 5. Risk Modules
-6. Equity Snapshot (rate-limited: once per 6 hours)
+6. Equity Snapshot (rate-limited: once per 6 hours) + Equity Milestone Advisory (£1K/£2K/£5K thresholds)
 7. Snapshot Sync (full universe refresh + top 15 READY candidates)
 8. Telegram Alert
-9. Heartbeat (write success/failure to DB)
+9. Heartbeat (write SUCCESS/PARTIAL/FAILED to DB with step-level results)
 
-**If any step fails: log the error, write FAILED to heartbeat, continue remaining steps where possible. Never let one failed step abort the whole nightly run.**
+**Step-level tracking:** Each step is timed via `startStep()`/`finalizeSteps()`. Failed steps are recorded individually.
+
+**Heartbeat status is ternary:**
+- **SUCCESS** — all steps completed without error
+- **PARTIAL** — some steps failed but pipeline completed (amber on dashboard)
+- **FAILED** — critical failure
+
+**If any step fails: log the error, continue remaining steps where possible. Never let one failed step abort the whole nightly run.**
+
+**Watchdog:** A separate `watchdog.ts` script (`watchdog-task.bat`) runs daily at 10:00 AM. If no nightly heartbeat exists within 26 hours, it sends a Telegram alert.
 
 ---
 
@@ -336,5 +349,5 @@ prisma.positions.update()    // without checking stop monotonicity first
 
 ---
 
-*Last updated: 22 February 2026*
+*Last updated: 4 March 2026*
 *Account size: ~£429 + £50/week | Profile: SMALL_ACCOUNT | Broker: Trading 212*

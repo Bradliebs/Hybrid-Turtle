@@ -49,9 +49,9 @@ Universe (DB)
 
 **Nightly loop:**
 ```
-Pre-Cache → Health Check → Live Prices → Stop Management (R-based + trailing ATR + gap risk + stop-hit detection)
+Pre-Cache → Health Check → Live Prices + Freshness Check → Stop Management (R-based + trailing ATR + gap risk + stop-hit detection)
   → Laggard/Dead Money Detection → Risk Modules (climax, swap, whipsaw, breadth, correlation)
-  → Equity Snapshot + Pyramid Check → Snapshot Sync + Trigger Alerts → Telegram Alert → Heartbeat
+  → Equity Snapshot + Pyramid Check + Equity Milestone Advisory → Snapshot Sync + Trigger Alerts → Telegram Alert → Heartbeat (SUCCESS/PARTIAL/FAILED)
 ```
 
 ### End-to-End Decision Tree (Current Code)
@@ -233,16 +233,18 @@ Uses `calculatePositionSize()` — see [§5](#5-position-sizing).
 
 **Source:** `src/lib/scan-guards.ts`
 
-**Only active on Mondays** (`dayOfWeek === 1`). All other days automatically pass.
+**Active on all trading days** (configurable via `GapGuardConfig`). Monday uses weekend thresholds (3-day gap); Tue–Fri uses daily thresholds.
 
 Only evaluates when `currentPrice >= entryTrigger`:
 
-| Check | Rule | Threshold |
-|-------|------|-----------|
-| Gap ATR check | `(currentPrice − entryTrigger) / ATR` | > 0.75 → FAIL ("CHASE RISK") |
-| Percent above check | `((currentPrice / entryTrigger) − 1) × 100` | > 3.0% → FAIL |
+| Check | Rule | Monday Threshold | Tue–Fri Threshold |
+|-------|------|-----------|----------|
+| Gap ATR check | `(currentPrice - entryTrigger) / ATR` | > 0.75 → FAIL | > 1.0 → FAIL |
+| Percent above check | `((currentPrice / entryTrigger) - 1) × 100` | > 3.0% → FAIL | > 4.0% → FAIL |
 
 Both must pass to clear the guard.
+
+**Slippage buffer:** When historical trade slippage averages > 0.15% (from `slippage-tracker.ts`), the ATR threshold is tightened by the slippage amount (floor: 0.5 ATR). This prevents repeatedly overshooting entry prices.
 
 ---
 
@@ -792,7 +794,7 @@ A `RUNNING` heartbeat is written before Step 0. If the pipeline exits with statu
 |------|--------|---------|
 | 0 | Pre-Cache | Cache Yahoo Finance historical data for all active tickers (batch). Runs first. |
 | 1 | Health Check | Run 16-point health check |
-| 2 | Live Prices | Fetch live prices for all open positions (batch via Yahoo) + normalise to GBP via FX |
+| 2 | Live Prices | Fetch live prices for all open positions (batch via Yahoo) + normalise to GBP via FX + check data freshness |
 | 3 | R-Based Stop Recs | Generate R-based stop recommendations + **auto-apply** via `updateStopLoss()` (monotonic violations caught silently) |
 | 3b | Trailing ATR Stops | Generate trailing ATR recs via `generateTrailingStopRecommendations()` + **auto-apply** (2×ATR below highest close) |
 | 3c | Gap Risk Detection | HIGH_RISK positions only: flags if gap > 2×ATR%. **Advisory only** (no blocks) |
@@ -800,13 +802,23 @@ A `RUNNING` heartbeat is written before Step 0. If the pipeline exits with statu
 | 4 | Laggard Detection | Detect TRIM_LAGGARD + DEAD_MONEY flags (with recovery exemption check) |
 | 5 | Risk Modules | Run: Climax, Swap, Whipsaw, Breadth Safety (sampled 30 tickers), Correlation Matrix, Sector ETF Cache. **Module 13 (Momentum Expansion) permanently DISABLED** |
 | 6 | Equity Snapshot | Record equity snapshot (min 6h between snapshots) + check pyramid add opportunities (Tuesday-only `PYRAMID_ADD` alerts) |
+| 6b | Equity Milestone | Advisory check: if equity crosses £1K/£2K/£5K thresholds, sends Telegram + in-app notification (never auto-changes risk profile) |
 | 7 | Snapshot Sync | Sync snapshot data from Yahoo (full universe) + query READY/trigger-met candidates (top 15) |
 | 7c | Trade Trigger Alerts | **Tuesday only**: send `TRADE_TRIGGER` in-app alerts for trigger-met candidates (max 3) |
 | 7d | Weekly Summary Alert | **Sunday only**: send `WEEKLY_SUMMARY` in-app alert with market mood + position summary (`skipTelegram: true`) |
 | 8 | Telegram Alert | Send summary: alerts, positions, stop changes, candidates, module results |
-| 9 | Heartbeat | Write heartbeat to DB (SUCCESS or FAILED based on `hadFailure` flag) |
+| 9 | Heartbeat | Write heartbeat to DB (SUCCESS / PARTIAL / FAILED with step-level results) |
 
-**Error handling:** Each step is wrapped in its own `try/catch`. One step failing does **not** abort subsequent steps — `hadFailure` is set and execution continues. Telegram failure does not set `hadFailure` (optional infrastructure). Some sub-steps (3c, 3d, climax, correlation, sector ETF cache) only `warn` without setting `hadFailure`.
+**Step-level tracking:** Each step is timed via `startStep()`/`finalizeSteps()`. Step results (name, status, duration, error) are stored in heartbeat details JSON.
+
+**Heartbeat status is ternary:**
+- **SUCCESS** — all steps completed without error
+- **PARTIAL** — some steps failed but pipeline completed (amber on dashboard)
+- **FAILED** — critical failure
+
+**Error handling:** Each step is wrapped in its own `try/catch`. One step failing does **not** abort subsequent steps — `hadFailure` is set and execution continues. Telegram failure does not set `hadFailure` (optional infrastructure).
+
+**Watchdog:** A separate `watchdog.ts` script (`watchdog-task.bat`) runs daily at 10:00 AM. If no nightly heartbeat exists within 26 hours, it sends a Telegram alert.
 
 Runs via: `npx tsx src/cron/nightly.ts --run-now`
 

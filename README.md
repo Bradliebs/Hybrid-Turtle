@@ -68,6 +68,8 @@ That's it. The installer creates a `.env` file automatically with secure default
 | `nightly-task.bat` | Run nightly automation checks (schedulable via Task Scheduler) |
 | `package-for-distribution.bat` | Package the app for offline distribution |
 | `register-nightly-task.bat` | Register the nightly cron as a Windows Task Scheduler entry |
+| `watchdog-task.bat` | Check for missed nightly/midday heartbeats, send Telegram alert |
+| `register-watchdog-task.bat` | Register watchdog as a Windows Task Scheduler entry (10:00 AM daily) |
 
 ## Environment variables
 
@@ -85,6 +87,10 @@ To start from the template instead, copy `.env.example` to `.env` before running
 | `TELEGRAM_CHAT_ID` | | — | Telegram chat ID for alert delivery |
 | `MARKET_DATA_PROVIDER` | | `yahoo` | Market data source — `yahoo` (default) or `eodhd` |
 | `EODHD_API_KEY` | | — | EODHD API key (required only when `MARKET_DATA_PROVIDER=eodhd`) |
+| `T212_INVEST_API_KEY` | | — | Trading 212 Invest API key (alternative to storing in DB via Settings) |
+| `T212_ISA_API_KEY` | | — | Trading 212 ISA API key (alternative to storing in DB via Settings) |
+| `T212_INVEST_ACCOUNT_ID` | | — | Trading 212 Invest account ID |
+| `T212_ISA_ACCOUNT_ID` | | — | Trading 212 ISA account ID |
 | `NIGHTLY_CRON` | | `30 21 * * *` | Cron expression for nightly run (default 9:30 PM UK) |
 | `USE_PRIOR_20D_HIGH_FOR_TRIGGER` | | — | Feature flag: use prior day's 20-day high for entry trigger instead of live day |
 | `EMAIL_SMTP_HOST` | | — | SMTP host for optional email alerting (experimental) |
@@ -158,6 +164,7 @@ All routes are under `/api`. Key endpoint groups:
 | `/api/publications` | Activity feed (heartbeats, health checks, stop moves, position events) |
 | `/api/risk` | Risk calculations & gates |
 | `/api/scan` | Scan engine execution & results |
+| `/api/scan/progress` | Scan progress polling (JSON GET) |
 | `/api/settings` | User settings & preferences |
 | `/api/stocks` | Ticker universe queries |
 | `/api/stops` | Stop price history |
@@ -182,7 +189,9 @@ The dashboard relies on `/api/modules` which runs 21 module checks including sev
 - **Shared data** — SPY historical bars are fetched once and reused for both ADX and dual-regime calculations.
 - **Server-side response cache** — the `/api/modules` result is cached for 5 minutes so repeat visits within a session don't re-run everything.
 - **Client-side TTL** — the Zustand store marks module data stale after 10 minutes; the `useModulesData` hook prevents concurrent duplicate fetches.
-- **Yahoo Finance caching** — quote data is cached for 30 minutes, historical bars for 24 hours, and FX rates for 30 minutes (all in-process memory).
+- **Yahoo Finance caching** — quote data is cached for 30 minutes, historical bars for 24 hours, and FX rates for 30 minutes (all in-process memory). All Yahoo calls are wrapped in `withRetry()` for automatic retry on transient errors (429, 5xx, network) with exponential backoff.
+- **Data freshness tracking** — `getDataFreshness()` returns LIVE, CACHE, or STALE_CACHE with age. Dashboard and nightly alerts surface stale data warnings.
+- **Tuesday forced refresh** — on execution day (Tuesday), key Yahoo fetch functions bypass cache to ensure live prices for position sizing.
 - **No auto-polling** — data is fetched once when the dashboard loads. Manual refresh buttons on the market bar and hedge card let you pull fresh data on demand. This suits an infrequent-use pattern (checking once or twice a day).
 
 On first server start with an empty cache, background pre-caching fetches historical bars for all active tickers so the first dashboard load doesn't trigger hundreds of sequential chart calls.
