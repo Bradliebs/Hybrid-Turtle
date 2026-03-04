@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
     }
 
     const { tickers } = parsed.data;
-    const quotes = await getBatchQuotes(tickers);
+
+    // On Tuesdays (execution day), bypass cache for fresh prices
+    const isTuesday = new Date().getDay() === 2;
+    const quotes = await getBatchQuotes(tickers, isTuesday);
 
     // Return a lightweight map: ticker → { price, change, changePercent }
     const prices: Record<string, { price: number; change: number; changePercent: number }> = {};

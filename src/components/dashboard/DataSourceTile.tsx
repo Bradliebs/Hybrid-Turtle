@@ -11,6 +11,11 @@ interface DataSourceInfo {
   maxStalenessHours: number;
   summary: string;
   lastYahooSuccess: string | null;
+  freshness?: {
+    source: 'LIVE' | 'CACHE' | 'STALE_CACHE';
+    ageMinutes: number;
+    lastFetchTime: string | null;
+  };
 }
 
 const STATUS_CONFIG: Record<string, {
@@ -86,6 +91,8 @@ export default function DataSourceTile() {
   const staleCount = info?.staleTickers?.length ?? 0;
   const maxHours = info?.maxStalenessHours ?? 0;
   const isStaleCache = health === 'DEGRADED' && maxHours > 48;
+  // In-memory freshness: amber if serving stale cache from current session
+  const isFreshnessStale = info?.freshness?.source === 'STALE_CACHE';
 
   return (
     <div className="card-surface p-4">
@@ -133,6 +140,11 @@ export default function DataSourceTile() {
           {info?.lastYahooSuccess && (
             <div className="text-xs text-muted-foreground mt-0.5">
               Last Yahoo: {new Date(info.lastYahooSuccess).toLocaleString()}
+            </div>
+          )}
+          {isFreshnessStale && info?.freshness && (
+            <div className="text-xs text-warning mt-0.5">
+              ⚠ Session data {info.freshness.ageMinutes}m old (stale cache)
             </div>
           )}
         </div>

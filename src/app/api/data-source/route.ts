@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getDataFreshness } from '@/lib/market-data';
 
 interface DataSourceResponse {
   health: 'LIVE' | 'PARTIAL' | 'DEGRADED' | 'UNKNOWN';
@@ -18,9 +19,24 @@ interface DataSourceResponse {
   maxStalenessHours: number;
   summary: string;
   lastYahooSuccess: string | null;
+  freshness?: {
+    source: 'LIVE' | 'CACHE' | 'STALE_CACHE';
+    ageMinutes: number;
+    lastFetchTime: string | null;
+  };
 }
 
 export async function GET() {
+  // Collect in-memory freshness data regardless of heartbeat status
+  const freshness = getDataFreshness();
+  const freshnessPayload = {
+    source: freshness.source,
+    ageMinutes: freshness.ageMinutes,
+    lastFetchTime: freshness.lastFetchTimestamp > 0
+      ? new Date(freshness.lastFetchTimestamp).toISOString()
+      : null,
+  };
+
   try {
     // Find the most recent heartbeat with details
     const heartbeat = await prisma.heartbeat.findFirst({
@@ -35,6 +51,7 @@ export async function GET() {
         maxStalenessHours: 0,
         summary: 'No heartbeat data available',
         lastYahooSuccess: null,
+        freshness: freshnessPayload,
       });
     }
 
@@ -48,6 +65,7 @@ export async function GET() {
         maxStalenessHours: 0,
         summary: 'Heartbeat details unparseable',
         lastYahooSuccess: null,
+        freshness: freshnessPayload,
       });
     }
 
@@ -66,6 +84,7 @@ export async function GET() {
         maxStalenessHours: 0,
         summary: 'Pre-upgrade heartbeat — assumed live',
         lastYahooSuccess: heartbeat.timestamp.toISOString(),
+        freshness: freshnessPayload,
       });
     }
 
@@ -104,6 +123,7 @@ export async function GET() {
       maxStalenessHours: ds.maxStalenessHours ?? 0,
       summary: ds.summary ?? '',
       lastYahooSuccess,
+      freshness: freshnessPayload,
     });
   } catch (error) {
     console.error('[API] Data source status error:', (error as Error).message);
@@ -113,6 +133,7 @@ export async function GET() {
       maxStalenessHours: 0,
       summary: 'API error',
       lastYahooSuccess: null,
+      freshness: freshnessPayload,
     });
   }
 }

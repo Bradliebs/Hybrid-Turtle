@@ -31,7 +31,7 @@ import { runHealthCheck } from '@/lib/health-check';
 import { generateStopRecommendations, generateTrailingStopRecommendations, updateStopLoss } from '@/lib/stop-manager';
 import { sendNightlySummary } from '@/lib/telegram';
 import type { NightlyPositionDetail, NightlyStopChange, NightlyReadyCandidate, NightlyTriggerMetCandidate, NightlyLaggardAlert, NightlyClimaxAlert, NightlySwapAlert, NightlyWhipsawAlert, NightlyBreadthAlert, NightlyMomentumAlert, NightlyPyramidAlert, NightlyGapRiskAlert, NightlyBreakoutFailureAlert } from '@/lib/telegram';
-import { getBatchQuotes, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, calculateMA, preCacheHistoricalData } from '@/lib/market-data';
+import { getBatchQuotes, normalizeBatchPricesToGBP, getDailyPrices, calculateADX, calculateATR, calculateMA, preCacheHistoricalData, getDataFreshness } from '@/lib/market-data';
 import { fetchWithFallback, toPriceRecord } from '@/lib/data-provider';
 import type { DataSourceHealth } from '@/lib/data-provider';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
@@ -55,7 +55,7 @@ import { calculateRMultiple } from '@/lib/position-sizer';
 import { sendAlert } from '@/lib/alert-service';
 import { backupDatabase } from '@/lib/db-backup';
 import { isEnabled } from '@/lib/feature-flags';
-import { RISK_PROFILES, type RiskProfileType, type Sleeve } from '@/types';
+import { RISK_PROFILES, EQUITY_REVIEW_THRESHOLDS, type RiskProfileType, type Sleeve } from '@/types';
 
 /**
  * Return the current day-of-week (0=Sun … 6=Sat) in UK local time.
@@ -73,6 +73,48 @@ function getUKDayOfWeek(): number {
 async function runNightlyProcess() {
   const userId = 'default-user';
   let hadFailure = false;
+  // Step-level tracking for PARTIAL heartbeat status
+  interface StepResult {
+    step: string;
+    name: string;
+    status: 'OK' | 'FAILED' | 'SKIPPED';
+    error?: string;
+    durationMs: number;
+  }
+  const stepResults: StepResult[] = [];
+  let currentStepStart = 0;
+  let currentStepHadFailure = false;
+  let currentStepError: string | undefined;
+  function startStep(step: string, name: string): void {
+    // Auto-close the previous step when a new one starts
+    if (stepResults.length > 0) {
+      const prev = stepResults[stepResults.length - 1];
+      prev.durationMs = Date.now() - currentStepStart;
+      if (currentStepHadFailure) {
+        prev.status = 'FAILED';
+        if (currentStepError) prev.error = currentStepError;
+      }
+    }
+    currentStepStart = Date.now();
+    currentStepHadFailure = false;
+    currentStepError = undefined;
+    stepResults.push({ step, name, status: 'OK', durationMs: 0 });
+  }
+  function markStepFailed(error: string): void {
+    currentStepHadFailure = true;
+    currentStepError = error;
+  }
+  function finalizeSteps(): void {
+    // Close the last open step
+    if (stepResults.length > 0) {
+      const last = stepResults[stepResults.length - 1];
+      last.durationMs = Date.now() - currentStepStart;
+      if (currentStepHadFailure) {
+        last.status = 'FAILED';
+        if (currentStepError) last.error = currentStepError;
+      }
+    }
+  }
   // Track data source health across the pipeline
   let dataSourceHealth: DataSourceHealth = 'LIVE';
   let dataSourceStaleTickers: string[] = [];
@@ -92,6 +134,7 @@ async function runNightlyProcess() {
 
     // Step 0: Pre-cache historical data for all active tickers
     console.log('  [0/9] Pre-caching historical data for all active tickers...');
+    startStep('0', 'Pre-cache historical data');
     try {
       const preCacheResult = await preCacheHistoricalData();
       console.log(`        ${preCacheResult.success}/${preCacheResult.total} tickers cached in ${(preCacheResult.durationMs / 1000).toFixed(1)}s`);
@@ -121,6 +164,7 @@ async function runNightlyProcess() {
 
     // Step 1: Run health check (isolated — failure doesn't block other steps)
     console.log('  [1/9] Running health check...');
+    startStep('1', 'Health check');
     let healthReport: { overall: string; checks: Record<string, string>; results: unknown[]; timestamp: Date } = {
       overall: 'YELLOW', checks: {}, results: [], timestamp: new Date(),
     };
@@ -137,6 +181,7 @@ async function runNightlyProcess() {
     // Declared early so data source alerts (Step 2) and stop-hit detection (Step 3d) can push to it.
     const alerts: string[] = [];
     console.log('  [2/9] Fetching positions and live prices...');
+    startStep('2', 'Live prices');
     let positions: Awaited<ReturnType<typeof prisma.position.findMany<{ include: { stock: true } }>>> = [];
     try {
       positions = await prisma.position.findMany({
@@ -190,6 +235,13 @@ async function runNightlyProcess() {
     }
     console.log(`        ${positions.length} positions, ${Object.keys(livePrices).length} prices fetched`);
 
+    // Check market data freshness — warn if stale
+    const freshness = getDataFreshness();
+    if (freshness.source === 'STALE_CACHE' || freshness.ageMinutes > 60) {
+      alerts.push(`⚠️ Market data is ${freshness.ageMinutes}m old (source: ${freshness.source})`);
+      console.warn(`  [2] Data freshness warning: ${freshness.source}, ${freshness.ageMinutes}m old`);
+    }
+
     // Step 2b: Position sync — detect T212 closures before downstream steps
     console.log('  [2b] Syncing positions against Trading 212...');
     let positionSyncResult: PositionSyncResult = { checked: 0, closed: 0, skipped: 0, updated: 0, errors: [] };
@@ -220,6 +272,7 @@ async function runNightlyProcess() {
 
     // Step 3: Generate stop recommendations (isolated)
     console.log('  [3/9] Generating stop recommendations...');
+    startStep('3', 'Stop management');
     const livePriceMap = new Map(Object.entries(livePrices));
     const stopChanges: NightlyStopChange[] = [];
     const atrMap = new Map<string, number>();
@@ -426,6 +479,7 @@ async function runNightlyProcess() {
 
     // Step 4: Detect laggards + collect alerts
     console.log('  [4/9] Detecting laggards...');
+    startStep('4', 'Laggard detection');
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const equity = user?.equity || 0;
 
@@ -503,6 +557,7 @@ async function runNightlyProcess() {
 
     // Step 5: Risk-signal modules
     console.log('  [5/9] Running risk-signal modules...');
+    startStep('5', 'Risk modules');
     let climaxAlerts: NightlyClimaxAlert[] = [];
     let swapAlerts: NightlySwapAlert[] = [];
     let whipsawAlerts: NightlyWhipsawAlert[] = [];
@@ -684,6 +739,7 @@ async function runNightlyProcess() {
 
     // Step 6: Record equity snapshot + check pyramids
     console.log('  [6/9] Recording equity snapshot...');
+    startStep('6', 'Equity snapshot');
     let openRiskPercent = 0;
     try {
       const openRisk = positions
@@ -804,8 +860,33 @@ async function runNightlyProcess() {
     }
     console.log(`        Equity: ${equity.toFixed(2)}, Risk: ${openRiskPercent.toFixed(1)}%, Pyramids: ${pyramidAlerts.length}`);
 
+    // Step 6b: Equity milestone check (advisory only — never auto-changes risk profile)
+    try {
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      const dismissed: number[] = user?.dismissedEquityThresholds
+        ? JSON.parse(user.dismissedEquityThresholds) as number[]
+        : [];
+      for (const threshold of EQUITY_REVIEW_THRESHOLDS) {
+        if (equity >= threshold.equity && !dismissed.includes(threshold.equity)) {
+          alerts.push(`💰 ${threshold.message}`);
+          await sendAlert({
+            type: 'EQUITY_MILESTONE',
+            title: `Equity milestone: £${threshold.equity.toLocaleString()}`,
+            message: threshold.message,
+            data: { threshold: threshold.equity, equity },
+            priority: 'LOW',
+          });
+          console.log(`        Equity milestone: £${threshold.equity}`);
+        }
+      }
+    } catch (error) {
+      // Non-critical — don't fail the pipeline for an advisory check
+      console.warn('  [6b] Equity milestone check failed:', (error as Error).message);
+    }
+
     // Step 7: Sync snapshot + query READY candidates
     console.log('  [7/9] Syncing snapshot data...');
+    startStep('7', 'Snapshot sync');
     const positionDetails: NightlyPositionDetail[] = positions.map((p) => {
       const currentPrice = livePrices[p.stock.ticker] || p.entryPrice;
       const gbpPrice = gbpPrices[p.stock.ticker] ?? currentPrice;
@@ -1014,6 +1095,7 @@ async function runNightlyProcess() {
 
     // Step 8: Send Telegram summary (isolated — failure doesn't block heartbeat)
     console.log('  [8/9] Sending Telegram summary...');
+    startStep('8', 'Telegram alert');
     let telegramSent = false;
     try {
       telegramSent = await sendNightlySummary({
@@ -1059,9 +1141,17 @@ async function runNightlyProcess() {
 
     // Step 9: Write heartbeat
     console.log('  [9/9] Writing heartbeat...');
+    finalizeSteps();
+    // Derive status: SUCCESS (no failures), PARTIAL (some steps failed, pipeline completed), FAILED (critical)
+    const failedSteps = stepResults.filter(s => s.status === 'FAILED');
+    const heartbeatStatus = !hadFailure ? 'SUCCESS' : failedSteps.length < stepResults.length ? 'PARTIAL' : 'FAILED';
+    if (heartbeatStatus === 'PARTIAL') {
+      const degradedNames = failedSteps.map(s => `Step ${s.step} (${s.name})`).join(', ');
+      alerts.push(`⚠️ Degraded steps: ${degradedNames}`);
+    }
     await prisma.heartbeat.create({
       data: {
-        status: hadFailure ? 'FAILED' : 'SUCCESS',
+        status: heartbeatStatus,
         details: JSON.stringify({
           healthStatus: healthReport.overall,
           positionsChecked: positions.length,
@@ -1070,6 +1160,7 @@ async function runNightlyProcess() {
           alertsCount: alerts.length,
           telegramSent,
           hadFailure,
+          stepResults,
           snapshotSync,
           positionSync: {
             checked: positionSyncResult.checked,

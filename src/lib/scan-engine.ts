@@ -146,7 +146,8 @@ export async function runFullScan(
   riskProfile: RiskProfileType,
   equity: number,
   gapGuardConfig: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG,
-  onProgress?: (stage: string, processed: number, total: number) => void
+  onProgress?: (stage: string, processed: number, total: number) => void,
+  slippageBuffer = 0
 ): Promise<{
   regime: MarketRegime;
   candidates: ScanCandidate[];
@@ -399,7 +400,8 @@ export async function runFullScan(
                 entryTrigger,
                 technicals.atr,
                 new Date().getDay(),
-                gapGuardConfig
+                gapGuardConfig,
+                slippageBuffer
               );
             }
 

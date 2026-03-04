@@ -25,6 +25,7 @@ import * as eodhd from './market-data-eodhd';
 import { calcBIS } from './breakout-integrity';
 import { persistCache, rehydrateCache } from './cache-persistence';
 import { CACHE_KEYS } from './cache-keys';
+import { withRetry } from './fetch-retry';
 
 // ── Zod schemas for Yahoo Finance runtime validation ──
 const YahooQuoteSchema = z.object({
@@ -126,6 +127,53 @@ const QUOTE_TTL = 30 * 60_000;     // 30 minutes — prices fetched once per ses
 const HISTORICAL_TTL = 86_400_000; // 24 hours (daily bars don't change intraday)
 const FX_TTL = 30 * 60_000;        // 30 minutes — FX rates move slowly
 
+// ── Data freshness tracking ──
+// Tracks the source and age of the most recent market data fetches.
+// Consumed by the dashboard DataSourceTile and nightly Telegram summary.
+export type DataSource = 'LIVE' | 'CACHE' | 'STALE_CACHE';
+
+interface FreshnessInfo {
+  source: DataSource;
+  lastFetchTimestamp: number;
+  ageMinutes: number;
+}
+
+let lastLiveFetchTimestamp = 0;
+let lastFetchSource: DataSource = 'CACHE';
+
+/** Called after every successful live Yahoo fetch */
+function recordLiveFetch(): void {
+  lastLiveFetchTimestamp = Date.now();
+  lastFetchSource = 'LIVE';
+}
+
+/** Called when a cache hit is served within TTL */
+function recordCacheHit(): void {
+  if (lastFetchSource !== 'LIVE') {
+    lastFetchSource = 'CACHE';
+  }
+}
+
+/** Called when a fetch fails and stale cache is returned */
+function recordStaleCacheServed(): void {
+  lastFetchSource = 'STALE_CACHE';
+}
+
+/**
+ * Get current data freshness metadata.
+ * Used by /api/data-source and nightly Telegram summary.
+ */
+export function getDataFreshness(): FreshnessInfo {
+  const age = lastLiveFetchTimestamp > 0
+    ? (Date.now() - lastLiveFetchTimestamp) / 60_000
+    : Infinity;
+  return {
+    source: lastFetchSource,
+    lastFetchTimestamp: lastLiveFetchTimestamp,
+    ageMinutes: Math.round(age),
+  };
+}
+
 // ── Rate-limited chart queue ──
 // Serialises yf.chart() calls with a configurable delay to avoid rate-limiting.
 const CHART_DELAY_MS = 150; // ms between consecutive live chart API calls
@@ -221,18 +269,20 @@ export function toYahooTicker(ticker: string, yahooTickerOverride?: string | nul
 // ────────────────────────────────────────────────────
 // Stock Quote — live price via active provider
 // ────────────────────────────────────────────────────
-export async function getStockQuote(ticker: string): Promise<StockQuote | null> {
+export async function getStockQuote(ticker: string, forceRefresh = false): Promise<StockQuote | null> {
   // Route to EODHD if configured
   if (isEodhd()) return eodhd.getStockQuote(ticker);
 
-  // Check cache (use original ticker as key)
-  const cached = quoteCache.get(ticker);
-  if (cached && cached.expiry > Date.now()) return cached.data;
+  // Check cache (use original ticker as key) — skip on forceRefresh
+  if (!forceRefresh) {
+    const cached = quoteCache.get(ticker);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+  }
 
   const yahooTicker = toYahooTicker(ticker);
 
   try {
-    const raw = await yf.quote(yahooTicker);
+    const raw = await withRetry(() => yf.quote(yahooTicker), `quote:${ticker}`);
     if (!raw) return null;
 
     // Runtime validation — rejects malformed Yahoo responses
@@ -257,9 +307,16 @@ export async function getStockQuote(ticker: string): Promise<StockQuote | null> 
     };
 
     quoteCache.set(ticker, { data: quote, expiry: Date.now() + QUOTE_TTL });
+    recordLiveFetch();
     return quote;
   } catch (error) {
     console.error(`[YF] Quote failed for ${ticker}:`, (error as Error).message);
+    // Serve stale cache if available
+    const stale = quoteCache.get(ticker);
+    if (stale) {
+      recordStaleCacheServed();
+      return stale.data;
+    }
     return null;
   }
 }
@@ -269,14 +326,17 @@ export async function getStockQuote(ticker: string): Promise<StockQuote | null> 
 // ────────────────────────────────────────────────────
 export async function getDailyPrices(
   ticker: string,
-  outputSize: 'compact' | 'full' = 'compact'
+  outputSize: 'compact' | 'full' = 'compact',
+  forceRefresh = false
 ): Promise<DailyBar[]> {
   // Route to EODHD if configured
   if (isEodhd()) return eodhd.getDailyPrices(ticker, outputSize);
 
   const cacheKey = `${ticker}:${outputSize}`;
-  const cached = historicalCache.get(cacheKey);
-  if (cached && cached.expiry > Date.now()) return cached.data;
+  if (!forceRefresh) {
+    const cached = historicalCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+  }
 
   try {
     // compact = ~100 days, full = ~400 days (need 200+ for MA200)
@@ -290,13 +350,16 @@ export async function getDailyPrices(
     period2.setDate(period2.getDate() + 1);
 
     const yahooTicker = toYahooTicker(ticker);
-    // Route through the rate-limited queue to prevent bursts
-    const { quotes } = await enqueueChartCall(() =>
-      yf.chart(yahooTicker, {
-        period1: period1.toISOString().split('T')[0],
-        period2: period2.toISOString().split('T')[0],
-        interval: '1d',
-      })
+    // Route through the rate-limited queue to prevent bursts, with retry on transient errors
+    const { quotes } = await withRetry(
+      () => enqueueChartCall(() =>
+        yf.chart(yahooTicker, {
+          period1: period1.toISOString().split('T')[0],
+          period2: period2.toISOString().split('T')[0],
+          interval: '1d',
+        })
+      ),
+      `daily:${ticker}`
     );
 
     if (!quotes || quotes.length === 0) return [];
@@ -328,9 +391,16 @@ export async function getDailyPrices(
       }));
 
     historicalCache.set(cacheKey, { data: bars, expiry: Date.now() + HISTORICAL_TTL });
+    recordLiveFetch();
     return bars;
   } catch (error) {
     console.error(`[YF] Historical failed for ${ticker}:`, (error as Error).message);
+    // Serve stale cache if available
+    const stale = historicalCache.get(cacheKey);
+    if (stale) {
+      recordStaleCacheServed();
+      return stale.data;
+    }
     return [];
   }
 }
@@ -357,12 +427,15 @@ export async function getWeeklyPrices(
     period2.setDate(period2.getDate() + 1);
 
     const yahooTicker = toYahooTicker(ticker);
-    const { quotes } = await enqueueChartCall(() =>
-      yf.chart(yahooTicker, {
-        period1: period1.toISOString().split('T')[0],
-        period2: period2.toISOString().split('T')[0],
-        interval: '1wk',
-      })
+    const { quotes } = await withRetry(
+      () => enqueueChartCall(() =>
+        yf.chart(yahooTicker, {
+          period1: period1.toISOString().split('T')[0],
+          period2: period2.toISOString().split('T')[0],
+          interval: '1wk',
+        })
+      ),
+      `weekly:${ticker}`
     );
 
     if (!quotes || quotes.length === 0) return [];
@@ -392,9 +465,16 @@ export async function getWeeklyPrices(
       }));
 
     weeklyCache.set(cacheKey, { data: bars, expiry: Date.now() + HISTORICAL_TTL });
+    recordLiveFetch();
     return bars;
   } catch (error) {
     console.error(`[YF] Weekly historical failed for ${ticker}:`, (error as Error).message);
+    // Serve stale cache if available
+    const stale = weeklyCache.get(cacheKey);
+    if (stale) {
+      recordStaleCacheServed();
+      return stale.data;
+    }
     return [];
   }
 }
@@ -679,7 +759,10 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const rawResults = await yf.quote(indexTickers) as YahooQuoteResult[];
+      const rawResults = await withRetry(
+        () => yf.quote(indexTickers) as Promise<YahooQuoteResult[]>,
+        `indices:attempt${attempt}`
+      );
       const indices = INDEX_MAP.map(idx => {
         const q = rawResults.find(r => r.symbol === idx.ticker);
         return {
@@ -754,21 +837,24 @@ export async function getFearGreedIndex(): Promise<FearGreedData> {
 
 // ── Batch Quotes — efficient multi-ticker fetch ──
 // ── FX Rate fetch (e.g. USDGBP=X) ──
-export async function getFXRate(fromCurrency: string, toCurrency: string): Promise<number> {
+export async function getFXRate(fromCurrency: string, toCurrency: string, forceRefresh = false): Promise<number> {
   // Route to EODHD if configured
   if (isEodhd()) return eodhd.getFXRate(fromCurrency, toCurrency);
 
   if (fromCurrency === toCurrency) return 1;
   const pair = `${fromCurrency}${toCurrency}`;
   const cacheKey = pair;
-  const cached = fxCache.get(cacheKey);
-  if (cached && cached.expiry > Date.now()) return cached.data;
+  if (!forceRefresh) {
+    const cached = fxCache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.data;
+  }
 
   try {
-    const result = await yf.quote(`${pair}=X`);
+    const result = await withRetry(() => yf.quote(`${pair}=X`), `fx:${pair}`);
     const rate = result?.regularMarketPrice;
     if (rate && rate > 0) {
       fxCache.set(cacheKey, { data: rate, expiry: Date.now() + FX_TTL });
+      recordLiveFetch();
       return rate;
     }
   } catch (error) {
@@ -864,22 +950,24 @@ export async function normalizeBatchPricesToGBP(
   return normalized;
 }
 
-export async function getBatchQuotes(tickers: string[]): Promise<Map<string, StockQuote>> {
+export async function getBatchQuotes(tickers: string[], forceRefresh = false): Promise<Map<string, StockQuote>> {
   // Route to EODHD if configured
   if (isEodhd()) return eodhd.getBatchQuotes(tickers);
 
   const results = new Map<string, StockQuote>();
   if (tickers.length === 0) return results;
 
-  // Separate cached vs uncached tickers
+  // Separate cached vs uncached tickers — skip cache on forceRefresh
   const uncached: string[] = [];
   for (const ticker of tickers) {
-    const cached = quoteCache.get(ticker);
-    if (cached && cached.expiry > Date.now()) {
-      results.set(ticker, cached.data);
-    } else {
-      uncached.push(ticker);
+    if (!forceRefresh) {
+      const cached = quoteCache.get(ticker);
+      if (cached && cached.expiry > Date.now()) {
+        results.set(ticker, cached.data);
+        continue;
+      }
     }
+    uncached.push(ticker);
   }
 
   if (uncached.length === 0) return results;
@@ -898,7 +986,10 @@ export async function getBatchQuotes(tickers: string[]): Promise<Map<string, Sto
   for (let i = 0; i < yahooTickers.length; i += BATCH_SIZE) {
     const batch = yahooTickers.slice(i, i + BATCH_SIZE);
     try {
-      const rawResults = await yf.quote(batch) as YahooQuoteResult[];
+      const rawResults = await withRetry(
+        () => yf.quote(batch) as Promise<YahooQuoteResult[]>,
+        `batchQuote:chunk${i}`
+      );
       for (const r of rawResults) {
         if (!r || !r.regularMarketPrice || !r.symbol) continue;
         const originalTicker = yahooToOriginal.get(r.symbol) || r.symbol;
@@ -917,6 +1008,7 @@ export async function getBatchQuotes(tickers: string[]): Promise<Map<string, Sto
         quoteCache.set(originalTicker, { data: quote, expiry: Date.now() + QUOTE_TTL });
         results.set(originalTicker, quote);
       }
+      recordLiveFetch();
     } catch (error) {
       console.error(`[YF] Batch quote failed for chunk ${i}-${i + batch.length}:`, (error as Error).message);
       // Fallback: fetch individually for this chunk
@@ -1062,8 +1154,8 @@ export async function getVolRegime(): Promise<DetectVolRegimeResult> {
 }
 
 // ── Batch prices — just numbers ──
-export async function getBatchPrices(tickers: string[]): Promise<Record<string, number>> {
-  const quotes = await getBatchQuotes(tickers);
+export async function getBatchPrices(tickers: string[], forceRefresh = false): Promise<Record<string, number>> {
+  const quotes = await getBatchQuotes(tickers, forceRefresh);
   const prices: Record<string, number> = {};
   quotes.forEach((quote, ticker) => {
     prices[ticker] = quote.price;
@@ -1172,7 +1264,10 @@ export async function getEarningsDate(ticker: string): Promise<EarningsDateResul
 
   try {
     const yahooTicker = toYahooTicker(ticker);
-    const result = await yf.quoteSummary(yahooTicker, { modules: ['calendarEvents'] });
+    const result = await withRetry(
+      () => yf.quoteSummary(yahooTicker, { modules: ['calendarEvents'] }),
+      `earnings:${ticker}`
+    );
     const events = result?.calendarEvents;
 
     if (!events?.earningsDate || events.earningsDate.length === 0) {

@@ -6,6 +6,7 @@ import { ensureDefaultUser } from '@/lib/default-user';
 import { recordEquitySnapshot } from '@/lib/equity-snapshot';
 import { apiError } from '@/lib/api-response';
 import { z } from 'zod';
+import { isT212FromEnv, isTelegramFromEnv } from '@/lib/secrets';
 
 const settingsPutSchema = z.object({
   userId: z.string().trim().min(1).optional(),
@@ -84,6 +85,9 @@ export async function GET(request: NextRequest) {
       t212ApiSecret: maskKey(user.t212ApiSecret),
       t212IsaApiKey: maskKey(user.t212IsaApiKey),
       t212IsaApiSecret: maskKey(user.t212IsaApiSecret),
+      // Credential source flags — used by Settings UI to show read-only when from ENV
+      t212FromEnv: isT212FromEnv(),
+      telegramFromEnv: isTelegramFromEnv(),
     }, {
       headers: { 'Cache-Control': 'private, max-age=300, stale-while-revalidate=60' },
     });

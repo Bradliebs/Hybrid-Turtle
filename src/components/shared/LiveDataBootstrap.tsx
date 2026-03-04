@@ -8,7 +8,7 @@ import type { HealthStatus, MarketRegime, RiskProfileType } from '@/types';
 const DEFAULT_USER_ID = 'default-user';
 
 export default function LiveDataBootstrap() {
-  const { setHealthStatus, setHeartbeat, setMarketRegime, setRiskProfile, setEquity } = useStore();
+  const { setHealthStatus, setHeartbeat, setHeartbeatStatus, setMarketRegime, setRiskProfile, setEquity } = useStore();
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -45,9 +45,12 @@ export default function LiveDataBootstrap() {
 
     const fetchHeartbeat = async () => {
       try {
-        const data = await apiRequest<{ lastHeartbeat?: string }>('/api/heartbeat');
+        const data = await apiRequest<{ lastHeartbeat?: string; status?: string }>('/api/heartbeat');
         if (data?.lastHeartbeat) {
           setHeartbeat(new Date(data.lastHeartbeat));
+        }
+        if (data?.status === 'SUCCESS' || data?.status === 'PARTIAL' || data?.status === 'FAILED') {
+          setHeartbeatStatus(data.status);
         }
       } catch {
         // Silent fail on bootstrap
@@ -70,7 +73,7 @@ export default function LiveDataBootstrap() {
     recordHeartbeat();
     fetchHealth();
     fetchRegime();
-  }, [setHealthStatus, setHeartbeat, setMarketRegime, setRiskProfile, setEquity]);
+  }, [setHealthStatus, setHeartbeat, setHeartbeatStatus, setMarketRegime, setRiskProfile, setEquity]);
 
   return null;
 }

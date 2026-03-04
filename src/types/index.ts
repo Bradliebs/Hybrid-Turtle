@@ -53,6 +53,20 @@ export const RISK_PROFILES: Record<RiskProfileType, RiskProfileConfig> = {
   },
 };
 
+// ---- Equity Review Thresholds ----
+// Advisory only — never auto-changes risk profile
+export const EQUITY_REVIEW_THRESHOLDS = [
+  { equity: 1000, message: 'Account passed £1,000 — consider whether SMALL_ACCOUNT 4-position limit is still optimal' },
+  { equity: 2000, message: 'Account passed £2,000 — BALANCED profile (5 positions, 0.95% risk) may now be appropriate' },
+  { equity: 5000, message: 'Account passed £5,000 — review all profile options for better diversification' },
+];
+
+// ---- Disabled Modules ----
+// Modules gated by feature flags. Controlled via src/lib/feature-flags.ts.
+// Module 9: Fast Follower — disabled: requires backtesting, not validated for small account
+// Module 13: Momentum Expansion — disabled: affects position sizing, needs paper trading validation
+export const DISABLED_MODULES: Set<number> = new Set([9, 13]);
+
 // ---- Gap Guard Config ----
 export type GapGuardMode = 'ALL' | 'MONDAY_ONLY';
 

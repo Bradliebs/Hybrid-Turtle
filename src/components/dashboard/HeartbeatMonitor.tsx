@@ -6,7 +6,9 @@ import { Heart, AlertTriangle } from 'lucide-react';
 import { timeSince } from '@/lib/utils';
 
 export default function HeartbeatMonitor() {
-  const { lastHeartbeat, heartbeatOk } = useStore();
+  const { lastHeartbeat, heartbeatOk, heartbeatStatus } = useStore();
+
+  const isPartial = heartbeatOk && heartbeatStatus === 'PARTIAL';
 
   return (
     <div className="card-surface p-4">
@@ -15,12 +17,16 @@ export default function HeartbeatMonitor() {
         <div
           className={cn(
             'w-10 h-10 rounded-full flex items-center justify-center',
-            heartbeatOk
-              ? 'bg-profit/20 animate-pulse-green'
-              : 'bg-loss/20 animate-pulse-red'
+            isPartial
+              ? 'bg-warning/20'
+              : heartbeatOk
+                ? 'bg-profit/20 animate-pulse-green'
+                : 'bg-loss/20 animate-pulse-red'
           )}
         >
-          {heartbeatOk ? (
+          {isPartial ? (
+            <AlertTriangle className="w-5 h-5 text-warning" />
+          ) : heartbeatOk ? (
             <Heart className="w-5 h-5 text-profit heartbeat-animation" />
           ) : (
             <AlertTriangle className="w-5 h-5 text-loss" />
@@ -30,10 +36,14 @@ export default function HeartbeatMonitor() {
           <div
             className={cn(
               'text-sm font-semibold',
-              heartbeatOk ? 'text-profit' : 'text-loss'
+              isPartial ? 'text-warning' : heartbeatOk ? 'text-profit' : 'text-loss'
             )}
           >
-            {heartbeatOk ? 'Healthy' : 'STALE — Nightly run missing'}
+            {isPartial
+              ? 'Partial — some steps degraded'
+              : heartbeatOk
+                ? 'Healthy'
+                : 'STALE — Nightly run missing'}
           </div>
           <div className="text-xs text-muted-foreground">
             {lastHeartbeat

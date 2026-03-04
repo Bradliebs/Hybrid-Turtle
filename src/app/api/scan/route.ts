@@ -24,6 +24,7 @@ import { parseJsonBody } from '@/lib/request-validation';
 import { isNightlyRunning } from '@/lib/nightly-guard';
 import { normalizePersistedPassFlag } from '@/lib/scan-pass-flags';
 import { updateScanProgress, clearScanProgress } from '@/lib/scan-progress';
+import { getSlippageStats } from '@/lib/slippage-tracker';
 
 const scanRequestSchema = z.object({
   userId: z.string().trim().min(1),
@@ -66,12 +67,22 @@ export async function POST(request: NextRequest) {
     };
 
     clearScanProgress();
+    // Fetch historical slippage to dynamically tighten anti-chase guard
+    let slippageBuffer = 0;
+    try {
+      const slippageStats = await getSlippageStats();
+      slippageBuffer = slippageStats.atrBufferAdjustment;
+    } catch {
+      // Non-critical — use default thresholds if slippage query fails
+    }
+
     const result = await runFullScan(
       userId,
       riskProfile as RiskProfileType,
       equity,
       gapGuardConfig,
-      (stage, processed, total) => updateScanProgress(stage, processed, total)
+      (stage, processed, total) => updateScanProgress(stage, processed, total),
+      slippageBuffer
     );
     clearScanProgress();
 

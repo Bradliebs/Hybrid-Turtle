@@ -44,6 +44,7 @@ model User {
   gapGuardDailyPct    Float            @default(4.0)
   startingEquityOverride Float?
   onboardingDismissed Boolean          @default(false)
+  dismissedEquityThresholds String?    // JSON array of equity thresholds already acknowledged
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   equitySnapshots     EquitySnapshot[]

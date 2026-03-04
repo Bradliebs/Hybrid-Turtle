@@ -11,13 +11,15 @@
 
 import type { GapGuardConfig } from '@/types';
 import { DEFAULT_GAP_GUARD_CONFIG } from '@/types';
+import { applySlippageBuffer } from './slippage-tracker';
 
 export function checkAntiChasingGuard(
   currentPrice: number,
   entryTrigger: number,
   atr: number,
   dayOfWeek: number,
-  config: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG
+  config: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG,
+  slippageBuffer = 0
 ): { passed: boolean; reason: string } {
   // Weekends (0=Sun, 6=Sat) always pass — markets closed
   if (dayOfWeek === 0 || dayOfWeek === 6) {
@@ -37,7 +39,8 @@ export function checkAntiChasingGuard(
   // Pick thresholds based on day: Monday uses weekend thresholds (3-day gap),
   // Tue–Fri uses daily thresholds (1-day gap, higher bar to avoid over-triggering)
   const isWeekendGap = dayOfWeek === 1; // Monday = post-weekend
-  const atrLimit = isWeekendGap ? config.weekendThresholdATR : config.dailyThresholdATR;
+  const baseAtrLimit = isWeekendGap ? config.weekendThresholdATR : config.dailyThresholdATR;
+  const atrLimit = applySlippageBuffer(baseAtrLimit, slippageBuffer);
   const pctLimit = isWeekendGap ? config.weekendThresholdPct : config.dailyThresholdPct;
   const dayLabel = isWeekendGap ? 'Monday' : ['', '', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][dayOfWeek];
 

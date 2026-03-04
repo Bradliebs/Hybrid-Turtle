@@ -48,6 +48,7 @@ interface AppState {
   weeklyPhase: WeeklyPhase;
   lastHeartbeat: Date | null;
   heartbeatOk: boolean;
+  heartbeatStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' | null;
 
   // User State
   riskProfile: RiskProfileType;
@@ -87,6 +88,7 @@ interface AppState {
   setMarketRegime: (regime: MarketRegime) => void;
   setWeeklyPhase: (phase: WeeklyPhase) => void;
   setHeartbeat: (timestamp: Date) => void;
+  setHeartbeatStatus: (status: 'SUCCESS' | 'PARTIAL' | 'FAILED') => void;
   setRiskProfile: (profile: RiskProfileType) => void;
   setEquity: (equity: number) => void;
   setUserId: (id: string) => void;
@@ -125,6 +127,7 @@ export const useStore = create<AppState>()(persist((set, get) => ({
   weeklyPhase: getCurrentWeeklyPhase(),
   lastHeartbeat: null,
   heartbeatOk: false,
+  heartbeatStatus: null,
 
   // User State
   riskProfile: 'BALANCED',
@@ -175,6 +178,7 @@ export const useStore = create<AppState>()(persist((set, get) => ({
       lastHeartbeat: timestamp,
       heartbeatOk: Date.now() - timestamp.getTime() < 25 * 60 * 60 * 1000, // 25 hours
     }),
+  setHeartbeatStatus: (status: 'SUCCESS' | 'PARTIAL' | 'FAILED') => set({ heartbeatStatus: status }),
   setRiskProfile: (profile) => set({ riskProfile: profile }),
   setEquity: (equity) => set({ equity }),
   setUserId: (id) => set({ userId: id }),
