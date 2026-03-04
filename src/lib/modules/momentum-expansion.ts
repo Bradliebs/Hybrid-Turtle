@@ -1,3 +1,23 @@
+/**
+ * Module 13: Momentum Expansion
+ *
+ * STATUS: DISABLED — controlled by FEATURE_FLAGS.MODULE_MOMENTUM_EXPANSION
+ *
+ * This module is gated by a feature flag and will not execute unless
+ * the flag is explicitly enabled in src/lib/feature-flags.ts.
+ *
+ * WARNING: This module affects position sizing. Enabling it will
+ * change the number of shares purchased per trade. Extra validation
+ * required beyond standard module testing.
+ *
+ * BEFORE ENABLING:
+ * 1. Run backtesting validation against SnapshotTicker historical data
+ * 2. Verify results against system expectancy benchmarks
+ * 3. Test in paper trading for a minimum of 4 weeks
+ * 4. Update this comment with validation results and date
+ *
+ * Do not enable on a live account without completing the above.
+ */
 // ============================================================
 // Module 13: Momentum Expansion
 // ============================================================

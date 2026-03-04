@@ -6,7 +6,7 @@ import RegimeBadge from '@/components/shared/RegimeBadge';
 import PhaseTimeline from '@/components/plan/PhaseTimeline';
 import ReadyCandidates from '@/components/plan/ReadyCandidates';
 import PreTradeChecklist from '@/components/plan/PreTradeChecklist';
-import StopUpdateQueue from '@/components/plan/StopUpdateQueue';
+
 import PositionSizerWidget from '@/components/plan/PositionSizerWidget';
 import SwapSuggestionsWidget from '@/components/plan/SwapSuggestionsWidget';
 import LaggardAlertsWidget from '@/components/plan/LaggardAlertsWidget';
@@ -14,7 +14,7 @@ import EarlyBirdWidget from '@/components/plan/EarlyBirdWidget';
 import TodayPanel from '@/components/plan/TodayPanel';
 import { useStore } from '@/store/useStore';
 import { apiRequest } from '@/lib/api-client';
-import { ClipboardList, Calendar, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ClipboardList, Calendar, Loader2, ChevronDown, ChevronUp, Shield } from 'lucide-react';
 
 const ADVANCED_VIEW_KEY = 'hybridturtle_advanced_view';
 
@@ -408,7 +408,17 @@ export default function PlanPage() {
               {/* Left Column */}
               <div className="space-y-6">
                 <PhaseTimeline />
-                <StopUpdateQueue userId={DEFAULT_USER_ID} onApplied={fetchPositions} />
+                <div className="card-surface p-4">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-primary-400" />
+                    <span className="text-sm text-muted-foreground">
+                      Stop queue managed in{' '}
+                      <a href="/portfolio/positions" className="text-primary-400 hover:underline font-medium">
+                        Positions →
+                      </a>
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Middle Column */}

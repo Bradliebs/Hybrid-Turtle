@@ -6,6 +6,10 @@
 // Uses globalThis to survive Next.js hot-reloads in dev mode
 // (same pattern as Prisma singleton).
 // Clears automatically on server restart or when a new scan runs.
+// Persists to disk via cache-persistence so it survives full restarts.
+
+import { persistCache, rehydrateCache, invalidateCache } from './cache-persistence';
+import { CACHE_KEYS } from './cache-keys';
 
 export interface CachedScanResult {
   regime: string;
@@ -35,7 +39,7 @@ if (!globalForScan.__scanCache) {
   globalForScan.__scanCache = null;
 }
 
-/** Store the latest scan result. */
+/** Store the latest scan result. Also persists to disk (fire-and-forget). */
 export function setScanCache(
   result: Omit<CachedScanResult, 'cachedAt'>,
 ): CachedScanResult {
@@ -43,10 +47,14 @@ export function setScanCache(
     ...result,
     cachedAt: new Date().toISOString(),
   };
+  // Persist to disk asynchronously — do not block the caller
+  persistCache(CACHE_KEYS.SCAN_RESULTS, globalForScan.__scanCache).catch((err) => {
+    console.warn('[scan-cache] Failed to persist to disk:', (err as Error).message);
+  });
   return globalForScan.__scanCache;
 }
 
-/** Retrieve the cached scan result (or null if none). */
+/** Retrieve the cached scan result (or null if none). Synchronous — disk used only at warmup. */
 export function getScanCache(): CachedScanResult | null {
   return globalForScan.__scanCache;
 }
@@ -62,7 +70,27 @@ export function isScanCacheFresh(
   return now - cachedAt <= ttlMs;
 }
 
-/** Clear the cache (e.g. before a new scan). */
+/** Clear the cache (e.g. before a new scan). Also removes persisted file. */
 export function clearScanCache(): void {
   globalForScan.__scanCache = null;
+  invalidateCache(CACHE_KEYS.SCAN_RESULTS).catch(() => {});
+}
+
+/**
+ * Attempt to rehydrate the in-memory scan cache from disk.
+ * Called once at server startup by cache-warmup.ts.
+ */
+export async function rehydrateScanCacheFromDisk(): Promise<boolean> {
+  if (globalForScan.__scanCache) return true; // Already warm
+  try {
+    const persisted = await rehydrateCache<CachedScanResult>(CACHE_KEYS.SCAN_RESULTS);
+    if (persisted) {
+      globalForScan.__scanCache = persisted.data;
+      console.log(`[scan-cache] Rehydrated from disk (age: ${Math.round(persisted.age / 1000)}s)`);
+      return true;
+    }
+  } catch {
+    // Silent — treat as cache miss
+  }
+  return false;
 }

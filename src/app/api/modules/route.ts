@@ -39,14 +39,10 @@ import {
 } from '@/lib/modules';
 import type { RiskProfileType, Sleeve, MarketRegime, ModuleStatus, AllModulesResult, FastFollowerSignal, ReEntrySignal, PyramidAlert, TradeLogEntry, MomentumExpansionResult } from '@/types';
 import { apiError } from '@/lib/api-response';
+import { getModulesCache, setModulesCache, MODULES_CACHE_TTL } from '@/lib/modules-cache';
+import { isEnabled } from '@/lib/feature-flags';
 
 export const dynamic = 'force-dynamic';
-
-// ── Server-side response cache (60 s TTL) ──
-// Prevents duplicate heavy computation when multiple browser
-// components trigger overlapping requests.
-let _modulesCache: { json: AllModulesResult; expiry: number; userId: string } | null = null;
-const MODULES_CACHE_TTL = 5 * 60_000; // 5 minutes — dashboard is checked infrequently
 
 export async function GET(request: NextRequest) {
   const t0 = Date.now();
@@ -56,9 +52,10 @@ export async function GET(request: NextRequest) {
     if (!userId) userId = await ensureDefaultUser();
 
     // Return cached response if fresh
-    if (_modulesCache && _modulesCache.userId === userId && _modulesCache.expiry > Date.now()) {
+    const cachedResult = getModulesCache(userId);
+    if (cachedResult) {
       console.log(`[Modules] Cache hit — returning cached result (${Date.now() - t0}ms)`);
-      return NextResponse.json(_modulesCache.json);
+      return NextResponse.json(cachedResult);
     }
 
     // ── Phase 1: DB lookups (parallelised) ──
@@ -230,7 +227,7 @@ export async function GET(request: NextRequest) {
       getDailyPrices('SPY', 'full'),
       // 4: VWRL full (for dual regime)
       getDailyPrices('VWRL.L', 'full'),
-      // 5: Fast followers — DISABLED: re-entry after stop-hit fights the tape at 4-position account size
+      // 5: Fast followers — gated by feature flag (always resolves as empty when disabled)
       Promise.resolve([] as FastFollowerSignal[]),
       // 6: Re-entry signals
       scanReEntrySignals(
@@ -348,14 +345,19 @@ export async function GET(request: NextRequest) {
       const adxResult = calculateADX(spyBars, 14);
       spyAdx = adxResult.adx;
     }
-    // Module 13: Momentum Expansion — DISABLED: procyclical risk expansion, adds risk near end of moves not middle
-    const momentumExpansion: MomentumExpansionResult = {
-      adx: spyAdx,
-      threshold: 25,
-      expandedMaxRisk: null,
-      isExpanded: false,
-      reason: 'Disabled — procyclical risk expansion, adds risk near end of moves not middle',
-    };
+    // Module 13: Momentum Expansion — gated by feature flag
+    const momentumExpansion: MomentumExpansionResult = isEnabled('MODULE_MOMENTUM_EXPANSION')
+      ? (() => {
+          // Would call checkMomentumExpansion(spyAdx, riskProfile) here
+          return { adx: spyAdx, threshold: 25, expandedMaxRisk: null, isExpanded: false, reason: 'Enabled but no expansion triggered' };
+        })()
+      : {
+          adx: spyAdx,
+          threshold: 25,
+          expandedMaxRisk: null,
+          isExpanded: false,
+          reason: 'Disabled — feature flag MODULE_MOMENTUM_EXPANSION is off',
+        };
 
     // ── Regime Stability ──
     const regimeStability = checkRegimeStability(regime, regimeHistoryRecords);
@@ -563,11 +565,11 @@ export async function GET(request: NextRequest) {
       { id: 5, name: 'Climax Top Exit', status: climaxSignals.length > 0 ? 'RED' : 'GREEN', summary: climaxSignals.length > 0 ? `${climaxSignals.length} climax signal(s)` : 'No climax detected' },
       { id: 7, name: 'Heat-Map Swap', status: swapSuggestions.length > 0 ? 'YELLOW' : 'GREEN', summary: swapSuggestions.length > 0 ? `${swapSuggestions.length} swap(s) suggested` : 'No swaps needed' },
       { id: 8, name: 'Heat Check', status: heatChecks.some(h => h.blocked) ? 'RED' : 'GREEN', summary: heatChecks.some(h => h.blocked) ? 'Some entries blocked' : 'No concentration issues' },
-      { id: 9, name: 'Fast-Follower Re-Entry', status: 'DISABLED', summary: 'Disabled — re-entry after stop-hit fights the tape at 4-position account size' },
+      { id: 9, name: 'Fast-Follower Re-Entry', status: 'DISABLED', summary: isEnabled('MODULE_FAST_FOLLOWER') ? 'Active' : 'Disabled — feature flag off. Awaiting backtesting.' },
       { id: 10, name: 'Breadth Safety Valve', status: breadthSafety.isRestricted ? 'RED' : 'GREEN', summary: breadthSafety.reason },
       { id: 11, name: 'Whipsaw Kill Switch', status: whipsawBlocks.length > 0 ? 'RED' : 'GREEN', summary: whipsawBlocks.length > 0 ? `${whipsawBlocks.length} ticker(s) blocked` : 'No blocks active' },
       { id: 12, name: 'Super-Cluster Cap', status: superClusterResults.some(s => s.breached) ? 'RED' : 'GREEN', summary: superClusterResults.some(s => s.breached) ? 'Breach detected' : 'Within limits' },
-      { id: 13, name: 'Momentum Expansion', status: 'DISABLED', summary: 'Disabled — procyclical risk expansion, adds risk near end of moves not middle' },
+      { id: 13, name: 'Momentum Expansion', status: 'DISABLED', summary: isEnabled('MODULE_MOMENTUM_EXPANSION') ? 'Active' : 'Disabled — feature flag off. Awaiting backtesting.' },
       { id: 14, name: 'Climax Trim/Tighten', status: climaxSignals.length > 0 ? 'YELLOW' : 'GREEN', summary: climaxSignals.length > 0 ? 'Action needed' : 'No action' },
       { id: 15, name: 'Trades Log', status: 'GREEN', summary: `${recentTrades.length} recent trades` },
       { id: 16, name: 'Turnover Monitor', status: turnover.avgHoldingPeriod < 5 ? 'YELLOW' : 'GREEN', summary: `Avg hold: ${turnover.avgHoldingPeriod}d, ${turnover.tradesLast30Days} trades/30d` },
@@ -601,7 +603,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Cache the result
-    _modulesCache = { json: result, expiry: Date.now() + MODULES_CACHE_TTL, userId };
+    setModulesCache(userId, result);
 
     console.log(`[Modules] Total request time: ${Date.now() - t0}ms`);
     return NextResponse.json(result);

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Navbar from '@/components/shared/Navbar';
 import StageFunnel from '@/components/scan/StageFunnel';
 import TechnicalFilterGrid from '@/components/scan/TechnicalFilterGrid';
@@ -10,13 +11,38 @@ import dynamic from 'next/dynamic';
 
 // Dynamic import: lightweight-charts (~45KB) only loaded when scan page is visited
 const TickerChart = dynamic(() => import('@/components/scan/TickerChart'), { ssr: false });
+// Lazy tabs — code-split so Scores/CrossRef only load on first click
+const ScoresTab = lazy(() => import('@/components/scan/ScoresTab'));
+const CrossRefTab = lazy(() => import('@/components/scan/CrossRefTab'));
 import StatusBadge from '@/components/shared/StatusBadge';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { cn, formatPrice } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import { useStore } from '@/store/useStore';
 import { Search, Play, Filter, Check, X, AlertTriangle, BarChart3, GitMerge, RefreshCw } from 'lucide-react';
-import Link from 'next/link';
+
+// Tab definitions
+const TABS = [
+  { id: 'pipeline', label: 'Pipeline', icon: Search },
+  { id: 'scores', label: 'Scores', icon: BarChart3 },
+  { id: 'cross-ref', label: 'Cross-Ref', icon: GitMerge },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
+
+/** Skeleton placeholder for lazy-loaded tabs */
+function TabSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="h-8 w-64 bg-navy-800 rounded" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 bg-navy-800 rounded-lg" />
+        ))}
+      </div>
+      <div className="h-64 bg-navy-800 rounded-lg" />
+    </div>
+  );
+}
 
 /** Live price data returned by /api/scan/live-prices */
 interface LivePriceData {
@@ -60,6 +86,29 @@ function YahooSuffix({ candidate }: { candidate: { ticker: string; yahooTicker?:
 }
 
 export default function ScanPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Search className="w-8 h-8 text-primary-400 animate-pulse" />
+          <p className="text-sm text-muted-foreground">Loading scan...</p>
+        </div>
+      </div>
+    }>
+      <ScanPageInner />
+    </Suspense>
+  );
+}
+
+function ScanPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const activeTab = (searchParams.get('tab') ?? 'pipeline') as TabId;
+
+  function handleTabChange(tab: TabId) {
+    router.replace(`/scan?tab=${tab}`, { scroll: false });
+  }
+
   const [activeStage, setActiveStage] = useState(1);
   const [isRunning, setIsRunning] = useState(false);
   const [scanProgress, setScanProgress] = useState<{ stage: string; processed: number; total: number } | null>(null);
@@ -316,14 +365,6 @@ export default function ScanPage() {
           </div>
           <div className="flex items-center gap-3">
             <RegimeBadge regime={marketRegime} />
-            <Link href="/scan/cross-ref" className="btn-outline text-sm flex items-center gap-2">
-              <GitMerge className="w-4 h-4" />
-              Cross-Ref
-            </Link>
-            <Link href="/scan/scores" className="btn-outline text-sm flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Dual Scores
-            </Link>
             <button
               onClick={runScan}
               className="btn-primary flex items-center gap-2"
@@ -334,6 +375,52 @@ export default function ScanPage() {
             </button>
           </div>
         </div>
+
+        {/* Tab Bar */}
+        <div className="card-surface p-1 flex gap-1">
+          {TABS.map((tab) => {
+            const TabIcon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
+                  isActive
+                    ? 'bg-primary/15 text-primary-400 border border-primary/30'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-navy-800/50'
+                )}
+              >
+                <TabIcon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ══════════════════════════════════════════════════
+            TAB: Scores
+           ══════════════════════════════════════════════════ */}
+        {activeTab === 'scores' && (
+          <Suspense fallback={<TabSkeleton />}>
+            <ScoresTab />
+          </Suspense>
+        )}
+
+        {/* ══════════════════════════════════════════════════
+            TAB: Cross-Reference
+           ══════════════════════════════════════════════════ */}
+        {activeTab === 'cross-ref' && (
+          <Suspense fallback={<TabSkeleton />}>
+            <CrossRefTab />
+          </Suspense>
+        )}
+
+        {/* ══════════════════════════════════════════════════
+            TAB: Pipeline (existing scan content)
+           ══════════════════════════════════════════════════ */}
+        {activeTab === 'pipeline' && (<>
 
         {/* Scan Progress Bar — sticky so it stays visible while scrolling */}
         {isRunning && (
@@ -825,6 +912,8 @@ export default function ScanPage() {
             initialTicker={candidates[0]?.ticker}
           />
         )}
+
+        </>)}
       </main>
     </div>
   );

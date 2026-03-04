@@ -51,3 +51,9 @@ install.log
 
 # claude
 .claude/
+
+# database backups
+prisma/backups/
+
+# persisted caches
+prisma/cache/

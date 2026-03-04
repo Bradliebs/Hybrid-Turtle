@@ -170,6 +170,26 @@ export type CandidateStatus = 'READY' | 'WATCH' | 'WAIT_PULLBACK' | 'COOLDOWN' |
 export type WeeklyPhase = 'PLANNING' | 'OBSERVATION' | 'EXECUTION' | 'MAINTENANCE';
 export type HealthStatus = 'GREEN' | 'YELLOW' | 'RED';
 
+// ---- Execution Mode (phase + regime → what entries are allowed) ----
+export type ExecutionMode = 'PLANNED' | 'OPPORTUNISTIC' | 'BLOCKED' | 'PLANNING';
+
+export interface OpportunisticGates {
+  minNCS: number;
+  maxFWS: number;
+  requireAutoYes: boolean;
+  requireBullish: boolean;
+  maxNewPositions: number;
+}
+
+/** Mid-week opportunistic entry thresholds — higher bar than Tuesday */
+export const OPPORTUNISTIC_GATES: OpportunisticGates = {
+  minNCS: 70,
+  maxFWS: 30,
+  requireAutoYes: true,
+  requireBullish: true,
+  maxNewPositions: 1,
+};
+
 // ---- Weekly Phase Helpers ----
 export function getCurrentWeeklyPhase(): WeeklyPhase {
   // Use UK time (Europe/London) to match the trading calendar
@@ -445,7 +465,6 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
   { label: 'Plan', href: '/plan' },
   { label: 'Trade Log', href: '/trade-log' },
   { label: 'Journal', href: '/journal' },
-  { label: 'Results', href: '/performance' },
   { label: 'Risk', href: '/risk' },
   { label: 'Signals', href: '/backtest' },
   { label: 'Settings', href: '/settings' },
@@ -453,7 +472,8 @@ export const MAIN_NAV_ITEMS: NavItem[] = [
 
 export const PORTFOLIO_SUB_NAV: NavItem[] = [
   { label: 'Positions', href: '/portfolio/positions' },
-  { label: 'Distribution', href: '/portfolio/distribution' },
+  { label: 'Distribution', href: '/portfolio/positions?tab=distribution' },
+  { label: 'Performance', href: '/portfolio/positions?tab=performance' },
 ];
 
 // ============================================================

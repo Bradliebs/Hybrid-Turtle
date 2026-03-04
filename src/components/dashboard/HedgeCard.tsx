@@ -55,7 +55,7 @@ export default function HedgeCard() {
     try {
       setLoading(true);
       setError(null);
-      const json = await apiRequest<HedgeData>('/api/positions/hedge?userId=default');
+      const json = await apiRequest<HedgeData>('/api/positions/hedge?userId=default-user');
       setData(json);
     } catch (error) {
       const message =

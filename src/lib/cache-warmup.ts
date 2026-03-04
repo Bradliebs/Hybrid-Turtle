@@ -1,0 +1,51 @@
+/**
+ * DEPENDENCIES
+ * Consumed by: root server init (called once on startup)
+ * Consumes: scan-cache.ts, modules-cache.ts, market-data.ts
+ * Risk-sensitive: NO (optimisation only)
+ * Last modified: 2026-03-04
+ * Notes: Warms all caches from disk on server startup. Non-blocking —
+ *        failures are logged and swallowed. Server starts normally
+ *        regardless of warmup outcome.
+ */
+
+import { rehydrateScanCacheFromDisk } from './scan-cache';
+import { rehydrateModulesCacheFromDisk } from './modules-cache';
+import { rehydrateQuoteCacheFromDisk } from './market-data';
+
+// Track whether warmup has been called to avoid double-runs
+const globalForWarmup = globalThis as unknown as {
+  __cacheWarmupDone: boolean;
+};
+
+/**
+ * Warm all persisted caches from disk. Idempotent — safe to call multiple times.
+ * Returns immediately if already called once this process.
+ */
+export async function warmCachesOnStartup(): Promise<void> {
+  if (globalForWarmup.__cacheWarmupDone) return;
+  globalForWarmup.__cacheWarmupDone = true;
+
+  console.log('[cache-warmup] Warming caches from disk...');
+  const t0 = Date.now();
+
+  const results = await Promise.allSettled([
+    rehydrateScanCacheFromDisk(),
+    rehydrateModulesCacheFromDisk(),
+    rehydrateQuoteCacheFromDisk(),
+  ]);
+
+  const labels = ['Scan', 'Modules', 'Quotes'];
+  const summary: string[] = [];
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled' && r.value) {
+      summary.push(`${labels[i]}: ✓`);
+    } else if (r.status === 'rejected') {
+      summary.push(`${labels[i]}: ✗ (${(r.reason as Error)?.message ?? 'unknown'})`);
+    } else {
+      summary.push(`${labels[i]}: — (empty/expired)`);
+    }
+  });
+
+  console.log(`[cache-warmup] Complete in ${Date.now() - t0}ms — ${summary.join(', ')}`);
+}

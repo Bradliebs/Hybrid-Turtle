@@ -17,6 +17,8 @@ import PyramidAlertsWidget from '@/components/dashboard/PyramidAlertsWidget';
 import HedgeCard from '@/components/dashboard/HedgeCard';
 import ScoringGuideWidget from '@/components/dashboard/ScoringGuideWidget';
 import MigrationBanner from '@/components/dashboard/MigrationBanner';
+import TodayDirectiveCard from '@/components/dashboard/TodayDirectiveCard';
+import OnboardingBanner from '@/components/dashboard/OnboardingBanner';
 import RegimeBadge from '@/components/shared/RegimeBadge';
 import { useStore } from '@/store/useStore';
 import { formatDate } from '@/lib/utils';
@@ -178,6 +180,12 @@ export default function DashboardPage() {
 
       {!initialLoading && (
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
+        {/* Onboarding Guide — shown when setup is incomplete */}
+        <OnboardingBanner />
+
+        {/* Today's Directive — first element */}
+        <TodayDirectiveCard />
+
         {/* Market Indices Row */}
         <MarketIndicesBar />
 

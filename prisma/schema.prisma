@@ -43,6 +43,7 @@ model User {
   gapGuardDailyATR    Float            @default(1.0)
   gapGuardDailyPct    Float            @default(4.0)
   startingEquityOverride Float?
+  onboardingDismissed Boolean          @default(false)
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   equitySnapshots     EquitySnapshot[]

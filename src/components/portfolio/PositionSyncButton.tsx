@@ -258,7 +258,7 @@ export default function PositionSyncButton({ onSyncComplete }: PositionSyncButto
                 </p>
 
                 <Link
-                  href={`/journal?position=${pos.positionId}`}
+                  href={`/portfolio/positions?position=${pos.positionId}`}
                   className="inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300 mt-1.5 transition-colors"
                 >
                   <BookOpen className="w-3 h-3" />

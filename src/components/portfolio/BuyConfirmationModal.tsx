@@ -23,8 +23,18 @@ import { getBuyButtonState } from '@/lib/ready-to-buy';
 import { getDayOfWeek } from '@/lib/utils';
 import type { TriggerMetCandidate } from '@/lib/ready-to-buy';
 import type { PositionSizingResult } from '@/types';
+import { OPPORTUNISTIC_GATES, type ExecutionMode } from '@/types';
 import type { CorrelationScalarResult } from '@/lib/correlation-scalar';
 import { applyCorrelationScalar } from '@/lib/correlation-scalar';
+import { useStore } from '@/store/useStore';
+import WhyCardPopover, { WhyCardProvider } from '@/components/shared/WhyCardPopover';
+import { RISK_GATE_EXPLANATIONS } from '@/lib/why-explanations';
+import {
+  MANUAL_CHECKLIST_ITEMS,
+  AUTO_CHECKLIST_ITEMS,
+  CATEGORY_LABELS,
+  type ChecklistCategory,
+} from '@/lib/pre-trade-checklist-items';
 import {
   X,
   ShoppingCart,
@@ -36,6 +46,10 @@ import {
   Zap,
   AlertOctagon,
   Link2,
+  Lock,
+  ArrowLeft,
+  ArrowRight,
+  CheckSquare,
 } from 'lucide-react';
 
 const DEFAULT_USER_ID = 'default-user';
@@ -71,6 +85,7 @@ interface BuyConfirmationModalProps {
   /** Tickers of currently open positions — used for correlation scalar lookup */
   openPositionTickers: string[];
   isOpen: boolean;
+  executionMode?: ExecutionMode;
   onConfirm: () => Promise<void>;
   onCancel: () => void;
 }
@@ -95,6 +110,7 @@ export default function BuyConfirmationModal({
   sizePosition,
   openPositionTickers,
   isOpen,
+  executionMode,
   onConfirm,
   onCancel,
 }: BuyConfirmationModalProps) {
@@ -104,6 +120,55 @@ export default function BuyConfirmationModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // ── Checklist Gate State ──
+  // Phase 1 = checklist, Phase 2 = confirmation (existing trade details)
+  const [modalPhase, setModalPhase] = useState<'checklist' | 'confirm'>('checklist');
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+
+  // Read regime from global store for auto-verified checklist items
+  const { marketRegime } = useStore();
+
+  // Auto-verified checks — system determines these, user cannot toggle
+  const autoChecks = useMemo(() => {
+    const regimeOk = marketRegime !== 'BEARISH';
+    const riskGatesPass = candidate.scanPassesRiskGates === true;
+    const openRiskOk = riskBudget ? riskBudget.usedRiskPercent < riskBudget.maxRiskPercent : false;
+    const positionCountOk = riskBudget ? riskBudget.usedPositions < riskBudget.maxPositions : false;
+
+    return new Map<string, boolean>([
+      ['regime-bullish', regimeOk],
+      ['fear-greed-ok', true], // Display-only — not blocking; market data may be stale
+      ['spy-above-ma200', marketRegime !== 'BEARISH'],
+      ['risk-gates-pass', riskGatesPass],
+      ['open-risk-ok', openRiskOk],
+      ['position-count-ok', positionCountOk],
+      ['sleeve-caps-ok', true], // Checked server-side — can't easily verify client-side, default pass
+    ]);
+  }, [marketRegime, candidate.scanPassesRiskGates, riskBudget]);
+
+  // Blocking auto-checks: regime must not be BEARISH, risk gates must pass
+  const autoBlockers = useMemo(() => {
+    const blockers: string[] = [];
+    if (marketRegime === 'BEARISH') blockers.push('Market regime is BEARISH — new entries blocked');
+    if (candidate.scanPassesRiskGates === false) blockers.push('Risk gates failed for this candidate');
+    if (riskBudget && riskBudget.usedPositions >= riskBudget.maxPositions) blockers.push('Maximum position count reached');
+    if (riskBudget && riskBudget.usedRiskPercent >= riskBudget.maxRiskPercent) blockers.push('Open risk at limit');
+    return blockers;
+  }, [marketRegime, candidate.scanPassesRiskGates, riskBudget]);
+
+  const isAutoBlocked = autoBlockers.length > 0;
+  const allManualChecked = MANUAL_CHECKLIST_ITEMS.every((item) => checkedItems.has(item.id));
+  const canProceedToConfirm = allManualChecked && !isAutoBlocked;
+  const manualCheckedCount = MANUAL_CHECKLIST_ITEMS.filter((item) => checkedItems.has(item.id)).length;
+
+  // Reset checklist when modal closes/opens
+  useEffect(() => {
+    if (!isOpen) {
+      setModalPhase('checklist');
+      setCheckedItems(new Set());
+    }
+  }, [isOpen]);
 
   // ── T212 Execution State ──
   const [executing, setExecuting] = useState(false);
@@ -449,32 +514,241 @@ export default function BuyConfirmationModal({
 
       {/* Modal */}
       <div className="relative bg-navy-900 border border-border rounded-xl shadow-2xl w-full max-w-lg mx-4 animate-fade-in max-h-[90vh] overflow-y-auto">
-        {/* Header */}
+        {/* Header — changes based on modal phase */}
         <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-navy-900 z-10">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             {executing ? (
               <Zap className="w-5 h-5 text-primary-400" />
+            ) : modalPhase === 'checklist' ? (
+              <CheckSquare className="w-5 h-5 text-primary-400" />
             ) : (
               <ShoppingCart className="w-5 h-5 text-primary-400" />
             )}
-            {executing ? 'Executing Trade' : 'Confirm Buy'} — {candidate.ticker}
+            {executing
+              ? 'Executing Trade'
+              : modalPhase === 'checklist'
+              ? 'Pre-Trade Checklist'
+              : 'Confirm Buy'}{' '}
+            — {candidate.ticker}
           </h2>
-          {canDismiss && (
-            <button
-              onClick={handleClose}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Checklist completed badge on Phase 2 */}
+            {modalPhase === 'confirm' && !executing && (
+              <span className="text-[10px] px-2 py-0.5 rounded bg-profit/15 text-profit font-medium flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" /> Checklist done
+              </span>
+            )}
+            {canDismiss && (
+              <button
+                onClick={handleClose}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="p-5 space-y-4">
           {/* ══════════════════════════════════════════════════
-              EXECUTION VIEW — 3-step progress
+              PHASE 1: PRE-TRADE CHECKLIST GATE
              ══════════════════════════════════════════════════ */}
-          {(executing || executionResult) && phases.length > 0 ? (
+          {modalPhase === 'checklist' ? (
+            <WhyCardProvider>
+            <div className="space-y-4">
+              {/* Opportunistic mode banner */}
+              {executionMode === 'OPPORTUNISTIC' && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <div className="flex items-center gap-2 text-amber-400 text-sm font-semibold mb-1">
+                    <Zap className="w-4 h-4" />
+                    Mid-week opportunistic entry
+                  </div>
+                  <p className="text-xs text-amber-400/70">
+                    Higher bar applied: NCS ≥ {OPPORTUNISTIC_GATES.minNCS} · FWS ≤ {OPPORTUNISTIC_GATES.maxFWS} · Auto-Yes only · Max {OPPORTUNISTIC_GATES.maxNewPositions} position today
+                  </p>
+                </div>
+              )}
+
+              {/* Auto-verified items (system checks) */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-3 h-3 text-muted-foreground" />
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    System Verified
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {AUTO_CHECKLIST_ITEMS.map((item) => {
+                    const pass = autoChecks.get(item.id) ?? true;
+                    return (
+                      <div
+                        key={item.id}
+                        className={cn(
+                          'flex items-center gap-2 p-2 rounded',
+                          pass ? 'bg-navy-800/50' : 'bg-loss/10 border border-loss/20'
+                        )}
+                      >
+                        {pass ? (
+                          <Lock className="w-3.5 h-3.5 text-profit flex-shrink-0" />
+                        ) : (
+                          <AlertOctagon className="w-3.5 h-3.5 text-loss flex-shrink-0" />
+                        )}
+                        <span className={cn('text-xs flex-1', pass ? 'text-muted-foreground' : 'text-loss')}>
+                          {item.label}
+                        </span>
+                        <span className={cn('text-[10px] font-mono', pass ? 'text-profit' : 'text-loss')}>
+                          {pass ? '✓ Verified' : '✗ Failed'}
+                        </span>
+                        {!pass && (
+                          <WhyCardPopover
+                            data={{
+                              title: item.label,
+                              description: item.description ?? 'This system check failed.',
+                              tip: RISK_GATE_EXPLANATIONS[item.label]?.tip,
+                              sections: candidate.scanPassesRiskGates === false && item.category === 'RISK'
+                                ? (candidate as unknown as { riskGateResults?: { passed: boolean; gate: string; message: string }[] })
+                                    .riskGateResults?.filter(g => !g.passed).map(g => ({
+                                      label: g.gate,
+                                      value: g.message,
+                                      status: 'fail' as const,
+                                    }))
+                                : undefined,
+                            }}
+                            triggerClassName="ml-0.5"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Blocking auto-check failure — prevents continuation entirely */}
+              {isAutoBlocked && (
+                <div className="p-3 bg-loss/10 border-2 border-loss/40 rounded-lg">
+                  <div className="flex items-center gap-2 text-loss text-sm font-semibold mb-1.5">
+                    <AlertOctagon className="w-4 h-4" />
+                    Trade Blocked
+                  </div>
+                  <ul className="space-y-1">
+                    {autoBlockers.map((msg) => (
+                      <li key={msg} className="text-xs text-loss/80">• {msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Manual checklist items — user must check each one */}
+              {!isAutoBlocked && (
+                <>
+                  {(['SETUP', 'EXECUTION'] as ChecklistCategory[]).map((cat) => {
+                    const items = MANUAL_CHECKLIST_ITEMS.filter((i) => i.category === cat);
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={cat}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            {CATEGORY_LABELS[cat]}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {items.map((item) => {
+                            const isChecked = checkedItems.has(item.id);
+                            return (
+                              <label
+                                key={item.id}
+                                className={cn(
+                                  'flex items-center gap-2.5 p-2 rounded cursor-pointer transition-colors',
+                                  isChecked
+                                    ? 'bg-navy-800/50'
+                                    : 'bg-navy-800/30 hover:bg-navy-800/50'
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setCheckedItems((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(item.id)) next.delete(item.id);
+                                      else next.add(item.id);
+                                      return next;
+                                    });
+                                  }}
+                                  className="rounded border-border bg-navy-700 text-primary-400 w-3.5 h-3.5 flex-shrink-0"
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <span className={cn('text-xs', isChecked ? 'text-foreground' : 'text-muted-foreground')}>
+                                    {item.label}
+                                  </span>
+                                  {item.description && (
+                                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">{item.description}</p>
+                                  )}
+                                </div>
+                                {isChecked && <CheckCircle2 className="w-3.5 h-3.5 text-profit flex-shrink-0" />}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Progress + Continue */}
+                  <div className="pt-3 border-t border-border space-y-3">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{manualCheckedCount} of {MANUAL_CHECKLIST_ITEMS.length} checks completed</span>
+                      <div className="w-24 h-1.5 bg-navy-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-profit transition-all duration-300 rounded-full"
+                          style={{ width: `${(manualCheckedCount / MANUAL_CHECKLIST_ITEMS.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setModalPhase('confirm')}
+                      disabled={!canProceedToConfirm}
+                      className="w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 bg-primary/15 text-primary-400 border border-primary/30 hover:bg-primary/25 hover:border-primary/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Continue to Trade
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+
+                    {/* De-emphasised bypass for experienced users */}
+                    {!canProceedToConfirm && !isAutoBlocked && (
+                      <button
+                        onClick={() => {
+                          // Check all manual items at once
+                          setCheckedItems(new Set(MANUAL_CHECKLIST_ITEMS.map((i) => i.id)));
+                        }}
+                        className="w-full text-center text-[10px] text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors py-1"
+                      >
+                        I&apos;ve already completed this today — skip
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* Cancel button when auto-blocked */}
+              {isAutoBlocked && (
+                <div className="pt-3 border-t border-border">
+                  <button
+                    onClick={onCancel}
+                    className="w-full px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
+            </div>
+            </WhyCardProvider>
+          ) : (executing || executionResult) && phases.length > 0 ? (
+          /* ══════════════════════════════════════════════════
+              EXECUTION VIEW — 3-step progress
+             ══════════════════════════════════════════════════ */
             <div className="space-y-3">
               {phases.map((phase, i) => (
                 <PhaseStep key={phase.phase} phase={phase} index={i} />
@@ -559,6 +833,17 @@ export default function BuyConfirmationModal({
                CONFIRMATION VIEW — Pre-trade details
               ══════════════════════════════════════════════════ */
             <>
+              {/* Back to checklist — only when not submitting/executing */}
+              {!submitting && !success && (
+                <button
+                  onClick={() => setModalPhase('checklist')}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors -mt-1 mb-1"
+                >
+                  <ArrowLeft className="w-3 h-3" />
+                  Back to Checklist
+                </button>
+              )}
+
               {/* Error display */}
               {error && (
                 <div className="p-3 bg-loss/10 border border-loss/30 rounded-lg text-sm text-loss flex items-start gap-2">

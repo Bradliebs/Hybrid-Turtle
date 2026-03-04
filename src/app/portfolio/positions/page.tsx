@@ -1,23 +1,49 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Navbar from '@/components/shared/Navbar';
 import KPIBanner from '@/components/portfolio/KPIBanner';
 import PositionsTable from '@/components/portfolio/PositionsTable';
 import T212SyncPanel from '@/components/portfolio/T212SyncPanel';
 import PositionSyncButton from '@/components/portfolio/PositionSyncButton';
-import StopUpdateQueue from '@/components/plan/StopUpdateQueue';
+import StopUpdateQueue from '@/components/shared/StopUpdateQueue';
+import JournalDrawer from '@/components/shared/JournalDrawer';
+import type { JournalPositionContext } from '@/components/shared/JournalDrawer';
 import { formatCurrency, formatPercent } from '@/lib/utils';
-import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { PORTFOLIO_SUB_NAV } from '@/types';
 import { apiRequest } from '@/lib/api-client';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Briefcase, PieChart, BarChart3 } from 'lucide-react';
 
 // Dynamic import keeps ~ReadyToBuyPanel out of initial bundle (only loads when visible)
 const ReadyToBuyPanel = dynamic(() => import('@/components/portfolio/ReadyToBuyPanel'), { ssr: false });
 const BreakoutFailurePanel = dynamic(() => import('@/components/portfolio/BreakoutFailurePanel'), { ssr: false });
+
+// Lazy tabs — Distribution and Performance only load on first click
+const DistributionTab = lazy(() => import('@/components/portfolio/DistributionTab'));
+const PerformanceTab = lazy(() => import('@/components/portfolio/PerformanceTab'));
+
+// Tab definitions
+const PORTFOLIO_TABS = [
+  { id: 'positions', label: 'Positions', icon: Briefcase },
+  { id: 'distribution', label: 'Distribution', icon: PieChart },
+  { id: 'performance', label: 'Performance', icon: BarChart3 },
+] as const;
+type PortfolioTabId = (typeof PORTFOLIO_TABS)[number]['id'];
+
+/** Skeleton placeholder for lazy-loaded tabs */
+function TabSkeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      <div className="h-20 bg-navy-800 rounded-lg" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="h-64 bg-navy-800 rounded-lg" />
+        <div className="h-64 bg-navy-800 rounded-lg" />
+      </div>
+    </div>
+  );
+}
 
 const DEFAULT_USER_ID = 'default-user';
 
@@ -76,12 +102,36 @@ interface AccountData {
 }
 
 export default function PositionsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+      </div>
+    }>
+      <PositionsPageInner />
+    </Suspense>
+  );
+}
+
+function PositionsPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const activeTab = (searchParams.get('tab') ?? 'positions') as PortfolioTabId;
+
+  function handleTabChange(tab: PortfolioTabId) {
+    router.replace(`/portfolio/positions?tab=${tab}`, { scroll: false });
+  }
+
   const [positions, setPositions] = useState<PositionData[]>([]);
   const [account, setAccount] = useState<AccountData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [currency, setCurrency] = useState<string>('GBP');
   const [stopRefreshKey, setStopRefreshKey] = useState(0);
+
+  // Journal drawer state
+  const [journalPositionId, setJournalPositionId] = useState<string | null>(null);
+  const [journalInitialTab, setJournalInitialTab] = useState<'entry' | 'trade' | 'close'>('entry');
 
   // Fetch T212 positions from the database (enriched with live Yahoo prices)
   const fetchPositions = useCallback(async () => {
@@ -203,31 +253,86 @@ export default function PositionsPage() {
   const invested = account?.invested ?? 0;
   const plPercent = invested > 0 ? (unrealisedPL / invested) * 100 : 0;
 
+  // ── Journal drawer: deep-link from ?position=xxx ──
+  useEffect(() => {
+    const posParam = searchParams.get('position');
+    if (posParam) {
+      setJournalPositionId(posParam);
+    }
+  }, [searchParams]);
+
+  // Build position context for the journal drawer (no extra API call)
+  const journalContext: JournalPositionContext | null = useMemo(() => {
+    if (!journalPositionId) return null;
+    const pos = positions.find((p) => p.id === journalPositionId);
+    if (!pos) return null;
+    return {
+      id: pos.id,
+      ticker: pos.ticker,
+      name: pos.name,
+      status: pos.status,
+      protectionLevel: pos.protectionLevel,
+      entryPrice: pos.entryPrice,
+      currentStop: pos.currentStop,
+      currentPrice: pos.currentPrice,
+      rMultiple: pos.rMultiple,
+      gainPercent: pos.gainPercent,
+      priceCurrency: pos.priceCurrency,
+      entryDate: pos.entryDate,
+    };
+  }, [journalPositionId, positions]);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      {/* Sub-navigation */}
+      {/* Tab bar */}
       <div className="border-b border-border bg-navy-900/50">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
           <div className="flex gap-1 py-1">
-            {PORTFOLIO_SUB_NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'px-4 py-2 text-sm font-medium rounded-md transition-colors',
-                  item.href === '/portfolio/positions'
-                    ? 'bg-primary/15 text-primary-400'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {PORTFOLIO_TABS.map((tab) => {
+              const TabIcon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors',
+                    isActive
+                      ? 'bg-primary/15 text-primary-400'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <TabIcon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
+
+      {/* Distribution tab */}
+      {activeTab === 'distribution' && (
+        <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
+          <Suspense fallback={<TabSkeleton />}>
+            <DistributionTab />
+          </Suspense>
+        </main>
+      )}
+
+      {/* Performance tab */}
+      {activeTab === 'performance' && (
+        <main className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 animate-fade-in">
+          <Suspense fallback={<TabSkeleton />}>
+            <PerformanceTab />
+          </Suspense>
+        </main>
+      )}
+
+      {/* Positions tab (default — loads eagerly) */}
+      {activeTab === 'positions' && (
 
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-6 animate-fade-in">
         {/* KPI Row */}
@@ -288,9 +393,22 @@ export default function PositionsPage() {
             positions={positions}
             onUpdateStop={handleUpdateStop}
             onExitPosition={handleExitPosition}
+            onJournalClick={(id) => {
+              setJournalPositionId(id);
+              setJournalInitialTab('entry');
+            }}
           />
         )}
+
+        {/* Journal Drawer — slide-in from right */}
+        <JournalDrawer
+          positionId={journalPositionId}
+          initialTab={journalInitialTab}
+          positionContext={journalContext}
+          onClose={() => setJournalPositionId(null)}
+        />
       </main>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { formatCurrency, formatPrice, formatPercent, formatR, formatDate } from 
 import StatusBadge from '@/components/shared/StatusBadge';
 import { canPyramid, PYRAMID_CONFIG } from '@/lib/risk-gates';
 import { apiRequest } from '@/lib/api-client';
-import { Bell, BellOff, Lock, Plus, ArrowUpDown, ChevronDown, X, AlertTriangle, TrendingUp, LogOut, Send, Loader2, CheckCircle, XCircle, RefreshCw, Layers } from 'lucide-react';
+import { Bell, BellOff, Lock, Plus, ArrowUpDown, ChevronDown, X, AlertTriangle, TrendingUp, LogOut, Send, Loader2, CheckCircle, XCircle, RefreshCw, Layers, BookOpen } from 'lucide-react';
 
 interface Position {
   id: string;
@@ -42,9 +42,10 @@ interface PositionsTableProps {
   positions: Position[];
   onUpdateStop?: (positionId: string, newStop: number, reason: string) => Promise<boolean>;
   onExitPosition?: (positionId: string, exitPrice: number, exitReason?: string, closeNote?: string) => Promise<boolean>;
+  onJournalClick?: (positionId: string) => void;
 }
 
-export default function PositionsTable({ positions, onUpdateStop, onExitPosition }: PositionsTableProps) {
+export default function PositionsTable({ positions, onUpdateStop, onExitPosition, onJournalClick }: PositionsTableProps) {
   const [tab, setTab] = useState<'all' | 'open' | 'closed'>('open');
   const [sortField, setSortField] = useState<string>('ticker');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -414,6 +415,16 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                         >
                           Exit
                         </button>
+                        {onJournalClick && (
+                          <button
+                            onClick={() => onJournalClick(pos.id)}
+                            className="px-2 py-1 text-xs bg-navy-700 text-muted-foreground rounded hover:bg-navy-600 hover:text-foreground transition-colors flex items-center gap-1"
+                            title="Open journal"
+                          >
+                            <BookOpen className="w-3 h-3" />
+                            Journal
+                          </button>
+                        )}
                         {pos.source === 'trading212' && (
                           <button
                             disabled={resettingId === pos.id}

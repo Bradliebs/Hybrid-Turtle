@@ -3,6 +3,12 @@
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPrice, formatPercent, formatR } from '@/lib/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
+import WhyCardPopover, { WhyCardProvider, type WhyCardData, type WhyCardSection } from '@/components/shared/WhyCardPopover';
+import {
+  SCAN_STATUS_EXPLANATIONS,
+  FILTER_EXPLANATIONS,
+  RISK_GATE_EXPLANATIONS,
+} from '@/lib/why-explanations';
 import { Zap } from 'lucide-react';
 
 interface Candidate {
@@ -26,6 +32,20 @@ interface Candidate {
     mode: 'BREAKOUT' | 'PULLBACK_CONTINUATION';
     reason: string;
   };
+  // Filter results for Why Card
+  filterResults?: {
+    priceAboveMa200: boolean;
+    adxAbove20: boolean;
+    plusDIAboveMinusDI: boolean;
+    atrPercentBelow8: boolean;
+    efficiencyAbove30: boolean;
+    dataQuality: boolean;
+  };
+  // Risk gate results for Why Card
+  riskGateResults?: { passed: boolean; gate: string; message: string; current: number; limit: number }[];
+  passesRiskGates?: boolean;
+  antiChaseResult?: { passed: boolean; reason: string };
+  passesAntiChase?: boolean;
 }
 
 interface CandidateTableProps {
@@ -37,6 +57,7 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
   const triggered = candidates.filter(c => c.passesAllFilters && c.distancePercent <= 0);
 
   return (
+    <WhyCardProvider>
     <div className="card-surface overflow-x-auto">
       <div className="p-4 border-b border-border flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">
@@ -61,6 +82,7 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
             <th className="text-right whitespace-nowrap">Stop Price</th>
             <th className="text-right whitespace-nowrap">Distance%</th>
             <th className="text-right whitespace-nowrap">Rank</th>
+            <th className="text-center whitespace-nowrap w-8"></th>
             {showSizing && (
               <>
                 <th className="text-right whitespace-nowrap">Shares</th>
@@ -154,6 +176,11 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
                 <td className="text-right font-mono text-sm text-foreground whitespace-nowrap">
                   {c.rankScore.toFixed(1)}
                 </td>
+                <td className="text-center">
+                  {!isTriggered && c.status !== 'READY' && (
+                    <WhyCardPopover data={buildCandidateWhyData(c)} />
+                  )}
+                </td>
                 {showSizing && (
                   <>
                     <td className="text-right font-mono text-sm whitespace-nowrap">{c.shares ?? '—'}</td>
@@ -171,5 +198,53 @@ export default function CandidateTable({ candidates, showSizing = false }: Candi
         </tbody>
       </table>
     </div>
+    </WhyCardProvider>
   );
+}
+
+/** Build Why Card data for a scan candidate */
+function buildCandidateWhyData(c: Candidate): WhyCardData {
+  const statusInfo = SCAN_STATUS_EXPLANATIONS[c.status];
+  const sections: WhyCardSection[] = [];
+
+  // Add filter results if available
+  if (c.filterResults) {
+    for (const [key, passed] of Object.entries(c.filterResults)) {
+      const explanation = FILTER_EXPLANATIONS[key];
+      if (!explanation) continue;
+      sections.push({
+        label: explanation.label,
+        value: passed ? explanation.passText : explanation.failText,
+        status: passed ? 'pass' : 'fail',
+      });
+    }
+  }
+
+  // Add risk gate results if available
+  if (c.riskGateResults) {
+    for (const gate of c.riskGateResults) {
+      const explanation = RISK_GATE_EXPLANATIONS[gate.gate];
+      sections.push({
+        label: gate.gate,
+        value: gate.message,
+        status: gate.passed ? 'pass' : 'fail',
+      });
+    }
+  }
+
+  // Add anti-chase result if available and failed
+  if (c.antiChaseResult && !c.antiChaseResult.passed) {
+    sections.push({
+      label: 'Anti-Chase Guard',
+      value: c.antiChaseResult.reason,
+      status: 'fail',
+    });
+  }
+
+  return {
+    title: statusInfo?.title ?? c.status,
+    description: statusInfo?.description ?? `Status: ${c.status}. Distance to trigger: ${c.distancePercent.toFixed(1)}%`,
+    tip: statusInfo?.tip,
+    sections: sections.length > 0 ? sections : undefined,
+  };
 }

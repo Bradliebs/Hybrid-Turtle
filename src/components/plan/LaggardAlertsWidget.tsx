@@ -3,6 +3,8 @@
 import { Trash2, Clock, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModulesData } from '@/hooks/useModulesData';
+import WhyCardPopover, { WhyCardProvider } from '@/components/shared/WhyCardPopover';
+import { LAGGARD_EXPLANATIONS } from '@/lib/why-explanations';
 
 export default function LaggardAlertsWidget() {
   const { data, loading } = useModulesData();
@@ -12,6 +14,7 @@ export default function LaggardAlertsWidget() {
   const deadMoney = laggards.filter((l) => l.action === 'WATCH');
 
   return (
+    <WhyCardProvider>
     <div className="card-surface p-4">
       <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
         <Trash2 className="w-4 h-4 text-loss" />
@@ -45,16 +48,32 @@ export default function LaggardAlertsWidget() {
                 Underwater — Consider Trimming
               </div>
               <div className="space-y-2">
-                {trimLaggards.map((l) => (
+                {trimLaggards.map((l) => {
+                  const explanation = LAGGARD_EXPLANATIONS[l.action] ?? LAGGARD_EXPLANATIONS.TRIM_LAGGARD;
+                  return (
                   <div
                     key={l.positionId || l.ticker}
                     className="bg-loss/5 rounded-lg p-3 border border-loss/15"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-semibold text-foreground">{l.ticker}</span>
-                      <span className="text-xs font-mono text-loss">
-                        {l.rMultiple.toFixed(1)}R · {l.gainPercent.toFixed(1)}%
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono text-loss">
+                          {l.rMultiple.toFixed(1)}R · {l.gainPercent.toFixed(1)}%
+                        </span>
+                        <WhyCardPopover
+                          data={{
+                            title: explanation.title,
+                            description: explanation.description,
+                            tip: explanation.tip,
+                            sections: [
+                              { label: 'Days held', value: `${l.daysHeld}`, status: 'info' },
+                              { label: 'Return', value: `${l.gainPercent.toFixed(1)}%`, status: 'fail' },
+                              { label: 'R-multiple', value: `${l.rMultiple.toFixed(1)}R`, status: 'info' },
+                            ],
+                          }}
+                        />
+                      </div>
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                       <Clock className="w-3 h-3 flex-shrink-0" />
@@ -64,7 +83,8 @@ export default function LaggardAlertsWidget() {
                       {l.reason}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -77,22 +97,39 @@ export default function LaggardAlertsWidget() {
                 Dead Money — Stalled Positions
               </div>
               <div className="space-y-2">
-                {deadMoney.map((l) => (
+                {deadMoney.map((l) => {
+                  const explanation = LAGGARD_EXPLANATIONS[l.action] ?? LAGGARD_EXPLANATIONS.DEAD_MONEY;
+                  return (
                   <div
                     key={l.positionId || l.ticker}
                     className="bg-warning/5 rounded-lg p-3 border border-warning/15"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-semibold text-foreground">{l.ticker}</span>
-                      <span className="text-xs font-mono text-warning">
-                        {l.rMultiple.toFixed(1)}R · {l.daysHeld}d
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono text-warning">
+                          {l.rMultiple.toFixed(1)}R · {l.daysHeld}d
+                        </span>
+                        <WhyCardPopover
+                          data={{
+                            title: explanation.title,
+                            description: explanation.description,
+                            tip: explanation.tip,
+                            sections: [
+                              { label: 'Days held', value: `${l.daysHeld}`, status: 'info' },
+                              { label: 'R-multiple', value: `${l.rMultiple.toFixed(1)}R`, status: 'info' },
+                              { label: 'Return', value: `${l.gainPercent.toFixed(1)}%`, status: l.gainPercent < 0 ? 'fail' : 'info' },
+                            ],
+                          }}
+                        />
+                      </div>
                     </div>
                     <div className="text-[11px] text-muted-foreground leading-relaxed">
                       {l.reason}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -104,5 +141,6 @@ export default function LaggardAlertsWidget() {
         </div>
       )}
     </div>
+    </WhyCardProvider>
   );
 }

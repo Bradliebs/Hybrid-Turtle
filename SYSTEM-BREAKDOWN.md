@@ -333,7 +333,7 @@ There is also a `midday-sync.ts` (`midday-sync-task.bat`) for mid-day data refre
 
 ## 7. Database Schema (SQLite + Prisma)
 
-**16 tables** defined in `prisma/schema.prisma`:
+**20 tables** defined in `prisma/schema.prisma`:
 
 | Table | Purpose |
 |-------|---------|

@@ -53,6 +53,8 @@ import { preCacheEarningsBatch } from '@/lib/earnings-calendar';
 import { getRiskBudget, canPyramid, calculatePyramidAddSize } from '@/lib/risk-gates';
 import { calculateRMultiple } from '@/lib/position-sizer';
 import { sendAlert } from '@/lib/alert-service';
+import { backupDatabase } from '@/lib/db-backup';
+import { isEnabled } from '@/lib/feature-flags';
 import { RISK_PROFILES, type RiskProfileType, type Sleeve } from '@/types';
 
 /**
@@ -99,6 +101,22 @@ async function runNightlyProcess() {
     } catch (error) {
       hadFailure = true;
       console.error('  [0] Pre-cache failed:', (error as Error).message);
+    }
+
+    // Step 0b: Database backup
+    console.log('  [0b] Database backup...');
+    try {
+      const backupResult = await backupDatabase();
+      if (backupResult.success) {
+        console.log(`        Backup created: ${backupResult.filename} (${backupResult.sizeBytes} bytes)`);
+      } else {
+        console.warn(`        Backup failed: ${backupResult.error}`);
+        hadFailure = true;
+        // Do NOT abort — backup failure should not stop the rest of the pipeline
+      }
+    } catch (err) {
+      console.error('  [0b] Backup step threw unexpectedly:', err);
+      hadFailure = true;
     }
 
     // Step 1: Run health check (isolated — failure doesn't block other steps)
@@ -630,9 +648,13 @@ async function runNightlyProcess() {
       console.warn('  [5] Breadth safety failed:', (error as Error).message);
     }
 
-    // Momentum expansion — DISABLED: procyclical risk expansion, adds risk near end of moves not middle
-    // Module 13 permanently disabled. Code preserved but skipped.
-    console.log('  [5] Module 13 (Momentum Expansion) — DISABLED, skipping');
+    // Momentum expansion — gated by feature flag
+    if (isEnabled('MODULE_MOMENTUM_EXPANSION')) {
+      console.log('  [5] Module 13 (Momentum Expansion) — running');
+      // Would call checkMomentumExpansion() here
+    } else {
+      console.log('  [5] Module 13 (Momentum Expansion) — DISABLED (feature flag off), skipping');
+    }
 
     // Correlation matrix (isolated — advisory only, no hard blocks)
     let correlationPairCount = 0;

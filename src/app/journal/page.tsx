@@ -14,7 +14,8 @@ import { useSearchParams } from 'next/navigation';
 import Navbar from '@/components/shared/Navbar';
 import { apiRequest } from '@/lib/api-client';
 import { formatDate, cn } from '@/lib/utils';
-import { BookOpen, Pencil, Star, TrendingUp, TrendingDown, X } from 'lucide-react';
+import { BookOpen, Pencil, Star, TrendingUp, TrendingDown, X, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
 
 interface JournalEntry {
   id: number;
@@ -303,6 +304,10 @@ function JournalPageInner() {
           <BookOpen className="w-6 h-6 text-primary-400" />
           <h1 className="text-2xl font-bold text-foreground">Trade Journal</h1>
         </div>
+        <p className="text-xs text-muted-foreground mb-6">
+          Journal entries can also be edited directly from the{' '}
+          <Link href="/portfolio/positions" className="text-primary-400 hover:underline">Positions page</Link>
+        </p>
 
         {loading && (
           <div className="text-center py-16 text-muted-foreground text-sm">Loading journal…</div>
@@ -415,6 +420,13 @@ function JournalPageInner() {
                         {entry.closeNote ? 'Edit close note' : 'Add close note'}
                       </button>
                     )}
+                    <Link
+                      href={`/portfolio/positions?position=${entry.positionId}`}
+                      className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 transition-colors ml-auto"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      View Position
+                    </Link>
                   </div>
                 </div>
               );

@@ -23,6 +23,8 @@ import { detectVolRegime } from './regime-detector';
 import type { DetectVolRegimeResult } from './regime-detector';
 import * as eodhd from './market-data-eodhd';
 import { calcBIS } from './breakout-integrity';
+import { persistCache, rehydrateCache } from './cache-persistence';
+import { CACHE_KEYS } from './cache-keys';
 
 // ── Zod schemas for Yahoo Finance runtime validation ──
 const YahooQuoteSchema = z.object({
@@ -931,6 +933,15 @@ export async function getBatchQuotes(tickers: string[]): Promise<Map<string, Sto
     }
   }
 
+  // Persist the full quote cache to disk (fire-and-forget)
+  if (uncached.length > 0) {
+    const quotesObj: Record<string, { data: StockQuote; expiry: number }> = {};
+    quoteCache.forEach((v, k) => { quotesObj[k] = v; });
+    persistCache(CACHE_KEYS.YAHOO_QUOTES, quotesObj).catch((err) => {
+      console.warn('[market-data] Failed to persist quote cache:', (err as Error).message);
+    });
+  }
+
   return results;
 }
 
@@ -1187,4 +1198,33 @@ export async function getEarningsDate(ticker: string): Promise<EarningsDateResul
     console.warn(`[EarningsDate] Failed for ${ticker}:`, (err as Error).message);
     return { earningsDate: null, earningsDateEnd: null, confidence: 'NONE' };
   }
+}
+
+/**
+ * Rehydrate the Yahoo quote cache from disk.
+ * Called once at server startup by cache-warmup.ts.
+ */
+export async function rehydrateQuoteCacheFromDisk(): Promise<boolean> {
+  if (quoteCache.size > 0) return true; // Already warm
+  try {
+    const persisted = await rehydrateCache<Record<string, { data: StockQuote; expiry: number }>>(
+      CACHE_KEYS.YAHOO_QUOTES
+    );
+    if (persisted) {
+      const now = Date.now();
+      let count = 0;
+      for (const [ticker, entry] of Object.entries(persisted.data)) {
+        // Only rehydrate entries that haven't individually expired
+        if (entry.expiry > now) {
+          quoteCache.set(ticker, entry);
+          count++;
+        }
+      }
+      console.log(`[market-data] Rehydrated ${count} quotes from disk (age: ${Math.round(persisted.age / 1000)}s)`);
+      return count > 0;
+    }
+  } catch {
+    // Silent
+  }
+  return false;
 }
