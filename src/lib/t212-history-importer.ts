@@ -353,8 +353,11 @@ function pairOrders(
       const sellFillDate = getFillDate(sell);
       let sellQtyRemaining = sellQty;
 
-      // Consume buy orders to match this sell
-      while (sellQtyRemaining > 0.0001 && buyIdx < buys.length) {
+      // Consume buy orders to match this sell.
+      // Also continue if buyQtyRemaining > 0 (pre-loaded by the accumulate block
+      // on the previous iteration — without this, the last buy's quantity never
+      // gets matched when the accumulate block increments buyIdx past buys.length).
+      while (sellQtyRemaining > 0.0001 && (buyIdx < buys.length || buyQtyRemaining > 0.0001)) {
         if (buyQtyRemaining <= 0.0001) {
           // Load next buy
           currentBuyOrder = buys[buyIdx];
