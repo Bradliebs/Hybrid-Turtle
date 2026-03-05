@@ -605,3 +605,17 @@ MKL
 
 # ========== UNIQUE / ANALYTICS (Feb 2026) ==========
 FICO
+SE
+HUBB
+ELV
+WEIR.L
+REL.L
+SHEL.L
+BP.L
+HSX.L
+PRU.L
+BAE.L
+AAL.L
+RIO.L
+SMT.L
+INF.L

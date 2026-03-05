@@ -76,3 +76,4 @@ SRPT
 # ========== RETAIL / NARRATIVE BETA (Feb 2026) ==========
 CVNA
 ROKU
+RIVN
