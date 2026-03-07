@@ -180,6 +180,13 @@ export default function FailureModePanel({ results, hasBlock, compact = false }:
           ))}
         </div>
       )}
+
+      {/* Auto-Yes suppression label when any FM is BLOCK */}
+      {hasBlock && (
+        <div className="mt-1.5 text-[10px] text-red-400 font-medium">
+          ⛔ Auto-Yes suppressed — Blocked: {sorted.filter(r => r.status === 'BLOCK').map(r => `FM${r.id} ${FAILURE_MODES[r.id].shortName}`).join(', ')}
+        </div>
+      )}
     </div>
   );
 }

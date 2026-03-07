@@ -52,6 +52,85 @@ function SummaryCard({ label, value, subtext, icon: Icon, color }: {
   );
 }
 
+// ── Slippage by Hour Bar Chart ───────────────────────────────
+
+function SlippageByHourChart({ records }: { records: SlippageRecord[] }) {
+  // Group by hour and compute average slippage
+  const hourBuckets = new Map<number, { total: number; count: number }>();
+  for (const r of records) {
+    if (!r.tradeDate) continue;
+    const date = new Date(r.tradeDate);
+    const hour = date.getHours();
+    const existing = hourBuckets.get(hour) ?? { total: 0, count: 0 };
+    existing.total += r.slippagePct;
+    existing.count += 1;
+    hourBuckets.set(hour, existing);
+  }
+
+  // Fill 8-17 range (trading hours)
+  const hours = Array.from({ length: 10 }, (_, i) => i + 8);
+  const data = hours.map(h => {
+    const bucket = hourBuckets.get(h);
+    return { hour: h, avg: bucket ? bucket.total / bucket.count : 0, count: bucket?.count ?? 0 };
+  });
+  const maxAvg = Math.max(...data.map(d => d.avg), 0.01);
+
+  return (
+    <div className="flex items-end gap-1 h-32">
+      {data.map(d => (
+        <div key={d.hour} className="flex-1 flex flex-col items-center gap-1">
+          <div className="text-[8px] font-mono text-muted-foreground">{d.count > 0 ? `${d.avg.toFixed(2)}%` : ''}</div>
+          <div
+            className={cn('w-full rounded-t', d.avg > 0.5 ? 'bg-red-500/60' : d.avg > 0.2 ? 'bg-amber-500/60' : 'bg-emerald-500/60')}
+            style={{ height: `${d.count > 0 ? Math.max((d.avg / maxAvg) * 100, 4) : 0}%` }}
+            title={`${d.hour}:00 — Avg: ${d.avg.toFixed(3)}% (${d.count} trades)`}
+          />
+          <span className="text-[9px] text-muted-foreground">{d.hour}h</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Slippage Trend Line Chart ────────────────────────────────
+
+function SlippageTrendChart({ records }: { records: SlippageRecord[] }) {
+  const sorted = [...records]
+    .filter(r => r.tradeDate)
+    .sort((a, b) => new Date(a.tradeDate).getTime() - new Date(b.tradeDate).getTime());
+
+  if (sorted.length === 0) return <p className="text-xs text-muted-foreground">No data</p>;
+
+  const maxSlip = Math.max(...sorted.map(r => r.slippagePct), 0.01);
+  const width = 100;
+  const height = 80;
+
+  // Build SVG polyline points
+  const points = sorted.map((r, i) => {
+    const x = sorted.length > 1 ? (i / (sorted.length - 1)) * width : width / 2;
+    const y = height - (r.slippagePct / maxSlip) * (height - 10) - 5;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-24" preserveAspectRatio="none">
+        <polyline
+          points={points}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          className="text-amber-500"
+        />
+      </svg>
+      <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+        <span>{sorted[0].tradeDate?.split('T')[0]}</span>
+        <span>{sorted[sorted.length - 1].tradeDate?.split('T')[0]}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────
 
 export default function ExecutionQualityPage() {
@@ -138,6 +217,28 @@ export default function ExecutionQualityPage() {
                 color="text-emerald-400"
               />
             </div>
+
+            {/* Slippage by Hour of Day (bar chart) */}
+            {records.length > 0 && (
+              <div className="card-surface p-4">
+                <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4" />
+                  Average Slippage by Hour of Day
+                </h2>
+                <SlippageByHourChart records={records} />
+              </div>
+            )}
+
+            {/* Slippage Trend Over Time (line chart) */}
+            {records.length > 0 && (
+              <div className="card-surface p-4">
+                <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <TrendingDown className="w-4 h-4" />
+                  Slippage Trend Over Time
+                </h2>
+                <SlippageTrendChart records={records} />
+              </div>
+            )}
 
             {/* Timing Recommendation */}
             <div className="card-surface p-4">

@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 import Navbar from '@/components/shared/Navbar';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
-import { Loader2, PlayCircle, BarChart3, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Loader2, PlayCircle, BarChart3, AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -192,6 +192,28 @@ export default function SignalAuditPage() {
 
   const signals = ['trend', 'direction', 'volatility', 'proximity', 'tailwind', 'rs', 'weeklyAdx', 'bis', 'hurst', 'volBonus'];
 
+  const exportCSV = () => {
+    if (!result) return;
+    const rows: string[] = ['Signal,Conditional MI,Recommendation'];
+    for (const entry of result.conditionalMI) {
+      rows.push(`${LABELS[entry.signal] ?? entry.signal},${entry.conditionalMI.toFixed(4)},${entry.recommendation}`);
+    }
+    if (result.highCorrPairs.length > 0) {
+      rows.push('');
+      rows.push('Signal A,Signal B,Pairwise MI');
+      for (const pair of result.highCorrPairs) {
+        rows.push(`${LABELS[pair.signalA] ?? pair.signalA},${LABELS[pair.signalB] ?? pair.signalB},${pair.mi}`);
+      }
+    }
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `signal-audit-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -207,14 +229,25 @@ export default function SignalAuditPage() {
               Mutual information analysis — measures unique contribution of each signal layer
             </p>
           </div>
-          <button
-            onClick={runAudit}
-            disabled={running}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          >
-            {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
-            {running ? 'Running...' : 'Run Analysis'}
-          </button>
+          <div className="flex items-center gap-2">
+            {result && (
+              <button
+                onClick={exportCSV}
+                className="flex items-center gap-2 bg-navy-700 hover:bg-navy-600 text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Export CSV
+              </button>
+            )}
+            <button
+              onClick={runAudit}
+              disabled={running}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlayCircle className="w-4 h-4" />}
+              {running ? 'Running...' : 'Run Analysis'}
+            </button>
+          </div>
         </div>
 
         {loading ? (

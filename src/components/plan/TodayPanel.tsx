@@ -673,16 +673,20 @@ function TimeToActCard({ candidate, regime, advancedView, getIntervalForNCS, fmD
             />
           )}
 
-          {/* Stress test gauge — advanced only */}
-          {advancedView && stressTestData.hasResult && (
+          {/* Stress test gauge — advanced only, on-demand */}
+          {advancedView && (
             <StressTestGauge
-              stopHitProbability={stressTestData.stopHitProbability}
-              gate={stressTestData.gate}
-              pathsRun={stressTestData.pathsRun}
-              horizonDays={stressTestData.horizonDays}
-              percentiles={stressTestData.percentiles ?? undefined}
-              avgDaysToStopHit={stressTestData.avgDaysToStopHit}
-              entryPrice={candidate.entryTrigger}
+              ticker={candidate.ticker}
+              entryPrice={candidate.entryTrigger ?? 0}
+              stopPrice={candidate.stopPrice ?? 0}
+              initialResult={stressTestData.hasResult ? {
+                stopHitProbability: stressTestData.stopHitProbability,
+                gate: stressTestData.gate,
+                pathsRun: stressTestData.pathsRun,
+                horizonDays: stressTestData.horizonDays,
+                percentiles: stressTestData.percentiles ?? undefined,
+                avgDaysToStopHit: stressTestData.avgDaysToStopHit,
+              } : null}
             />
           )}
 
@@ -692,7 +696,7 @@ function TimeToActCard({ candidate, regime, advancedView, getIntervalForNCS, fmD
               dangerScore={dangerData.dangerScore}
               immuneAlert={dangerData.immuneAlert}
               riskTighteningPercent={dangerData.riskTighteningPercent}
-              topMatch={dangerData.topMatch}
+              topMatches={dangerData.topMatches}
             />
           )}
 

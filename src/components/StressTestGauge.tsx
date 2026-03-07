@@ -11,13 +11,14 @@
 
 'use client';
 
+import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { STRESS_GATE, classifyStressResult } from '@/lib/prediction/adversarial-simulator';
 
 // ── Types ────────────────────────────────────────────────────
 
-interface StressTestGaugeProps {
-  stopHitProbability: number; // 0–1
+interface StressTestResult {
+  stopHitProbability: number;
   gate: 'PASS' | 'FAIL';
   pathsRun: number;
   horizonDays: number;
@@ -27,9 +28,18 @@ interface StressTestGaugeProps {
     p95: number;
   };
   avgDaysToStopHit: number | null;
-  entryPrice?: number;
+}
+
+interface StressTestGaugeProps {
+  /** Ticker for the on-demand stress test API call */
+  ticker: string;
+  entryPrice: number;
+  stopPrice: number;
+  atrPercent?: number;
   /** Compact mode for inline display */
   compact?: boolean;
+  /** Pre-loaded result (from parent); if provided, skip initial fetch */
+  initialResult?: StressTestResult | null;
 }
 
 // ── Colour Mapping ───────────────────────────────────────────
@@ -54,18 +64,76 @@ function CompactBadge({ prob, gate }: { prob: number; gate: 'PASS' | 'FAIL' }) {
   );
 }
 
+// ── Time Ago Helper ──────────────────────────────────────────
+
+function timeAgo(ts: number): string {
+  const mins = Math.round((Date.now() - ts) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  return `${hrs}h ago`;
+}
+
 // ── Main Gauge ───────────────────────────────────────────────
 
 export default function StressTestGauge({
-  stopHitProbability,
-  gate,
-  pathsRun,
-  horizonDays,
-  percentiles,
-  avgDaysToStopHit,
+  ticker,
   entryPrice,
+  stopPrice,
+  atrPercent,
   compact = false,
+  initialResult = null,
 }: StressTestGaugeProps) {
+  const [result, setResult] = useState<StressTestResult | null>(initialResult);
+  const [loading, setLoading] = useState(false);
+  const [fetchedAt, setFetchedAt] = useState<number | null>(initialResult ? Date.now() : null);
+
+  const runStressTest = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        ticker,
+        entryPrice: String(entryPrice),
+        stopPrice: String(stopPrice),
+        ...(atrPercent != null ? { atrPercent: String(atrPercent) } : {}),
+      });
+      const res = await fetch(`/api/prediction/stress-test?${params}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.ok && json.data) {
+          setResult(json.data);
+          setFetchedAt(Date.now());
+        }
+      }
+    } catch {
+      // Silent — display no result
+    } finally {
+      setLoading(false);
+    }
+  }, [ticker, entryPrice, stopPrice, atrPercent]);
+
+  // No result yet — show run button
+  if (!result) {
+    return (
+      <div className="mt-2 px-3 py-2.5 rounded-lg border bg-navy-900/40 border-border/30">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+            Stress Test
+          </span>
+          <button
+            onClick={runStressTest}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors disabled:opacity-50"
+          >
+            {loading ? '⏳ Running...' : '▶ Run Stress Test'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const { stopHitProbability, gate, pathsRun, horizonDays, percentiles, avgDaysToStopHit } = result;
+
   if (compact) {
     return <CompactBadge prob={stopHitProbability} gate={gate} />;
   }
@@ -85,10 +153,20 @@ export default function StressTestGauge({
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
           Stress Test
+          {fetchedAt && <span className="ml-1.5 text-[9px] font-normal text-muted-foreground/60">({timeAgo(fetchedAt)})</span>}
         </span>
-        <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold border', style.bg, style.border, style.text)}>
-          {gate === 'FAIL' ? '⛔ FAIL' : '✓ PASS'}
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runStressTest}
+            disabled={loading}
+            className="px-1.5 py-0.5 rounded text-[9px] bg-navy-800/60 border border-border/30 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+          >
+            {loading ? '⏳' : '↻'} Re-run
+          </button>
+          <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold border', style.bg, style.border, style.text)}>
+            {gate === 'FAIL' ? '⛔ FAIL' : '✓ PASS'}
+          </span>
+        </div>
       </div>
 
       {/* Gauge and stats */}
@@ -161,10 +239,10 @@ export default function StressTestGauge({
         </div>
       </div>
 
-      {/* Gate explanation */}
+      {/* Gate explanation — Auto-Yes suppressed on FAIL */}
       {gate === 'FAIL' && (
         <div className="mt-1.5 text-[10px] text-red-400/80">
-          ⛔ &gt;{Math.round(STRESS_GATE.autoYesMaxStopProb * 100)}% of adversarial paths hit stop within {horizonDays} days — Auto-Yes suppressed
+          ⛔ Stress Test: FAIL — {pct}% adversarial stop-hit. Auto-Yes suppressed.
         </div>
       )}
     </div>

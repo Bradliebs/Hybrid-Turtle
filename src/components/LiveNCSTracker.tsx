@@ -11,13 +11,15 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { TrendingDown, TrendingUp, Minus } from 'lucide-react';
 
 // ── Types ────────────────────────────────────────────────────
 
 interface LiveNCSTrackerProps {
+  /** Ticker symbol for alert context */
+  ticker?: string;
   /** NCS score from the morning scan */
   priorNCS: number;
   /** Current (posterior) NCS — updated via any refresh */
@@ -43,12 +45,14 @@ function isUKTradingHours(): boolean {
 // ── Component ────────────────────────────────────────────────
 
 export default function LiveNCSTracker({
+  ticker,
   priorNCS,
   posteriorNCS,
   updateCount,
   enabled = true,
 }: LiveNCSTrackerProps) {
   const [isTradingHours, setIsTradingHours] = useState(false);
+  const alertSentRef = useRef(false);
 
   useEffect(() => {
     setIsTradingHours(isUKTradingHours());
@@ -64,14 +68,29 @@ export default function LiveNCSTracker({
   const isImproving = delta > 5;
   const isStable = Math.abs(delta) <= 2;
 
+  // Fire NCS_DEGRADING alert when degradation detected (once per session)
+  if (isDegrading && !alertSentRef.current) {
+    alertSentRef.current = true;
+    fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'NCS_DEGRADING',
+        title: 'NCS Degrading Intraday',
+        message: `NCS degrading: ${ticker ?? 'unknown'} ${priorNCS.toFixed(1)}→${posteriorNCS.toFixed(1)} — consider holding entry`,
+        priority: 'WARNING',
+      }),
+    }).catch(() => { /* non-critical */ });
+  }
+
   return (
     <div className={cn(
-      'flex items-center gap-2 text-[11px]',
+      'flex items-center gap-2 text-[11px] flex-wrap',
       isDegrading ? 'text-amber-400' : isImproving ? 'text-emerald-400' : 'text-muted-foreground'
     )}>
-      {/* Prior → Posterior */}
+      {/* Prior → Posterior with decimal precision */}
       <span className="font-mono">
-        NCS: {Math.round(priorNCS)} → {Math.round(posteriorNCS)}
+        NCS: {priorNCS.toFixed(1)} → {posteriorNCS.toFixed(1)}
       </span>
 
       {/* Direction indicator */}
@@ -86,11 +105,16 @@ export default function LiveNCSTracker({
       {/* Update count */}
       <span className="text-muted-foreground">({updateCount} updates)</span>
 
-      {/* Degradation warning */}
+      {/* Degradation warning + reclassification label */}
       {isDegrading && (
-        <span className="text-amber-400 font-medium">
-          ⚠ Degrading intraday
-        </span>
+        <>
+          <span className="text-amber-400 font-medium">
+            ⚠ Degrading intraday
+          </span>
+          <span className="text-amber-400/70 text-[10px]">
+            Auto-Yes → Conditional intraday
+          </span>
+        </>
       )}
     </div>
   );

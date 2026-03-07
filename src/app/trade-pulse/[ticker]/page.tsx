@@ -20,6 +20,8 @@ import { apiRequest } from '@/lib/api-client';
 import { Loader2, ArrowLeft, AlertTriangle, CheckCircle2, BarChart3 } from 'lucide-react';
 import { TradePulseDial } from '@/components/TradePulseGrade';
 import { GRADE_STYLES, type TradePulseGrade } from '@/lib/prediction/trade-pulse';
+import KellySizePanel, { useKellySize } from '@/components/KellySizePanel';
+import TradeAdvisorPanel, { useTradeRecommendation } from '@/components/TradeAdvisorPanel';
 import Link from 'next/link';
 
 // ── Types ────────────────────────────────────────────────────
@@ -91,6 +93,20 @@ export default function TradePulsePage() {
   const [data, setData] = useState<TradePulseData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Kelly sizing advisory
+  const kellyData = useKellySize(data ? { ncs: data.score, maxRisk: 2 } : null);
+
+  // RL trade recommendation (advisory only)
+  const rlData = useTradeRecommendation(data ? {
+    rMultiple: 0,
+    daysInTrade: 0,
+    stopDistanceAtr: 1,
+    ncs: data.score,
+  } : null);
+
+  // Stale check: data older than 30 minutes
+  const isStale = data ? (Date.now() - new Date(data.computedAt).getTime() > 30 * 60 * 1000) : false;
+
   useEffect(() => {
     if (!ticker) return;
 
@@ -132,6 +148,14 @@ export default function TradePulsePage() {
           </div>
         ) : (
           <>
+            {/* Stale data warning */}
+            {isStale && (
+              <div className="px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-400 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Data is stale (&gt;30 minutes old). Consider re-scanning.
+              </div>
+            )}
+
             {/* ── Hero: Score Dial ── */}
             <div className="card-surface p-6 flex flex-col items-center">
               <h1 className="text-lg font-bold text-foreground mb-1">{ticker}</h1>
@@ -187,6 +211,16 @@ export default function TradePulsePage() {
                 ))}
               </div>
             </div>
+
+            {/* ── Kelly Advisor Row ── */}
+            {kellyData.hasResult && (
+              <KellySizePanel data={kellyData} />
+            )}
+
+            {/* ── RL Recommendation ── */}
+            {rlData.hasResult && (
+              <TradeAdvisorPanel data={rlData} />
+            )}
 
             {/* ── Footer ── */}
             <div className="text-center text-xs text-muted-foreground pb-4">

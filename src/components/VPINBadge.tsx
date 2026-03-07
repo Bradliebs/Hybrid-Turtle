@@ -69,12 +69,13 @@ export function useVPIN(ticker: string | null | undefined): VPINData {
 
 // ── Signal Styles ────────────────────────────────────────────
 
-const signalStyles: Record<string, { text: string; bg: string; border: string; icon: typeof ArrowUpRight }> = {
-  STRONG_BUY: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: ArrowUpRight },
-  BUY: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', icon: ArrowUpRight },
-  NEUTRAL: { text: 'text-muted-foreground', bg: 'bg-navy-800/40', border: 'border-border/30', icon: Minus },
-  SELL: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: ArrowDownRight },
-  STRONG_SELL: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30', icon: ArrowDownRight },
+const signalStyles: Record<string, { text: string; bg: string; border: string; icon: typeof ArrowUpRight; label: string }> = {
+  STRONG_BUY: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', icon: ArrowUpRight, label: 'Informed Buying' },
+  BUY: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', icon: ArrowUpRight, label: 'Informed Buying' },
+  NEUTRAL: { text: 'text-muted-foreground', bg: 'bg-navy-800/40', border: 'border-border/30', icon: Minus, label: '' },
+  SELL: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: ArrowDownRight, label: 'Informed Selling' },
+  STRONG_SELL: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/30', icon: ArrowDownRight, label: 'Informed Selling' },
+  UNINFORMED: { text: 'text-muted-foreground', bg: 'bg-navy-800/30', border: 'border-border/20', icon: Minus, label: 'Low VPIN' },
 };
 
 // ── Component ────────────────────────────────────────────────
@@ -87,15 +88,27 @@ interface VPINBadgeProps {
 export default function VPINBadge({ data, compact = false }: VPINBadgeProps) {
   if (!data.hasResult) return null;
 
+  // NEUTRAL: no badge shown (intentional — keep card clean)
+  if (data.signal === 'NEUTRAL') return null;
+
   const style = signalStyles[data.signal] ?? signalStyles.NEUTRAL;
   const Icon = style.icon;
-  const dofiPct = Math.round(data.dofi * 100);
+  const vpinPct = Math.round(data.vpin * 100);
+
+  // UNINFORMED: grey "Low VPIN"
+  if (data.signal === 'UNINFORMED') {
+    return (
+      <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border', style.bg, style.border, style.text)}>
+        Low VPIN
+      </span>
+    );
+  }
 
   if (compact) {
     return (
       <span className={cn('inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono border', style.bg, style.border, style.text)}>
         <Icon className="w-3 h-3" />
-        {dofiPct > 0 ? '+' : ''}{dofiPct}%
+        VPIN: {vpinPct}% {style.label}
       </span>
     );
   }
@@ -105,10 +118,7 @@ export default function VPINBadge({ data, compact = false }: VPINBadgeProps) {
       <Icon className={cn('w-3.5 h-3.5', style.text)} />
       <div className="text-[10px]">
         <span className={cn('font-medium', style.text)}>
-          DOFI {dofiPct > 0 ? '+' : ''}{dofiPct}%
-        </span>
-        <span className="text-muted-foreground ml-1.5">
-          VPIN {((data.vpin ?? 0) * 100).toFixed(0)}%
+          VPIN: {vpinPct}% {data.signal === 'SELL' || data.signal === 'STRONG_SELL' ? '↓' : '↑'} {style.label}
         </span>
       </div>
       {data.ncsAdjustment !== 0 && (

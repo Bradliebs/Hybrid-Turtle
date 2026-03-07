@@ -97,12 +97,27 @@ function SourceBar({ label, score }: { label: string; score: number }) {
 
 interface SentimentPanelProps {
   data: SentimentData;
+  /** Trade classification — only show on CONDITIONAL trades */
+  tradeClassification?: string;
 }
 
-export default function SentimentPanel({ data }: SentimentPanelProps) {
+export default function SentimentPanel({ data, tradeClassification }: SentimentPanelProps) {
   if (!data.hasResult) return null;
 
+  // Only show on CONDITIONAL trades (hide on Auto-Yes, Auto-No)
+  if (tradeClassification && tradeClassification !== 'CONDITIONAL') return null;
+
+  // Low confidence: no badge shown
+  if (data.scs != null && data.scs < 30) return null;
+
   const style = signalStyles[data.signal] ?? signalStyles.NEUTRAL;
+
+  // Determine text label
+  const signalLabel = data.signal === 'VERY_BULLISH' || data.signal === 'BULLISH'
+    ? 'Sentiment ↑'
+    : data.signal === 'VERY_BEARISH' || data.signal === 'BEARISH'
+    ? 'Sentiment ↓'
+    : 'Mixed signals';
 
   return (
     <div className={cn(
@@ -112,7 +127,7 @@ export default function SentimentPanel({ data }: SentimentPanelProps) {
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
           <MessageSquare className="w-3.5 h-3.5" />
-          Sentiment
+          {signalLabel}
         </span>
         <div className="flex items-center gap-2">
           <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-semibold border', style.bg, style.border, style.text)}>

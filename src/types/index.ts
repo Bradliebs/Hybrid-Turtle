@@ -505,23 +505,28 @@ export const MAIN_NAV_ITEMS: NavEntry[] = [
   { label: 'Plan', href: '/plan' },
   { label: 'Risk', href: '/risk' },
   {
-    label: 'Research',
+    label: 'Analysis',
     children: [
+      { label: 'Trade Pulse', href: '/trade-pulse' },
       { label: 'Signals', href: '/backtest' },
       { label: 'Scorecard', href: '/filter-scorecard' },
       { label: 'Score Lab', href: '/score-validation' },
+    ],
+  },
+  {
+    label: 'Performance',
+    children: [
+      { label: 'Execution Quality', href: '/execution-quality' },
       { label: 'Exec Audit', href: '/execution-audit' },
-      { label: 'Exec Quality', href: '/execution-quality' },
-      { label: 'Signal Audit', href: '/signal-audit' },
       { label: 'Causal Audit', href: '/causal-audit' },
     ],
   },
   {
-    label: 'More',
+    label: 'System',
     children: [
+      { label: 'Signal Audit', href: '/signal-audit' },
       { label: 'Trade Log', href: '/trade-log' },
       { label: 'Journal', href: '/journal' },
-      { label: 'Trade Pulse', href: '/plan' },
       { label: 'Settings', href: '/settings' },
     ],
   },

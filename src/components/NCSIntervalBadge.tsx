@@ -33,6 +33,13 @@ interface NCSIntervalBadgeProps {
   decision?: string | null;
   /** Compact mode hides the interval range, shows only badge colour */
   compact?: boolean;
+  /** Lead-lag adjusted NCS (if different from raw ncs) */
+  leadLagAdjustedNCS?: number | null;
+}
+
+/** Returns true when the interval band is wide (LOW confidence), signalling Auto-Yes suppression */
+export function shouldSuppressAutoYes(confidence: IntervalConfidence | null): boolean {
+  return confidence === 'LOW';
 }
 
 // ── Colour Mapping ───────────────────────────────────────────
@@ -66,13 +73,22 @@ export default function NCSIntervalBadge({
   confidence,
   decision,
   compact = false,
+  leadLagAdjustedNCS = null,
 }: NCSIntervalBadgeProps) {
+  const adjustment = leadLagAdjustedNCS != null ? Math.round(leadLagAdjustedNCS - ncs) : 0;
+  const hasAdjustment = adjustment !== 0 && leadLagAdjustedNCS != null;
+
   // No calibration data — show plain NCS score (same as before)
   if (!interval || !confidence) {
     return (
-      <span>
+      <span className="inline-flex items-center gap-1">
         <GlossaryTerm term="NCS">NCS</GlossaryTerm>:{' '}
         <span className="text-foreground">{Math.round(ncs)}</span>
+        {hasAdjustment && (
+          <span className="text-blue-400 text-[10px] font-mono" title="Lead-lag cross-asset adjustment">
+            → {Math.round(leadLagAdjustedNCS!)} ({adjustment > 0 ? '+' : ''}{adjustment} lead-lag)
+          </span>
+        )}
       </span>
     );
   }
@@ -84,6 +100,11 @@ export default function NCSIntervalBadge({
       <span className={cn('inline-flex items-center gap-1')}>
         <GlossaryTerm term="NCS">NCS</GlossaryTerm>:{' '}
         <span className={cn('text-foreground font-medium')}>{Math.round(ncs)}</span>
+        {hasAdjustment && (
+          <span className="text-blue-400 text-[10px] font-mono">
+            → {Math.round(leadLagAdjustedNCS!)}
+          </span>
+        )}
         <span
           className={cn('inline-block w-2 h-2 rounded-full', style.bg, style.border, 'border')}
           title={`${style.label} — interval width: ${(interval.width ?? 0).toFixed(1)}`}
@@ -93,9 +114,14 @@ export default function NCSIntervalBadge({
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
       <GlossaryTerm term="NCS">NCS</GlossaryTerm>:{' '}
       <span className="text-foreground font-medium">{Math.round(ncs)}</span>
+      {hasAdjustment && (
+        <span className="text-blue-400 text-[10px] font-mono" title="Lead-lag cross-asset adjustment">
+          → {Math.round(leadLagAdjustedNCS!)} ({adjustment > 0 ? '+' : ''}{adjustment} lead-lag)
+        </span>
+      )}
       <span
         className={cn(
           'px-1.5 py-0.5 rounded text-[10px] font-mono border',
@@ -107,13 +133,13 @@ export default function NCSIntervalBadge({
       >
         [{(interval.lower ?? 0).toFixed(1)} – {(interval.upper ?? 0).toFixed(1)}]
       </span>
-      {/* Wide band override indicator */}
+      {/* Wide band override indicator — Auto-Yes visually suppressed */}
       {confidence === 'LOW' && decision !== 'AUTO_NO' && (
         <span
           className="text-[10px] text-red-400"
-          title="Wide interval — treat as Conditional regardless of point score"
+          title="Wide interval — Auto-Yes suppressed, treat as Conditional"
         >
-          ⚠
+          ⚠ High uncertainty
         </span>
       )}
     </span>

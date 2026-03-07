@@ -29,6 +29,7 @@ import { applyCorrelationScalar } from '@/lib/correlation-scalar';
 import { useStore } from '@/store/useStore';
 import WhyCardPopover, { WhyCardProvider } from '@/components/shared/WhyCardPopover';
 import { RISK_GATE_EXPLANATIONS } from '@/lib/why-explanations';
+import KellySizePanel, { useKellySize } from '@/components/KellySizePanel';
 import {
   MANUAL_CHECKLIST_ITEMS,
   AUTO_CHECKLIST_ITEMS,
@@ -207,6 +208,12 @@ export default function BuyConfirmationModal({
       return null;
     }
   }, [candidate.scanPrice, candidate.scanStopPrice, sizePosition]);
+
+  // Kelly sizing advisory
+  const kellyData = useKellySize(candidate.dualNCS != null ? {
+    ncs: candidate.dualNCS,
+    maxRisk: sizing?.riskPercent ?? 2,
+  } : null);
 
   // Adjusted shares after correlation scalar
   const adjustedShares = useMemo(() => {
@@ -1026,6 +1033,11 @@ export default function BuyConfirmationModal({
                   <AlertTriangle className="w-4 h-4" />
                   Could not calculate position size — check entry/stop values
                 </div>
+              )}
+
+              {/* Kelly sizing advisor — advisory row */}
+              {kellyData.hasResult && (
+                <KellySizePanel data={kellyData} />
               )}
 
               {/* Risk budget context */}

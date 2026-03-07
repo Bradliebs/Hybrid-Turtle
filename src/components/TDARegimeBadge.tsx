@@ -8,10 +8,12 @@
  *        Shows whether TDA topology agrees with primary regime detector.
  *        STABLE (green ✓) / TRANSITIONING (amber ⚠) / TURBULENT (red ✗).
  *        transitionWarning = amber pulsing badge for early warning.
+ *        Fires TDA_DIVERGENCE alert when transition warning detected.
  */
 
 'use client';
 
+import { useRef } from 'react';
 import { cn } from '@/lib/utils';
 
 // ── Types ────────────────────────────────────────────────────
@@ -41,7 +43,7 @@ const stateStyles: Record<TDAState, { text: string; bg: string; border: string; 
     bg: 'bg-amber-500/10',
     border: 'border-amber-500/30',
     icon: '⚠',
-    label: 'Transition',
+    label: 'Transition forming',
   },
   TURBULENT: {
     text: 'text-red-400',
@@ -56,6 +58,22 @@ const stateStyles: Record<TDAState, { text: string; bg: string; border: string; 
 
 export default function TDARegimeBadge({ state, transitionWarning, compact = false }: TDARegimeBadgeProps) {
   const style = stateStyles[state];
+  const alertSentRef = useRef(false);
+
+  // Fire TDA_DIVERGENCE alert when transition warning detected (once per mount)
+  if (transitionWarning && !alertSentRef.current) {
+    alertSentRef.current = true;
+    fetch('/api/notifications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'TDA_DIVERGENCE',
+        title: 'TDA Regime Divergence',
+        message: 'TDA regime divergence detected — possible early transition signal',
+        priority: 'WARNING',
+      }),
+    }).catch(() => { /* non-critical */ });
+  }
 
   if (compact) {
     return (
@@ -73,16 +91,24 @@ export default function TDARegimeBadge({ state, transitionWarning, compact = fal
   }
 
   return (
-    <div className={cn(
-      'inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border',
-      style.bg, style.border,
-      transitionWarning && 'animate-pulse'
-    )}>
-      <span className={cn('text-xs font-medium', style.text)}>
-        TDA {style.icon} {style.label}
-      </span>
+    <div>
+      <div className={cn(
+        'inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border',
+        style.bg, style.border,
+        transitionWarning && 'animate-pulse'
+      )}>
+        <span className={cn('text-xs font-medium', style.text)}>
+          TDA {style.icon} {style.label}
+        </span>
+        {transitionWarning && (
+          <span className="text-amber-400 text-[10px]">⚡ Early warning</span>
+        )}
+      </div>
+      {/* Full-width banner when transition warning is active */}
       {transitionWarning && (
-        <span className="text-amber-400 text-[10px]">⚡ Early warning</span>
+        <div className="mt-2 w-full px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-400">
+          ⚡ TDA early warning: topological complexity rising while trend indicators positive. Heightened caution advised.
+        </div>
       )}
     </div>
   );
