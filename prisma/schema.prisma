@@ -45,6 +45,10 @@ model User {
   startingEquityOverride Float?
   onboardingDismissed Boolean          @default(false)
   dismissedEquityThresholds String?    // JSON array of equity thresholds already acknowledged
+  // Prediction engine settings
+  showIntradayNCS     Boolean          @default(true)   // LiveNCSTracker visibility
+  applyKellyMultiplier Boolean         @default(false)  // Kelly criterion sizing (default OFF)
+  rlShadowMode        Boolean          @default(true)   // RL advisor: advisory only (default ON)
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   equitySnapshots     EquitySnapshot[]
@@ -168,6 +172,7 @@ model ScanResult {
   passesAntiChase  Boolean?
   shares           Float?
   riskDollars      Float?
+  mode             String   @default("FULL")  // FULL or BENCHMARK
   stock            Stock    @relation(fields: [stockId], references: [id])
   scan             Scan     @relation(fields: [scanId], references: [id])
 
@@ -461,4 +466,489 @@ model TradeJournal {
   learnedNote     String?
   entryNoteAt     DateTime?
   closeNoteAt     DateTime?
+}
+
+// ── Analytics: Filter Attribution ──
+// One row per scan-candidate. Records pass/fail + numeric value for every
+// filter in the pipeline, enabling after-the-fact analysis of which filters
+// add predictive value vs. which are redundant.
+model FilterAttribution {
+  id                    String   @id @default(cuid())
+  scanId                String
+  ticker                String
+  scanDate              DateTime @default(now())
+  regime                String
+  sleeve                String
+  status                String   // final candidate status after all stages
+  // Stage 2: Technical filters
+  priceAboveMa200       Boolean
+  ma200Value            Float    @default(0)
+  adxAbove20            Boolean
+  adxValue              Float    @default(0)
+  plusDIAboveMinusDI    Boolean
+  plusDIValue           Float    @default(0)
+  minusDIValue         Float    @default(0)
+  atrPctBelow8          Boolean
+  atrPctValue           Float    @default(0)
+  dataQuality           Boolean
+  efficiencyAbove30     Boolean
+  efficiencyValue       Float    @default(0)
+  hurstExponent         Float?
+  hurstWarn             Boolean  @default(false)
+  atrSpiking            Boolean  @default(false)
+  atrSpikeAction        String?  // NONE / SOFT_CAP / HARD_BLOCK
+  // Stage 3: Classification
+  distancePct           Float    @default(0)
+  // Stage 5: Risk gates summary
+  passesRiskGates       Boolean  @default(true)
+  riskGatesFailed       String?  // CSV of failed gate names, null if all pass
+  // Stage 6: Anti-chase
+  passesAntiChase       Boolean  @default(true)
+  antiChaseReason       String?
+  // Earnings
+  earningsAction        String?  // AUTO_NO / DEMOTE_WATCH / null
+  daysToEarnings        Int?
+  // Composite outcome
+  passesAllFilters      Boolean
+  rankScore             Float    @default(0)
+  // Eventual trade outcome (backfilled when trade closes)
+  tradeLogId            String?  // link to TradeLog if this candidate was traded
+  outcomeR              Float?   // final R-multiple if traded
+
+  @@index([scanId])
+  @@index([ticker])
+  @@index([scanDate])
+  @@index([regime])
+  // Compound index for outcome backfill: WHERE ticker + scanDate ±2 days + tradeLogId IS NULL
+  @@index([ticker, scanDate])
+}
+
+// ── Analytics: Score Breakdown ──
+// Full BQS/FWS/NCS component decomposition per snapshot ticker.
+// Enables correlation analysis between individual score components
+// and eventual trade outcomes.
+model ScoreBreakdown {
+  id                    String   @id @default(cuid())
+  snapshotId            String
+  ticker                String
+  scoredAt              DateTime @default(now())
+  regime                String
+  sleeve                String?
+  // BQS components (10)
+  bqsTrend              Float    @default(0)
+  bqsDirection          Float    @default(0)
+  bqsVolatility         Float    @default(0)
+  bqsProximity          Float    @default(0)
+  bqsTailwind           Float    @default(0)
+  bqsRs                 Float    @default(0)
+  bqsVolBonus           Float    @default(0)
+  bqsWeeklyAdx          Float    @default(0)
+  bqsBis                Float    @default(0)
+  bqsHurst              Float    @default(0)
+  bqsTotal              Float    @default(0)
+  // FWS components (5)
+  fwsVolume             Float    @default(0)
+  fwsExtension          Float    @default(0)
+  fwsMarginalTrend      Float    @default(0)
+  fwsVolShock           Float    @default(0)
+  fwsRegimeInstability  Float    @default(0)
+  fwsTotal              Float    @default(0)
+  // Penalties (3)
+  penaltyEarnings       Float    @default(0)
+  penaltyCluster        Float    @default(0)
+  penaltySuperCluster   Float    @default(0)
+  // NCS
+  baseNcs               Float    @default(0)
+  ncsTotal              Float    @default(0)
+  actionNote            String?
+  // Eventual trade outcome (backfilled when trade closes)
+  tradeLogId            String?
+  outcomeR              Float?
+
+  @@index([snapshotId])
+  @@index([ticker])
+  @@index([scoredAt])
+  // Compound index for outcome backfill + score-backfill join: WHERE ticker + scoredAt ±2 days
+  @@index([ticker, scoredAt])
+}
+
+// ── Research: Candidate Outcome Dataset ──
+// One row per ticker per scan run. Captures the full pipeline journey
+// (filters, scores, gates, sizing) and later enriched with forward
+// price returns for measuring whether each rule adds predictive value.
+// Idempotent via @@unique([scanId, ticker]).
+model CandidateOutcome {
+  id                  String   @id @default(cuid())
+  scanId              String
+  scanDate            DateTime @default(now())
+  ticker              String
+  name                String?
+  sleeve              String
+  sector              String?
+  cluster             String?
+
+  // ── Pipeline result ──
+  status              String   // READY / WATCH / WAIT_PULLBACK / COOLDOWN / EARNINGS_BLOCK / FAR
+  stageReached        String   // UNIVERSE / TECH_FILTER / CLASSIFIED / RANKED / RISK_GATED / ANTI_CHASE / SIZED
+  passedTechFilter    Boolean  @default(false)
+  passedRiskGates     Boolean  @default(false)
+  passedAntiChase     Boolean  @default(false)
+  blockedByRegime     Boolean  @default(false)
+  blockedReasons      String?  // comma-separated list of reasons
+
+  // ── Regime state ──
+  regime              String   // BULLISH / SIDEWAYS / BEARISH / NEUTRAL
+
+  // ── Technical data at scan time ──
+  price               Float    @default(0)
+  ma200               Float    @default(0)
+  adx                 Float    @default(0)
+  plusDI              Float    @default(0)
+  minusDI             Float    @default(0)
+  atrPct              Float    @default(0)
+  atr                 Float    @default(0)
+  efficiency          Float    @default(0)
+  volumeRatio         Float    @default(0)
+  relativeStrength    Float    @default(0)
+  hurstExponent       Float?
+  hurstWarn           Boolean  @default(false)
+  atrSpiking          Boolean  @default(false)
+  atrSpikeAction      String?  // NONE / SOFT_CAP / HARD_BLOCK
+
+  // ── Score pipeline ──
+  bqs                 Float?
+  fws                 Float?
+  ncs                 Float?
+  rankScore           Float    @default(0)
+  dualScoreAction     String?  // Auto-Yes / Auto-No (fragile) / Conditional
+
+  // ── Entry / Stop ──
+  entryTrigger        Float    @default(0)
+  stopPrice           Float    @default(0)
+  distancePct         Float    @default(0)
+  entryMode           String?  // BREAKOUT / PULLBACK_CONTINUATION
+
+  // ── Position sizing (suggested) ──
+  suggestedShares     Float?
+  suggestedRiskGbp    Float?
+  suggestedRiskPct    Float?
+  suggestedCostGbp    Float?
+
+  // ── Anti-chase detail ──
+  antiChaseReason     String?
+  earningsAction      String?  // AUTO_NO / DEMOTE_WATCH / null
+  daysToEarnings      Int?
+
+  // ── Risk gate detail ──
+  riskGatesFailed     String?  // comma-separated gate names
+
+  // ── Data quality ──
+  dataFreshness       String?  // LIVE / CACHE / STALE_CACHE
+
+  // ── Trade linkage (populated when trade is placed) ──
+  tradePlaced         Boolean  @default(false)
+  tradeLogId          String?
+  actualFill          Float?
+
+  // ── Forward outcome enrichment (populated by batch job after N days) ──
+  priceAtScan         Float?   // close at scan time (same as price, explicit for enrichment clarity)
+  fwdReturn5d         Float?   // % return after 5 trading days
+  fwdReturn10d        Float?   // % return after 10 trading days
+  fwdReturn20d        Float?   // % return after 20 trading days
+  mfeR                Float?   // maximum favourable excursion in R-multiples
+  maeR                Float?   // maximum adverse excursion in R-multiples
+  reached1R           Boolean?
+  reached2R           Boolean?
+  reached3R           Boolean?
+  stopHit             Boolean?
+  enrichedAt          DateTime?  // timestamp of last enrichment run
+
+  @@unique([scanId, ticker])
+  @@index([scanId])
+  @@index([ticker])
+  @@index([scanDate])
+  @@index([status])
+  @@index([regime])
+  // Compound indexes for frequent query patterns:
+  @@index([enrichedAt, scanDate])      // enrichment pipeline: WHERE enrichedAt=null ORDER scanDate ASC
+  @@index([ticker, tradePlaced])       // execution audit: WHERE ticker IN (...) AND tradePlaced=true
+  @@index([ticker, scanDate])          // trade link backfill: WHERE ticker + scanDate ±2 days
+  @@index([sleeve])                    // scorecard/validation filtering by sleeve
+}
+
+// ── Prediction Engine: Conformal Calibration ──
+// Stores calibrated quantile thresholds for NCS prediction intervals.
+// Recalibrated nightly (if sample size grew by ≥20 or last calibration >30 days).
+// Source transitions from "bootstrap" to "live_trades" as real outcomes accumulate.
+model ConformalCalibration {
+  id            Int      @id @default(autoincrement())
+  calibratedAt  DateTime @default(now())
+  coverageLevel Float    // e.g. 0.90
+  qHat          Float    // symmetric quantile
+  qHatUp        Float    // asymmetric upside quantile
+  qHatDown      Float    // asymmetric downside quantile
+  sampleSize    Int
+  regime        String?  // null = all regimes, or "BULLISH"/"SIDEWAYS"/"BEARISH"
+  source        String   // "bootstrap" | "live_trades"
+
+  @@index([regime])
+  @@index([calibratedAt])
+}
+
+// ── Prediction Engine: Failure Mode Scores ──
+// Stores per-ticker failure mode score breakdowns at scan time.
+// Used for audit trails and backtesting FM predictive value.
+model FailureModeScore {
+  id            Int      @id @default(autoincrement())
+  scoredAt      DateTime @default(now())
+  ticker        String
+  regime        String?
+  fm1           Float    // Breakout Failure Risk (0–100)
+  fm2           Float    // Liquidity Trap Risk (0–100)
+  fm3           Float    // Correlation Cascade Risk (0–100)
+  fm4           Float    // Regime Flip Risk (0–100)
+  fm5           Float    // Event Gap Risk (0–100)
+  gatePass      Boolean  // true if all FMs below thresholds
+  blockedBy     String?  // comma-separated FM IDs that blocked, null if passed
+  reasons       String?  // JSON: per-FM reason strings
+
+  @@index([ticker])
+  @@index([scoredAt])
+  @@index([ticker, scoredAt])
+}
+
+// ── Prediction Engine: Signal Weight Records ──
+// Stores dynamic signal weight snapshots computed by the meta-model.
+// Used for audit, comparison vs static weights, and future learning.
+model SignalWeightRecord {
+  id           Int      @id @default(autoincrement())
+  computedAt   DateTime @default(now())
+  regime       String   // TRENDING / RANGING / VOLATILE / TRANSITION
+  vixLevel     Float    // raw VIX value at computation time
+  vixPercentile Float   // 0–100 percentile
+  source       String   // "rule_based" | "learned"
+  wAdx         Float    // weight for ADX / trend signal
+  wDi          Float    // weight for DI / direction signal
+  wHurst       Float    // weight for Hurst / persistence signal
+  wBis         Float    // weight for BIS / breakout integrity
+  wDrs         Float    // weight for DRS / dual regime score
+  wWeeklyAdx   Float    // weight for weekly ADX
+  wBps         Float    // weight for BPS / breakout probability
+
+  @@index([computedAt])
+  @@index([regime])
+}
+
+// ── Prediction Engine: Stress Test Results ──
+// Caches adversarial Monte Carlo stress test results per ticker.
+// Results are cached for 4 hours to avoid re-running simulations.
+model StressTestResult {
+  id                 Int      @id @default(autoincrement())
+  testedAt           DateTime @default(now())
+  ticker             String
+  entryPrice         Float
+  stopPrice          Float
+  atr                Float
+  regime             String
+  nPaths             Int
+  horizonDays        Int
+  adversarialBias    Float
+  stopHitProbability Float    // 0–1: fraction of paths hitting stop
+  gate               String   // "PASS" | "FAIL"
+  percentileP5       Float    // 5th percentile final price
+  percentileP50      Float    // median final price
+  percentileP95      Float    // 95th percentile final price
+  avgDaysToStopHit   Float?   // null if no paths hit stop
+
+  @@index([ticker])
+  @@index([testedAt])
+  @@index([ticker, testedAt])
+}
+
+// ── Prediction Engine: Signal Audit Results ──
+// Stores mutual information analysis results for signal pruning.
+// One row per audit run — contains the full MI matrix and recommendations as JSON.
+model SignalAuditResult {
+  id               Int      @id @default(autoincrement())
+  computedAt       DateTime @default(now())
+  sampleSize       Int
+  hasOutcomes      Boolean  @default(false)  // true if MI computed against real R outcomes
+  miMatrix         String   // JSON: full pairwise MI matrix
+  conditionalMI    String   // JSON: per-signal conditional MI + recommendations
+  highCorrPairs    String?  // JSON: pairs with MI > 0.7
+  summary          String?  // human-readable summary
+
+  @@index([computedAt])
+}
+
+// ── Prediction Engine: Threat Library ──
+// Stores dangerous market environment fingerprints.
+// Pre-populated with known crises, expanded with real losses.
+model ThreatLibraryEntry {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  label     String   // human-readable description
+  vector    String   // JSON: normalised environment feature vector
+  severity  Int      // 0–100: how severe the associated drawdown/loss was
+  source    String   // "bootstrap_historical" | "bootstrap_pattern" | "live_loss"
+
+  @@index([severity])
+  @@index([source])
+}
+
+// ── Prediction Engine: Lead-Lag Edges ──
+// Stores statistically significant lead-lag relationships between assets.
+// Recomputed weekly (Sunday). Leader moves before follower by `lag` days.
+model LeadLagEdge {
+  id          Int      @id @default(autoincrement())
+  computedAt  DateTime @default(now())
+  leader      String   // ticker of the leading asset
+  follower    String   // ticker of the following asset
+  lag         Int      // lead time in days (1–5)
+  correlation Float    // lagged cross-correlation value
+  pValue      Float    // statistical significance
+  direction   String   // "POSITIVE" | "NEGATIVE"
+
+  @@index([follower])
+  @@index([leader])
+  @@index([follower, leader])
+}
+
+// ── Prediction Engine: Lead-Lag Signal Snapshots ──
+// Records each weekly lead-lag graph computation for audit.
+model LeadLagSignal {
+  id               Int      @id @default(autoincrement())
+  computedAt       DateTime @default(now())
+  edgeCount        Int
+  tickersProcessed Int
+  topLeader        String?
+  topFollower      String?
+  topCorrelation   Float?
+
+  @@index([computedAt])
+}
+
+// ── Prediction Engine: GNN Model Weights ──
+// Stores trained GraphSAGE weight snapshots (~200 params serialised as JSON).
+// Latest row is the active model. Older rows kept for version history.
+model GNNModelWeights {
+  id           Int      @id @default(autoincrement())
+  trainedAt    DateTime @default(now())
+  weightsJson  String   // JSON: serialised W1, b1, W2, b2, Wout, bout
+  trainingLoss Float
+  sampleSize   Int
+  epochs       Int
+
+  @@index([trainedAt])
+}
+
+// ── Prediction Engine: GNN Inference Log ──
+// One row per ticker per inference run. For audit and backtesting.
+model GNNInferenceLog {
+  id            Int      @id @default(autoincrement())
+  inferredAt    DateTime @default(now())
+  ticker        String
+  gnnScore      Float    // 0–1 raw output
+  ncsAdjustment Float    // NCS points adjustment
+  modelId       Int?     // FK to GNNModelWeights (null if untrained fallback)
+  graphNodes    Int      // number of nodes in graph at inference time
+
+  @@index([ticker])
+  @@index([inferredAt])
+}
+
+// ── Prediction Engine: Signal Belief States ──
+// Beta(α, β) distributions per (signal, regime) pair.
+// 7 signals × 4 regimes = 28 rows. Updated after each trade closes.
+model SignalBeliefState {
+  id        Int      @id @default(autoincrement())
+  signal    String   // 'adx' | 'di' | 'hurst' | 'bis' | 'drs' | 'weeklyAdx' | 'bps'
+  regime    String   // 'TRENDING' | 'RANGING' | 'VOLATILE' | 'TRANSITION'
+  alpha     Float    @default(2)  // success pseudo-count (prior = 2)
+  beta      Float    @default(2)  // failure pseudo-count (prior = 2)
+  updatedAt DateTime @default(now())
+
+  @@unique([signal, regime])
+  @@index([signal])
+  @@index([regime])
+}
+
+// ── Prediction Engine: Trade Episodes (Meta-RL) ──
+// Stores (observation, action, reward) sequences for MAML training.
+model TradeEpisode {
+  id             Int      @id @default(autoincrement())
+  createdAt      DateTime @default(now())
+  ticker         String
+  regime         String
+  stepsJson      String   // JSON: array of { observation, action, reward }
+  stepCount      Int
+  totalReward    Float
+  finalRMultiple Float
+  daysHeld       Int
+
+  @@index([ticker])
+  @@index([createdAt])
+}
+
+// ── Prediction Engine: Policy Versions (Meta-RL) ──
+// Stores trained MAML policy weight snapshots.
+model PolicyVersion {
+  id           Int      @id @default(autoincrement())
+  trainedAt    DateTime @default(now())
+  weightsJson  String   // JSON: serialised W1–W3, b1–b3
+  metaLoss     Float
+  episodeCount Int
+
+  @@index([trainedAt])
+}
+
+// ── Signals: VPIN History ──
+// Caches VPIN/DOFI computations per ticker per day.
+// Computed nightly during pre-cache phase.
+model VPINHistory {
+  id             Int      @id @default(autoincrement())
+  computedAt     DateTime @default(now())
+  ticker         String
+  vpin           Float    // 0–1: magnitude of order flow imbalance
+  dofi           Float    // -1 to +1: directional order flow imbalance
+  signal         String   // STRONG_BUY / BUY / NEUTRAL / SELL / STRONG_SELL
+  ncsAdjustment  Float    // NCS points adjustment from DOFI
+  barsUsed       Int
+
+  @@index([ticker])
+  @@index([computedAt])
+  @@index([ticker, computedAt])
+}
+
+// ── Signals: Sentiment History ──
+// Caches Sentiment Composite Score per ticker.
+model SentimentHistory {
+  id                  Int      @id @default(autoincrement())
+  computedAt          DateTime @default(now())
+  ticker              String
+  scs                 Float    // 0–100 Sentiment Composite Score (50 = neutral)
+  signal              String   // VERY_BULLISH / BULLISH / NEUTRAL / BEARISH / VERY_BEARISH
+  ncsAdjustment       Float
+  newsScore           Float    // 0–100 normalised news sentiment
+  revisionScore       Float    // 0–100 normalised revision proxy
+  shortScore          Float    // 0–100 normalised short interest proxy
+  divergenceDetected  Boolean  @default(false)
+
+  @@index([ticker])
+  @@index([computedAt])
+  @@index([ticker, computedAt])
+}
+
+// ── Prediction Engine: Invariance Audit Results ──
+// Stores IRM analysis results showing which signals are causally stable.
+model InvarianceAuditResult {
+  id               Int      @id @default(autoincrement())
+  computedAt       DateTime @default(now())
+  sampleSize       Int
+  environmentCount Int
+  environmentsUsed String   // JSON: list of environments used
+  scoresJson       String   // JSON: per-signal invariance scores + β values
+  summary          String?
+
+  @@index([computedAt])
 }

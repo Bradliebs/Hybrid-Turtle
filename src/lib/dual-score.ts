@@ -265,7 +265,12 @@ function marginalTrendRisk(row: SnapshotRow): number {
 }
 
 function volShockRisk(row: SnapshotRow): number {
-  if (safeBool(row.atr_spiking)) return 20;
+  // OVERLAP-02 reduction: ATR spike penalty reduced from 20→10.
+  // Rationale: scan-engine SCAN-08 already demotes spiking stocks (SOFT_CAP
+  // for bullish, HARD_BLOCK for bearish). Adding a full 20-pt FWS penalty
+  // on top of the scan demotion is double-counting. Collapsing ATR keeps
+  // its 10-pt penalty (scan-engine doesn't handle collapsing as strongly).
+  if (safeBool(row.atr_spiking)) return 10;  // was 20, reduced per OVERLAP-02
   if (safeBool(row.atr_collapsing)) return 10;
   return 0;
 }

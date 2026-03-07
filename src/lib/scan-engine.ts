@@ -18,6 +18,7 @@ import type {
   TechnicalData,
   RiskProfileType,
   GapGuardConfig,
+  ScanMode,
 } from '@/types';
 import { ATR_VOLATILITY_CAP_ALL, ATR_VOLATILITY_CAP_HIGH_RISK, ATR_STOP_MULTIPLIER, DEFAULT_GAP_GUARD_CONFIG } from '@/types';
 
@@ -147,7 +148,8 @@ export async function runFullScan(
   equity: number,
   gapGuardConfig: GapGuardConfig = DEFAULT_GAP_GUARD_CONFIG,
   onProgress?: (stage: string, processed: number, total: number) => void,
-  slippageBuffer = 0
+  slippageBuffer = 0,
+  scanMode: ScanMode = 'FULL'
 ): Promise<{
   regime: MarketRegime;
   candidates: ScanCandidate[];
@@ -158,7 +160,9 @@ export async function runFullScan(
   passedFilters: number;
   passedRiskGates: number;
   passedAntiChase: number;
+  scanMode: ScanMode;
 }> {
+  const isCoreLite = scanMode === 'CORE_LITE';
   const universe = await getUniverse();
   const candidates: ScanCandidate[] = [];
 
@@ -245,16 +249,20 @@ export async function runFullScan(
 
         // ── Stage 2 soft filter: Hurst Exponent ──
         // Uses existing validationBars (no new Yahoo call). H < 0.5 = HURST_WARN flag.
+        // CORE_LITE: skip Hurst calculation (soft overlay)
         const closePrices = validationBars.map(b => b.close);
-        const hurstExponent = calcHurst(closePrices);
-        const hurstWarn = hurstExponent !== null && hurstExponent < 0.5;
+        const hurstExponent = isCoreLite ? null : calcHurst(closePrices);
+        const hurstWarn = !isCoreLite && hurstExponent !== null && hurstExponent < 0.5;
 
         // Use price from chart data — avoids a separate quote() call per ticker
         const price = technicals.currentPrice;
         if (!price) return null;
 
         const filterResults = runTechnicalFilters(price, technicals, stock.sleeve);
-        const adaptiveBuffer = calculateAdaptiveBuffer(
+        // CORE_LITE: use raw 20d high as entry trigger (no adaptive buffer)
+        const adaptiveBuffer = isCoreLite
+          ? { adjustedEntryTrigger: technicals.twentyDayHigh, atrPercent: technicals.atrPercent, bufferPercent: 0, volRegimeMultiplier: 1 }
+          : calculateAdaptiveBuffer(
           stock.ticker,
           technicals.twentyDayHigh,
           technicals.atr,
@@ -271,9 +279,11 @@ export async function runFullScan(
         // ATR spike detection — use median of last 14 ATR values as baseline.
         // Spike = current ATR ≥ 1.3× median. More robust than comparing to a
         // single 20-day-ago snapshot. Raw ATR is unchanged for stop calculations.
-        const medianSpiking = technicals.medianAtr14 > 0
-          ? technicals.atr >= technicals.medianAtr14 * 1.3
-          : technicals.atrSpiking;  // fallback if median unavailable
+        // CORE_LITE: skip ATR spike detection (advanced overlay)
+        const medianSpiking = isCoreLite ? false
+          : technicals.medianAtr14 > 0
+            ? technicals.atr >= technicals.medianAtr14 * 1.3
+            : technicals.atrSpiking;  // fallback if median unavailable
         const bullishDI = technicals.plusDI > technicals.minusDI;
         let atrSpikeAction: 'NONE' | 'SOFT_CAP' | 'HARD_BLOCK' = 'NONE';
 
@@ -295,19 +305,22 @@ export async function runFullScan(
         // ── Earnings Calendar Check (between Stage 3 and Stage 5) ──
         // Checks DB cache (pre-populated nightly). If cache miss, returns NONE.
         // AUTO_NO for ≤2 days (HIGH confidence), DEMOTE_WATCH for 3-5 days.
+        // CORE_LITE: skip earnings check (advanced overlay)
         let earningsCheckResult: ReturnType<typeof evaluateEarningsRisk> | null = null;
-        try {
-          const earningsInfo = await getEarningsInfo(stock.ticker);
-          earningsCheckResult = evaluateEarningsRisk(earningsInfo);
+        if (!isCoreLite) {
+          try {
+            const earningsInfo = await getEarningsInfo(stock.ticker);
+            earningsCheckResult = evaluateEarningsRisk(earningsInfo);
 
-          if (earningsCheckResult.action === 'AUTO_NO') {
-            status = 'EARNINGS_BLOCK';
-            passesAllFilters = false;
-          } else if (earningsCheckResult.action === 'DEMOTE_WATCH' && status === 'READY') {
-            status = 'WATCH';
+            if (earningsCheckResult.action === 'AUTO_NO') {
+              status = 'EARNINGS_BLOCK';
+              passesAllFilters = false;
+            } else if (earningsCheckResult.action === 'DEMOTE_WATCH' && status === 'READY') {
+              status = 'WATCH';
+            }
+          } catch {
+            // Fail safe — earnings check failure never crashes the scan
           }
-        } catch {
-          // Fail safe — earnings check failure never crashes the scan
         }
 
         const rankScore = rankCandidate(stock.sleeve, technicals, status);
@@ -363,25 +376,28 @@ export async function runFullScan(
           passesRiskGates = riskGateResults.every((g) => g.passed);
 
           // ── Stage 6: Anti-Chase / Execution Guard ──
+          // CORE_LITE: skip all anti-chase checks (advanced overlay)
 
-          // Failed breakout cooldown: if the ticker had a failed breakout
-          // within FAILED_BREAKOUT_COOLDOWN_DAYS, block re-entry.
-          if (technicals.failedBreakoutAt) {
-            const daysSinceFailure = Math.floor(
-              (Date.now() - technicals.failedBreakoutAt.getTime()) / (1000 * 60 * 60 * 24)
-            );
-            if (daysSinceFailure < FAILED_BREAKOUT_COOLDOWN_DAYS) {
-              antiChaseResult = {
-                passed: false,
-                reason: `COOLDOWN — failed breakout ${daysSinceFailure}d ago (${FAILED_BREAKOUT_COOLDOWN_DAYS}d required)`,
-              };
-              status = 'COOLDOWN';
-              passesAntiChase = false;
+          if (!isCoreLite) {
+            // Failed breakout cooldown: if the ticker had a failed breakout
+            // within FAILED_BREAKOUT_COOLDOWN_DAYS, block re-entry.
+            if (technicals.failedBreakoutAt) {
+              const daysSinceFailure = Math.floor(
+                (Date.now() - technicals.failedBreakoutAt.getTime()) / (1000 * 60 * 60 * 24)
+              );
+              if (daysSinceFailure < FAILED_BREAKOUT_COOLDOWN_DAYS) {
+                antiChaseResult = {
+                  passed: false,
+                  reason: `COOLDOWN — failed breakout ${daysSinceFailure}d ago (${FAILED_BREAKOUT_COOLDOWN_DAYS}d required)`,
+                };
+                status = 'COOLDOWN';
+                passesAntiChase = false;
+              }
             }
           }
 
           // Skip remaining anti-chase checks if already in cooldown
-          if (status !== 'COOLDOWN') {
+          if (status !== 'COOLDOWN' && !isCoreLite) {
             const extATR = technicals.atr > 0 ? (price - entryTrigger) / technicals.atr : 0;
             // Volatility expansion anti-chase override (all days):
             // If price stretches too far above trigger in ATR terms (extATR > 0.8),
@@ -559,5 +575,6 @@ export async function runFullScan(
     passedFilters: passesAll.length,
     passedRiskGates: passesAll.filter((c) => c.passesRiskGates).length,
     passedAntiChase: passesAll.filter((c) => c.passesAntiChase).length,
+    scanMode,
   };
 }

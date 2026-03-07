@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { MAIN_NAV_ITEMS, RISK_PROFILES } from '@/types';
+import { MAIN_NAV_ITEMS, RISK_PROFILES, isNavGroup, type NavEntry, type NavGroup, type NavItem } from '@/types';
 import { useStore } from '@/store/useStore';
+import DangerLevelIndicator, { useDangerLevel } from '@/components/DangerLevelIndicator';
 import {
   LayoutDashboard,
   Briefcase,
@@ -20,6 +21,11 @@ import {
   Bell,
   BookOpen,
   BarChart3,
+  FlaskConical,
+  Zap,
+  ChevronDown,
+  FlaskRound,
+  MoreHorizontal,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -29,11 +35,78 @@ const iconMap: Record<string, React.ReactNode> = {
   Plan: <ClipboardList className="w-4 h-4" />,
   'Trade Log': <NotebookPen className="w-4 h-4" />,
   Journal: <BookOpen className="w-4 h-4" />,
-  Results: <BarChart3 className="w-4 h-4" />,
   Risk: <ShieldAlert className="w-4 h-4" />,
   Signals: <Activity className="w-4 h-4" />,
+  Scorecard: <FlaskConical className="w-4 h-4" />,
+  'Score Lab': <BarChart3 className="w-4 h-4" />,
+  'Exec Audit': <Zap className="w-4 h-4" />,
   Settings: <Settings className="w-4 h-4" />,
+  Research: <FlaskRound className="w-4 h-4" />,
+  More: <MoreHorizontal className="w-4 h-4" />,
 };
+
+// ── Dropdown for grouped nav items ──────────────────────────
+
+function NavDropdown({ group, isGroupActive }: { group: NavGroup; isGroupActive: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+
+  // Close on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  // Close on navigation
+  useEffect(() => { setOpen(false); }, [pathname]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+          isGroupActive
+            ? 'text-foreground bg-primary/15 border border-primary/30'
+            : 'text-muted-foreground hover:text-foreground hover:bg-navy-600/50'
+        )}
+      >
+        {iconMap[group.label]}
+        {group.label}
+        <ChevronDown className={cn('w-3 h-3 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 min-w-[180px] py-1 rounded-lg border border-border bg-navy-800 shadow-xl z-50">
+          {group.children.map((child) => {
+            const active = pathname.startsWith(child.href);
+            return (
+              <Link
+                key={child.href}
+                href={child.href}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 text-sm transition-colors',
+                  active
+                    ? 'text-foreground bg-primary/10'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-navy-700'
+                )}
+              >
+                {iconMap[child.label]}
+                {child.label}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Navbar ─────────────────────────────────────────────
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -72,6 +145,14 @@ export default function Navbar() {
     return pathname.startsWith(href);
   };
 
+  const isGroupActive = (group: NavGroup) =>
+    group.children.some((child) => isActive(child.href));
+
+  // Flatten for mobile: all items in a single scrollable row
+  const flatItems: NavItem[] = MAIN_NAV_ITEMS.flatMap((entry) =>
+    isNavGroup(entry) ? entry.children : [entry]
+  );
+
   return (
     <nav className="sticky top-0 z-40 w-full border-b border-border bg-navy-900/95 backdrop-blur-md">
       <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
@@ -89,27 +170,42 @@ export default function Navbar() {
             </span>
           </Link>
 
-          {/* Navigation Links */}
+          {/* Navigation Links — desktop */}
           <div className="hidden md:flex items-center gap-1">
-            {MAIN_NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
-                  isActive(item.href)
-                    ? 'text-foreground bg-primary/15 border border-primary/30'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-navy-600/50'
-                )}
-              >
-                {iconMap[item.label]}
-                {item.label}
-              </Link>
-            ))}
+            {MAIN_NAV_ITEMS.map((entry) => {
+              if (isNavGroup(entry)) {
+                return (
+                  <NavDropdown
+                    key={entry.label}
+                    group={entry}
+                    isGroupActive={isGroupActive(entry)}
+                  />
+                );
+              }
+              const item = entry as NavItem;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all',
+                    isActive(item.href)
+                      ? 'text-foreground bg-primary/15 border border-primary/30'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-navy-600/50'
+                  )}
+                >
+                  {iconMap[item.label]}
+                  {item.label}
+                </Link>
+              );
+            })}
           </div>
 
           {/* Right Section */}
           <div className="flex items-center gap-3">
+            {/* Market Danger Indicator (persistent) */}
+            <NavDangerBadge />
+
             {/* Notification Bell */}
             <Link
               href="/notifications"
@@ -152,10 +248,10 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* Mobile Navigation — flattened scrollable row */}
       <div className="md:hidden border-t border-border">
         <div className="flex overflow-x-auto px-2 py-1 gap-1">
-          {MAIN_NAV_ITEMS.map((item) => (
+          {flatItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -173,5 +269,23 @@ export default function Navbar() {
         </div>
       </div>
     </nav>
+  );
+}
+
+// ── Persistent Danger Badge (separate component to avoid hook rules) ──
+
+function NavDangerBadge() {
+  const dangerData = useDangerLevel();
+
+  if (!dangerData.hasData || dangerData.dangerScore < 30) return null;
+
+  return (
+    <DangerLevelIndicator
+      dangerScore={dangerData.dangerScore}
+      immuneAlert={dangerData.immuneAlert}
+      riskTighteningPercent={dangerData.riskTighteningPercent}
+      topMatch={dangerData.topMatch}
+      compact
+    />
   );
 }

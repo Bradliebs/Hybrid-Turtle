@@ -107,6 +107,10 @@ function isFailedMigrationBlock(output) {
   return output.includes('P3009') || output.includes('failed migrations');
 }
 
+function isDatabaseLocked(output) {
+  return output.includes('database is locked');
+}
+
 /** Extract migration name from Prisma error output */
 function extractMigrationName(output) {
   // "Migration name: 0_baseline"
@@ -223,14 +227,21 @@ async function main() {
         process.exit(1);
       }
     }
-    // Case 3: Unknown error — can't auto-resolve
+    // Case 3: Database locked — another process (e.g. VS Code, dev server)
+    // has the SQLite file open. Wait and retry.
+    else if (isDatabaseLocked(output)) {
+      const delaySec = attempt * 3;
+      log(`Database is locked by another process — waiting ${delaySec}s before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delaySec * 1000));
+    }
+    // Case 4: Unknown error — can't auto-resolve
     else {
       logError('Unrecoverable migration error:');
       console.error(output.trim());
       process.exit(1);
     }
 
-    // Retry deploy after resolution
+    // Retry deploy after resolution / wait
     result = runMigrateDeploy();
     if (result.success) {
       log('All migrations applied successfully after auto-resolve.');
@@ -240,6 +251,28 @@ async function main() {
   }
 
   // Retries exhausted
+  // If the only error is a database lock (not a real migration failure),
+  // check if the schema is actually up to date and gracefully continue.
+  if (isDatabaseLocked(result.output)) {
+    log('Database still locked after retries — verifying schema directly...');
+    try {
+      // Use Prisma Client to check if the latest model works
+      const checkResult = execSync('node -e "const{PrismaClient}=require(\'@prisma/client\');const p=new PrismaClient();p.candidateOutcome.count().then(c=>{console.log(\'OK\');p.$disconnect()}).catch(e=>{console.log(\'FAIL:\'+e.message);p.$disconnect();process.exit(1)})"', {
+        cwd: ROOT,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 15_000,
+        env: { ...process.env, NODE_OPTIONS: '' },
+      });
+      if (checkResult.trim().includes('OK')) {
+        log('Schema is correct despite lock — continuing safely.');
+        runSchemaVerify();
+        process.exit(0);
+      }
+    } catch {
+      // Fall through to error
+    }
+  }
   logError(`Migration failed after ${MAX_RETRIES} auto-resolve attempts.`);
   logError('You may need to resolve this manually:');
   logError('  npx prisma migrate status');

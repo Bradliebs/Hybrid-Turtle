@@ -63,6 +63,12 @@ export async function calculateBreadth(
 /**
  * Run the breadth safety valve check.
  * Returns whether max positions should be reduced.
+ *
+ * Note (OVERLAP-09): For SMALL_ACCOUNT (max 4 positions), this override
+ * is provably redundant — RESTRICTED_MAX_POSITIONS (4) equals the profile
+ * limit. The Math.min below ensures no harm, but the position cap never
+ * actually reduces anything. The breadthPct is still useful as an
+ * informational metric displayed in the UI.
  */
 export function checkBreadthSafety(
   breadthPct: number,

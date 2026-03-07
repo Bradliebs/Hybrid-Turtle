@@ -183,10 +183,11 @@ describe('computeFWS', () => {
     expect(bothChase.fws_extension).toBeGreaterThan(oneChase.fws_extension);
   });
 
-  it('ATR spiking triggers vol shock risk', () => {
+  it('ATR spiking triggers vol shock risk (reduced per OVERLAP-02)', () => {
     const calm = computeFWS(makeRow({ atr_spiking: false }));
     const spiking = computeFWS(makeRow({ atr_spiking: true }));
-    expect(spiking.fws_vol_shock).toBe(20);
+    // Reduced from 20 → 10 (scan-engine SCAN-08 already demotes spiking stocks)
+    expect(spiking.fws_vol_shock).toBe(10);
     expect(calm.fws_vol_shock).toBe(0);
   });
 

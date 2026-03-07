@@ -72,6 +72,19 @@ interface ReadyCandidate {
     action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
     reason: string | null;
   };
+  // Allocation score breakdown (merged from /api/plan/allocation-score)
+  allocationScore?: number | null;
+  allocationRank?: number | null;
+  qualityComponent?: number;
+  expectancyComponent?: number;
+  sleeveBalanceBonus?: number;
+  clusterCrowdingPenalty?: number;
+  sectorCrowdingPenalty?: number;
+  earningsNearPenalty?: number;
+  correlationPenalty?: number;
+  capitalInefficiencyPenalty?: number;
+  expectancyR?: number | null;
+  correlatedHoldings?: string[];
 }
 
 /** Shape of a cross-ref ticker from /api/scan/cross-ref */
@@ -299,6 +312,60 @@ export default function PlanPage() {
 
     fetchEvModifiers();
   }, [marketRegime]);
+
+  // Fetch allocation scores and merge into candidates
+  useEffect(() => {
+    if (scanCandidates.length === 0) return;
+    const fetchAllocationScores = async () => {
+      try {
+        const data = await apiRequest<{
+          ok: boolean;
+          entries: {
+            ticker: string;
+            allocationScore: number;
+            rank: number;
+            qualityComponent: number;
+            expectancyComponent: number;
+            sleeveBalanceBonus: number;
+            clusterCrowdingPenalty: number;
+            sectorCrowdingPenalty: number;
+            earningsNearPenalty: number;
+            correlationPenalty: number;
+            capitalInefficiencyPenalty: number;
+            expectancyR: number | null;
+            correlatedHoldings: string[];
+          }[];
+        }>('/api/plan/allocation-score');
+        if (data.ok && data.entries.length > 0) {
+          const scoreMap = new Map(data.entries.map((e) => [e.ticker, e]));
+          setScanCandidates((prev) =>
+            prev.map((c) => {
+              const s = scoreMap.get(c.ticker);
+              if (!s) return c;
+              return {
+                ...c,
+                allocationScore: s.allocationScore,
+                allocationRank: s.rank,
+                qualityComponent: s.qualityComponent,
+                expectancyComponent: s.expectancyComponent,
+                sleeveBalanceBonus: s.sleeveBalanceBonus,
+                clusterCrowdingPenalty: s.clusterCrowdingPenalty,
+                sectorCrowdingPenalty: s.sectorCrowdingPenalty,
+                earningsNearPenalty: s.earningsNearPenalty,
+                correlationPenalty: s.correlationPenalty,
+                capitalInefficiencyPenalty: s.capitalInefficiencyPenalty,
+                expectancyR: s.expectancyR,
+                correlatedHoldings: s.correlatedHoldings,
+              };
+            })
+          );
+        }
+      } catch {
+        // Non-critical — allocation scores enhance ranking but are not required
+      }
+    };
+    fetchAllocationScores();
+  }, [scanCandidates.length]);
 
   // Use cross-referenced scan candidates from 7-stage engine + dual scores
   const candidates = scanCandidates;

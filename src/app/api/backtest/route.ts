@@ -200,6 +200,9 @@ export async function GET(request: NextRequest) {
     const tickerFilter = searchParams.get('ticker') || null;
     const sleeveFilter = searchParams.get('sleeve') || null;
     const regimeFilter = searchParams.get('regime') || null;
+    const modeParam = searchParams.get('mode') || 'FULL';
+    const scanMode = modeParam === 'CORE_LITE' ? 'CORE_LITE' : 'FULL';
+    const isCoreLite = scanMode === 'CORE_LITE';
     const limit = Math.min(Number(searchParams.get('limit') || '200'), 500);
 
     // 1. Load all snapshots ordered chronologically
@@ -338,6 +341,15 @@ export async function GET(request: NextRequest) {
         const snapshotRow = dbRowToSnapshotRow(current as unknown as Record<string, unknown>);
         const scored = scoreRow(snapshotRow);
 
+        // CORE_LITE: compute scores for display but override ActionNote
+        // In CORE_LITE, no earnings/cluster/super-cluster penalties apply
+        const displayBqs = scored.BQS;
+        const displayFws = scored.FWS;
+        const displayNcs = isCoreLite
+          ? Math.round(Math.max(0, Math.min(100, scored.BQS - 0.8 * scored.FWS + 10)) * 100) / 100
+          : scored.NCS;  // FULL mode includes penalties
+        const displayAction = isCoreLite ? 'CORE_LITE' : scored.ActionNote;
+
         const signalDate = snapshotDateMap.get(current.snapshotId) || current.createdAt;
 
         // Build forward snapshots for this ticker (all snapshots after the signal)
@@ -378,10 +390,10 @@ export async function GET(request: NextRequest) {
           riskPerShare: Math.round(riskPerShare * 100) / 100,
           regime: current.marketRegime,
           regimeStable: current.marketRegimeStable,
-          bqs: scored.BQS,
-          fws: scored.FWS,
-          ncs: scored.NCS,
-          actionNote: scored.ActionNote,
+          bqs: displayBqs,
+          fws: displayFws,
+          ncs: displayNcs,
+          actionNote: displayAction,
           atrPct: current.atrPct,
           adx: current.adx14,
           bps: bpsResult.bps,
@@ -414,10 +426,15 @@ export async function GET(request: NextRequest) {
       : null;
     const stopsHit = signals.filter((s) => s.stopHit).length;
 
+    // 1R / 2R hit rates (for comparison)
+    const with1R = withOutcomes.filter((s) => s.maxFavorableR != null && s.maxFavorableR >= 1.0).length;
+    const with2R = withOutcomes.filter((s) => s.maxFavorableR != null && s.maxFavorableR >= 2.0).length;
+
     return NextResponse.json({
       ok: true,
       signals: limited,
       meta: {
+        scanMode,
         snapshotCount: snapshots.length,
         totalSignals: signals.length,
         displayedSignals: limited.length,
@@ -432,6 +449,8 @@ export async function GET(request: NextRequest) {
         avgMaxAdverseR: signals.length > 0
           ? Math.round((signals.reduce((s, sig) => s + (sig.maxAdverseR || 0), 0) / signals.length) * 100) / 100
           : null,
+        hit1RPct: withOutcomes.length > 0 ? Math.round((with1R / withOutcomes.length) * 100) : null,
+        hit2RPct: withOutcomes.length > 0 ? Math.round((with2R / withOutcomes.length) * 100) : null,
       },
     });
   } catch (error) {

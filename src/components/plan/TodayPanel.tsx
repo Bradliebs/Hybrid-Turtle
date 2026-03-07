@@ -33,6 +33,20 @@ import { ChevronDown, ChevronUp, ExternalLink, Zap } from 'lucide-react';
 import { getExecutionMode } from '@/lib/execution-mode';
 import { filterOpportunisticCandidates } from '@/lib/opportunistic-filter';
 import GlossaryTerm from '@/components/GlossaryTerm';
+import NCSIntervalBadge from '@/components/NCSIntervalBadge';
+import { useNCSIntervals, type NCSIntervalResult } from '@/hooks/useNCSIntervals';
+import FailureModePanel from '@/components/FailureModePanel';
+import { useFailureModes, type FMData } from '@/hooks/useFailureModes';
+import SignalWeightPanel from '@/components/SignalWeightPanel';
+import { useSignalWeights, type SignalWeightData } from '@/hooks/useSignalWeights';
+import StressTestGauge from '@/components/StressTestGauge';
+import { useStressTest, type StressTestData } from '@/hooks/useStressTest';
+import DangerLevelIndicator, { useDangerLevel } from '@/components/DangerLevelIndicator';
+import LeadLagPanel, { useLeadLagSignals } from '@/components/LeadLagPanel';
+import GraphScorePanel, { useGNNScore } from '@/components/GraphScorePanel';
+import BeliefStatePanel, { useBeliefStates } from '@/components/BeliefStatePanel';
+import { TradePulseGradePill } from '@/components/TradePulseGrade';
+import { classifyGrade } from '@/lib/prediction/trade-pulse';
 
 // ── Approximate GBP value helper (display only) ──────────────
 // Converts shares × price in native currency to approximate GBP.
@@ -213,7 +227,7 @@ function SignalItem({ emoji, label, signal }: { emoji: string; label: string; si
 
 // ── Technical Details Expandable ─────────────────────────────
 
-function TechnicalDetails({ candidate }: { candidate: TodayCandidate }) {
+function TechnicalDetails({ candidate, ncsIntervalResult }: { candidate: TodayCandidate; ncsIntervalResult?: NCSIntervalResult }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -227,13 +241,19 @@ function TechnicalDetails({ candidate }: { candidate: TodayCandidate }) {
       </button>
       {open && (
         <div className="mt-2 px-3 py-2 bg-navy-900/60 rounded-lg text-xs font-mono text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
-          {candidate.dualNCS != null && <span><GlossaryTerm term="NCS">NCS</GlossaryTerm>: <span className="text-foreground">{Math.round(candidate.dualNCS)}</span></span>}
+          {candidate.dualNCS != null && (
+            <NCSIntervalBadge
+              ncs={candidate.dualNCS}
+              interval={ncsIntervalResult?.interval ?? null}
+              confidence={ncsIntervalResult?.confidence ?? null}
+            />
+          )}
           {candidate.dualBQS != null && <span><GlossaryTerm term="BQS">BQS</GlossaryTerm>: <span className="text-foreground">{Math.round(candidate.dualBQS)}</span></span>}
           {candidate.dualFWS != null && <span><GlossaryTerm term="FWS">FWS</GlossaryTerm>: <span className="text-foreground">{Math.round(candidate.dualFWS)}</span></span>}
           {candidate.bps != null && <span><GlossaryTerm term="BPS">BPS</GlossaryTerm>: <span className="text-foreground">{candidate.bps}</span></span>}
           {candidate.hurstExponent != null && <span><GlossaryTerm term="Hurst">Hurst</GlossaryTerm>: <span className="text-foreground">{candidate.hurstExponent.toFixed(2)}</span></span>}
           {candidate.scanAdx != null && <span><GlossaryTerm term="ADX">ADX</GlossaryTerm>: <span className="text-foreground">{candidate.scanAdx.toFixed(1)}</span></span>}
-          <span>Distance: <span className="text-foreground">{candidate.distancePercent.toFixed(2)}%</span></span>
+          <span>Distance: <span className="text-foreground">{(candidate.distancePercent ?? 0).toFixed(2)}%</span></span>
           {candidate.evModifier != null && candidate.evModifier !== 0 && (
             <span>EV: <span className={candidate.evModifier > 0 ? 'text-emerald-400' : 'text-amber-400'}>{candidate.evModifier > 0 ? '+' : ''}{candidate.evModifier}</span></span>
           )}
@@ -419,7 +439,7 @@ function WatchingCard({ closest }: { closest: { ticker: string; distancePct: num
           {closest ? (
             <p>
               The closest candidate is <span className="font-semibold text-foreground">{closest.ticker}</span>,
-              but it&apos;s still {closest.distancePct.toFixed(1)}% away from its buy price.
+              but it&apos;s still {(closest.distancePct ?? 0).toFixed(1)}% away from its buy price.
               The system only buys when a stock hits its exact entry level.
             </p>
           ) : (
@@ -445,11 +465,27 @@ function WatchingCard({ closest }: { closest: { ticker: string; distancePct: num
 
 // ── STATE 3: Tuesday, something to buy ───────────────────────
 
-function TimeToActCard({ candidate, regime, advancedView }: {
+function TimeToActCard({ candidate, regime, advancedView, getIntervalForNCS, fmData, signalWeightData, stressTestData }: {
   candidate: TodayCandidate;
   regime: MarketRegime;
   advancedView: boolean;
+  getIntervalForNCS: (ncs: number) => NCSIntervalResult;
+  fmData: FMData;
+  signalWeightData: SignalWeightData;
+  stressTestData: StressTestData;
 }) {
+  // Market danger level — immune system threat matching (fetched inside card)
+  const dangerData = useDangerLevel();
+
+  // Lead-lag upstream signals for this candidate
+  const leadLagData = useLeadLagSignals(candidate.ticker);
+
+  // GNN graph-enhanced score for this candidate
+  const gnnData = useGNNScore(candidate.ticker, candidate.dualNCS ?? undefined);
+
+  // Bayesian belief states for signal reliability
+  const beliefData = useBeliefStates();
+
   const stars = ncsToStars(candidate.dualNCS);
   const reasons = buildTradeReasons({
     adx: candidate.scanAdx,
@@ -464,7 +500,11 @@ function TimeToActCard({ candidate, regime, advancedView }: {
   const positiveReasons = reasons.filter(r => r.status === 'positive');
 
   return (
-    <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/40 px-6 py-12 sm:py-16 min-h-[60vh] flex items-center justify-center">
+    <div className={cn(
+      "rounded-2xl bg-emerald-500/10 border border-emerald-500/40 px-6 py-12 sm:py-16 min-h-[60vh] flex items-center justify-center",
+      fmData.hasBlock && "border-l-4 border-l-red-500",
+      dangerData.dangerScore > 75 && "bg-amber-500/5"
+    )}>
       <div className="w-full max-w-lg mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -510,9 +550,9 @@ function TimeToActCard({ candidate, regime, advancedView }: {
                 <span className="text-muted-foreground">·</span>
                 <span className="text-foreground">
                   You will buy <span className="font-semibold">
-                    {candidate.shares < 1
-                      ? candidate.shares.toFixed(2)
-                      : candidate.shares.toFixed(candidate.shares % 1 > 0 ? 2 : 0)
+                    {(candidate.shares ?? 0) < 1
+                      ? (candidate.shares ?? 0).toFixed(2)
+                      : (candidate.shares ?? 0).toFixed((candidate.shares ?? 0) % 1 > 0 ? 2 : 0)
                     } shares
                   </span>
                   {/* Approximate position value in GBP */}
@@ -526,7 +566,7 @@ function TimeToActCard({ candidate, regime, advancedView }: {
               <div className="flex items-start gap-2">
                 <span className="text-muted-foreground">·</span>
                 <span className="text-foreground">
-                  The most you can lose is <span className="font-semibold">£{candidate.riskDollars.toFixed(2)}</span>
+                  The most you can lose is <span className="font-semibold">£{(candidate.riskDollars ?? 0).toFixed(2)}</span>
                 </span>
               </div>
             )}
@@ -596,7 +636,7 @@ function TimeToActCard({ candidate, regime, advancedView }: {
           )}
 
           {/* CTA */}
-          <div className="pt-3 border-t border-border/30">
+          <div className="pt-3 border-t border-border/30 space-y-2">
             <a
               href="/portfolio"
               className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-lg transition-colors"
@@ -604,10 +644,72 @@ function TimeToActCard({ candidate, regime, advancedView }: {
               Go place this trade →
               <ExternalLink className="w-4 h-4" />
             </a>
+            <a
+              href={`/trade-pulse/${encodeURIComponent(candidate.ticker)}`}
+              className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground bg-navy-800/50 hover:bg-navy-800/80 border border-border/30 py-2 px-4 rounded-lg transition-colors"
+            >
+              Full Analysis →
+              {candidate.dualNCS != null && (
+                <TradePulseGradePill grade={classifyGrade(candidate.dualNCS)} compact />
+              )}
+            </a>
           </div>
 
-          {/* Technical details — advanced only */}
-          {advancedView && <TechnicalDetails candidate={candidate} />}
+          {/* Technical details — advanced only, with conformal prediction interval */}
+          {advancedView && <TechnicalDetails candidate={candidate} ncsIntervalResult={candidate.dualNCS != null ? getIntervalForNCS(candidate.dualNCS) : undefined} />}
+
+          {/* Failure mode panel — advanced only */}
+          {advancedView && fmData.results.length > 0 && (
+            <FailureModePanel results={fmData.results} hasBlock={fmData.hasBlock} />
+          )}
+
+          {/* Signal weight panel — advanced only */}
+          {advancedView && signalWeightData.hasData && (
+            <SignalWeightPanel
+              weights={signalWeightData.weights}
+              defaultWeights={signalWeightData.defaultWeights}
+              regime={signalWeightData.regime}
+              source={signalWeightData.source}
+            />
+          )}
+
+          {/* Stress test gauge — advanced only */}
+          {advancedView && stressTestData.hasResult && (
+            <StressTestGauge
+              stopHitProbability={stressTestData.stopHitProbability}
+              gate={stressTestData.gate}
+              pathsRun={stressTestData.pathsRun}
+              horizonDays={stressTestData.horizonDays}
+              percentiles={stressTestData.percentiles ?? undefined}
+              avgDaysToStopHit={stressTestData.avgDaysToStopHit}
+              entryPrice={candidate.entryTrigger}
+            />
+          )}
+
+          {/* Market danger level — advanced only */}
+          {advancedView && dangerData.hasData && (
+            <DangerLevelIndicator
+              dangerScore={dangerData.dangerScore}
+              immuneAlert={dangerData.immuneAlert}
+              riskTighteningPercent={dangerData.riskTighteningPercent}
+              topMatch={dangerData.topMatch}
+            />
+          )}
+
+          {/* Lead-lag upstream signals — advanced only */}
+          {advancedView && leadLagData.hasEdges && (
+            <LeadLagPanel data={leadLagData} />
+          )}
+
+          {/* GNN graph score — advanced only */}
+          {advancedView && gnnData.hasResult && (
+            <GraphScorePanel data={gnnData} ticker={candidate.ticker} />
+          )}
+
+          {/* Bayesian belief states — advanced only */}
+          {advancedView && beliefData.hasData && (
+            <BeliefStatePanel data={beliefData} />
+          )}
         </div>
 
         {/* Secondary links */}
@@ -775,6 +877,25 @@ export default function TodayPanel(props: TodayPanelProps) {
   const closest = findClosestCandidate(props.candidates);
   const advancedView = props.advancedView ?? false;
 
+  // Conformal prediction intervals — fetches calibration once, computes intervals client-side
+  const { getIntervalForNCS } = useNCSIntervals();
+
+  // Failure mode scores — fetches latest FM data for the best candidate
+  const fmData = useFailureModes(bestCandidate?.ticker);
+
+  // Dynamic signal weights — fetches current weight vector from meta-model
+  const signalWeightData = useSignalWeights();
+
+  // Adversarial stress test — runs Monte Carlo simulation for best candidate
+  const stressTestInput = bestCandidate ? {
+    ticker: bestCandidate.ticker,
+    entryPrice: bestCandidate.entryTrigger,
+    stopPrice: bestCandidate.stopPrice,
+    atr: bestCandidate.atrPercent ? bestCandidate.price * bestCandidate.atrPercent / 100 : 0,
+    regime: props.marketRegime.toUpperCase(),
+  } : null;
+  const stressTestData = useStressTest(stressTestInput && stressTestInput.atr > 0 ? stressTestInput : null);
+
   // Compute signals for the summary strip (advanced view only)
   const representativeCandidate = bestCandidate || selectTopCandidate(props.candidates);
   const adxSignal = adxToLabel(representativeCandidate?.scanAdx);
@@ -791,7 +912,7 @@ export default function TodayPanel(props: TodayPanelProps) {
       {state === 'PORTFOLIO_FULL' && <PortfolioFullCard count={props.usedPositions} max={props.maxPositions} />}
       {state === 'WATCHING' && <WatchingCard closest={closest} />}
       {state === 'TIME_TO_ACT' && bestCandidate && (
-        <TimeToActCard candidate={bestCandidate} regime={props.marketRegime} advancedView={advancedView} />
+        <TimeToActCard candidate={bestCandidate} regime={props.marketRegime} advancedView={advancedView} getIntervalForNCS={getIntervalForNCS} fmData={fmData} signalWeightData={signalWeightData} stressTestData={stressTestData} />
       )}
       {state === 'OPPORTUNISTIC_AVAILABLE' && <OpportunisticAvailableCard candidateCount={
         filterOpportunisticCandidates(

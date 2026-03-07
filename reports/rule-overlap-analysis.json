@@ -1,0 +1,236 @@
+{
+  "_meta": {
+    "title": "HybridTurtle Rule Overlap Analysis",
+    "version": "1.0.0",
+    "generatedAt": "2026-03-06",
+    "methodology": "For each pair of rules acting on the same signal, assess: (1) whether they measure the same condition, (2) whether both are needed, (3) what data would prove redundancy. Recommendations are conservative — KEEP unless strong evidence to simplify.",
+    "verdicts": {
+      "KEEP": "Both rules serve distinct purposes and should remain",
+      "RETEST": "Overlap suspected but needs data to prove. Use filter scorecard / candidate outcome data to test.",
+      "REDUCE": "Evidence of redundancy. Consider removing one layer or softening thresholds.",
+      "REMOVE_CANDIDATE": "Strong evidence of redundancy. Mark for eventual removal after data validation."
+    }
+  },
+  "overlaps": [
+    {
+      "id": "OVERLAP-01",
+      "name": "ADX Triple Layer",
+      "rules": ["SCAN-02", "BQS-TREND", "FWS-MARGINAL", "BQS-WEEKLY-ADX"],
+      "signal": "Trend strength (ADX)",
+      "description": "ADX is checked 4 times: (1) SCAN-02 hard gate at ADX ≥ 20, (2) BQS-TREND gives continuous 0–25 pts for ADX 15–35, (3) FWS-MARGINAL penalizes ADX < 30 with up to 10 pts, (4) Weekly ADX gives ±5–10 pts bonus/penalty. After SCAN-02 blocks ADX < 20, FWS-MARGINAL still penalizes ADX 20–30 (which already passed the gate), and BQS-TREND gives a low score for the same candidates.",
+      "verdict": "RETEST",
+      "reasoning": "The gate + BQS bonus are clearly value-add (pass/fail + quality gradient). The question is whether FWS-MARGINAL adds information after SCAN-02 already filtered out ADX < 20. Weekly ADX is a different timeframe — intended.",
+      "testPlan": "Use filter scorecard: compare forward returns for candidates with ADX 20–25 vs 25–30 vs 30+. If 20–25 candidates perform as well as 25–30, FWS-MARGINAL may be too aggressive in the 20–30 zone.",
+      "pruneSuggestion": "If data shows ADX 20–30 candidates perform acceptably, reduce FWS-MARGINAL thresholds. E.g., only penalize ADX < 22 (instead of < 30)."
+    },
+    {
+      "id": "OVERLAP-02",
+      "name": "ATR/Volatility Triple Layer",
+      "rules": ["SCAN-04", "SCAN-08", "BQS-VOLATILITY", "FWS-VOL-SHOCK"],
+      "signal": "Volatility (ATR-based)",
+      "description": "ATR is checked 4 times: (1) SCAN-04 hard cap at 8%/7%, (2) SCAN-08 spike detection at 1.3× median → demote/block, (3) BQS-VOLATILITY rewards sweet-spot ATR% (1–4%), (4) FWS-VOL-SHOCK penalizes spiking (+20 pts). A spiking stock is hit by SCAN-08 (demotion), FWS-VOL-SHOCK (-20 NCS), and potentially SCAN-04 if ATR% crosses the cap.",
+      "verdict": "REDUCE",
+      "reasoning": "SCAN-08 and FWS-VOL-SHOCK use the same atrSpiking flag — double penalty. One blocks/demotes AND the other penalizes the score. This is the most clear-cut double-counting in the system.",
+      "testPlan": "Use candidate outcome data: compare outcomes of spike-demoted candidates. If the scan demotion already effectively filters them, the FWS penalty is redundant (candidates that pass despite SCAN-08 SOFT_CAP still get FWS-penalized).",
+      "pruneSuggestion": "Remove FWS-VOL-SHOCK for SOFT_CAP cases (bullish + spiking). Keep FWS penalty only for collapsing ATR (SCAN-08 doesn't handle that case as strongly)."
+    },
+    {
+      "id": "OVERLAP-03",
+      "name": "Earnings Triple Layer",
+      "rules": ["SCAN-10", "PENALTY-EARNINGS", "ALLOC-EARNINGS"],
+      "signal": "Upcoming earnings proximity",
+      "description": "Earnings checked 3 times: (1) SCAN-10 hard blocks ≤2d or demotes 3–5d, (2) PENALTY-EARNINGS gives NCS 10–20 pt penalty, (3) ALLOC-EARNINGS gives allocation 5–10 pt penalty. A candidate 3 days from earnings gets: WATCH demotion + ~10 NCS penalty + ~5 allocation penalty. The NCS and allocation penalties reduce ranking of candidates that already can't be READY.",
+      "verdict": "REDUCE",
+      "reasoning": "The scan block/demotion is the protective action. The NCS penalty further reduces score of already-demoted candidates. The allocation penalty then further demotes their capital priority. For ≤2d (already blocked), both penalties are wasted. For 3–5d (demoted to WATCH), the penalties are marginal since WATCH candidates rarely get traded.",
+      "testPlan": "Check how many 3–5d-from-earnings candidates actually get traded. If near zero, the NCS + allocation penalties are dead weight.",
+      "pruneSuggestion": "Keep SCAN-10 (protective action). Keep NCS penalty (affects scoring in backtest). Remove ALLOC-EARNINGS (allocation score already reflects NCS which includes the earnings penalty)."
+    },
+    {
+      "id": "OVERLAP-04",
+      "name": "Cluster Concentration Triple Layer",
+      "rules": ["GATE-04", "PENALTY-CLUSTER", "ALLOC-CLUSTER"],
+      "signal": "Cluster concentration exposure",
+      "description": "Cluster exposure checked 3 times: (1) GATE-04 hard blocks above 25%, (2) PENALTY-CLUSTER penalizes NCS starting at 80% of cap, (3) ALLOC-CLUSTER penalizes allocation starting at 60% of cap. The allocation penalty kicks in earliest (60%), then NCS (80%), then gate (100%). This is a graduated response — soft warning → score reduction → hard block.",
+      "verdict": "KEEP",
+      "reasoning": "This is actually well-designed graduated deterrence. Each layer serves a distinct purpose: allocation deprioritizes, NCS warns, gate blocks. The thresholds don't fully overlap (60% / 80% / 100%). However, the PENALTY-CLUSTER and ALLOC-CLUSTER thresholds could be reconciled — both are soft penalties with different onset points.",
+      "testPlan": "Not needed for pruning — this is working as intended.",
+      "pruneSuggestion": "None. Consider harmonizing onset points if simplification is desired (both start at 70%)."
+    },
+    {
+      "id": "OVERLAP-05",
+      "name": "Anti-Chase + Extension + FWS Chasing",
+      "rules": ["SCAN-11", "SCAN-12", "FWS-EXTENSION"],
+      "signal": "Price extended above entry trigger / recent highs",
+      "description": "Three rules detect 'candidate price has run too far': (1) SCAN-11 gap guard blocks on ATR/% thresholds, (2) SCAN-12 extension check blocks if > 0.8 ATR above trigger, (3) FWS-EXTENSION penalizes 15–25 pts for chasing 20d/55d highs. A gapped-up stock can be blocked by SCAN-11 or SCAN-12, AND get FWS-penalized by EXTENSION for the same price movement.",
+      "verdict": "RETEST",
+      "reasoning": "SCAN-11 and SCAN-12 are hard blocks at different thresholds (ATR/% gap vs 0.8 ATR extension). FWS-EXTENSION uses a different signal (chasing_20_last5 flags) but detects a similar condition. The overlap is partial because chasing flags measure multi-day extension while SCAN-11/12 measure single-day gaps.",
+      "testPlan": "Compare: when SCAN-11/12 block a candidate, does FWS-EXTENSION also fire? If co-occurrence > 80%, one penalty is redundant.",
+      "pruneSuggestion": "If data shows high co-occurrence, reduce FWS-EXTENSION weight from 25/15 to 15/10 since the hard blocks already handle the worst cases."
+    },
+    {
+      "id": "OVERLAP-06",
+      "name": "DI Direction: Gate + Score",
+      "rules": ["SCAN-03", "BQS-DIRECTION"],
+      "signal": "Directional dominance (+DI vs −DI)",
+      "description": "SCAN-03 is a binary gate (+DI > −DI). BQS-DIRECTION gives 0–10 pts for the same DI spread. After the gate passes (spread > 0), BQS granulates the quality of the spread.",
+      "verdict": "KEEP",
+      "reasoning": "Classic gate + gradient pattern. The gate ensures minimum quality; the score differentiates within passing candidates. This is good design.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    },
+    {
+      "id": "OVERLAP-07",
+      "name": "Proximity: Classification + Score",
+      "rules": ["SCAN-09", "BQS-PROXIMITY"],
+      "signal": "Distance to entry trigger",
+      "description": "SCAN-09 classifies READY/WATCH/FAR by distance. BQS-PROXIMITY gives 0–15 pts for the same distance metric. Both use distance-to-high as input.",
+      "verdict": "KEEP",
+      "reasoning": "Same pattern as OVERLAP-06. Classification is pass/fail; score adds granularity. Good design.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    },
+    {
+      "id": "OVERLAP-08",
+      "name": "Hurst: Flag + Score",
+      "rules": ["SCAN-07", "BQS-HURST"],
+      "signal": "Trend persistence (Hurst exponent)",
+      "description": "SCAN-07 flags hurstWarn when H < 0.5. BQS-HURST gives 0–8 pts bonus for H > 0.5. The flag is advisory only (no blocking); the score adds quality differentiation.",
+      "verdict": "KEEP",
+      "reasoning": "complementary — flag warns operator, score affects ranking. Low overlap risk.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    },
+    {
+      "id": "OVERLAP-09",
+      "name": "Breadth Safety vs Max Positions Gate",
+      "rules": ["GATE-02", "MOD-BREADTH"],
+      "signal": "Maximum concurrent positions",
+      "description": "GATE-02 caps at 4 positions for SMALL_ACCOUNT. MOD-BREADTH caps at 4 when breadth < 40%. For SMALL_ACCOUNT, breadth safety never adds value because the profile already caps at 4.",
+      "verdict": "REMOVE_CANDIDATE",
+      "reasoning": "For SMALL_ACCOUNT profile (4 max positions), Module 10 breadth safety's position cap is always redundant — it caps at the same number. The breadth percentage is still useful information, but the position override does nothing.",
+      "testPlan": "Verify: has MOD-BREADTH ever capped below what GATE-02 already caps? For SMALL_ACCOUNT, the answer is provably 'no'.",
+      "pruneSuggestion": "Remove the maxPositionsOverride from MOD-BREADTH for SMALL_ACCOUNT. Keep the breadth percentage display as informational."
+    },
+    {
+      "id": "OVERLAP-10",
+      "name": "Volume: BQS Bonus vs FWS Penalty",
+      "rules": ["BQS-VOL-BONUS", "FWS-VOLUME"],
+      "signal": "Volume ratio",
+      "description": "BQS rewards vol > 1.2 with 0–5 pts. FWS penalizes vol < 1.2 with 0–30 pts. These are complementary inverses, not duplicates.",
+      "verdict": "KEEP",
+      "reasoning": "Intentionally asymmetric: heavy penalty for low volume (up to 30 pts FWS) vs light bonus for high volume (up to 5 pts BQS). The asymmetry reflects that low volume is a bigger red flag than high volume is a green flag.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    },
+    {
+      "id": "OVERLAP-11",
+      "name": "Regime: BQS Direction vs FWS Stability",
+      "rules": ["BQS-REGIME", "FWS-REGIME"],
+      "signal": "Market regime",
+      "description": "BQS-REGIME scores regime direction (bearish -10, bullish +10–20). FWS-REGIME penalizes regime instability (+10 if not stable). These measure different dimensions: direction vs confidence.",
+      "verdict": "KEEP",
+      "reasoning": "Distinct signals. A bullish but unstable regime gets BQS bonus AND FWS penalty — the net effect is moderate (appropriate). Complementary design.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    },
+    {
+      "id": "OVERLAP-12",
+      "name": "Whipsaw vs Failed Breakout Cooldown",
+      "rules": ["MOD-WHIPSAW", "SCAN-13"],
+      "signal": "Re-entry after stop-out / failure",
+      "description": "SCAN-13 blocks 5 days after failed breakout. MOD-WHIPSAW blocks 60 days after 2+ stops in 30 days. Different triggers and different durations.",
+      "verdict": "KEEP",
+      "reasoning": "Different severity levels. Failed breakout is a short pause (5d). Whipsaw is a long pause (60d) for repeat offenders. Not redundant.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    },
+    {
+      "id": "OVERLAP-13",
+      "name": "Sector: Gate + Allocation",
+      "rules": ["GATE-05", "ALLOC-SECTOR"],
+      "signal": "Sector concentration",
+      "description": "GATE-05 blocks at sector cap (30%). ALLOC-SECTOR penalizes allocation score above 60% of cap. Graduated deterrence.",
+      "verdict": "KEEP",
+      "reasoning": "Same pattern as cluster triple layer but only dual layer. Gate blocks, score deprioritizes. Clean design.",
+      "testPlan": "None needed.",
+      "pruneSuggestion": "None."
+    }
+  ],
+  "summary": {
+    "totalOverlaps": 13,
+    "verdicts": {
+      "KEEP": 8,
+      "RETEST": 2,
+      "REDUCE": 2,
+      "REMOVE_CANDIDATE": 1
+    },
+    "mostSuspiciousOverlaps": [
+      {
+        "rank": 1,
+        "id": "OVERLAP-02",
+        "name": "ATR/Volatility Triple Layer",
+        "issue": "ATR spike detection (SCAN-08) and FWS vol shock (FWS-VOL-SHOCK) use the same atrSpiking flag. A spiking stock gets blocked/demoted AND score-penalized. The FWS penalty is likely wasted on candidates already demoted.",
+        "impact": "Score pollution — NCS of spiking candidates is artificially suppressed beyond what the scan demotion achieves.",
+        "actionRequired": "Use candidate outcome data to verify. If spike-demoted candidates who barely pass still underperform, the FWS penalty adds value. If they don't, remove FWS-VOL-SHOCK for SOFT_CAP cases."
+      },
+      {
+        "rank": 2,
+        "id": "OVERLAP-03",
+        "name": "Earnings Triple Layer",
+        "issue": "Earnings proximity is penalized 3 times: scan blocks, NCS penalizes, allocation penalizes. For ≤2d candidates (already blocked), the NCS + allocation penalties are dead weight. For 3–5d (demoted), the allocation penalty adds negligible value since NCS already includes an earnings penalty.",
+        "impact": "Low practical impact since blocked candidates don't trade. Minor score distortion for 3–5d cases.",
+        "actionRequired": "Remove ALLOC-EARNINGS penalty from allocation-score.ts. NCS earnings penalty + scan demotion already handle this."
+      },
+      {
+        "rank": 3,
+        "id": "OVERLAP-09",
+        "name": "Breadth Safety vs Max Positions",
+        "issue": "Module 10 breadth safety caps positions at 4 when breadth < 40%. SMALL_ACCOUNT already caps at 4 via GATE-02. The breadth cap is provably redundant for this profile.",
+        "impact": "Zero — the cap never fires because it matches the existing limit.",
+        "actionRequired": "Safe to remove the position cap from breadth safety for SMALL_ACCOUNT. Keep breadth % as display-only."
+      },
+      {
+        "rank": 4,
+        "id": "OVERLAP-01",
+        "name": "ADX Triple Layer",
+        "issue": "FWS-MARGINAL penalizes ADX 20–30 even though SCAN-02 already blocked ADX < 20 and BQS-TREND gives a low score for weak trends. The FWS penalty may be over-penalizing marginal-but-acceptable trends.",
+        "impact": "Candidates with ADX 20–25 get: passed gate (barely), low BQS-TREND score, AND FWS penalty. Net: significantly deprioritized despite being valid trend-following setups.",
+        "actionRequired": "Use score validation data: compare forward returns for ADX 20–25 vs 25–30 candidates. If ADX 20–25 performs well enough, reduce FWS-MARGINAL thresholds."
+      }
+    ],
+    "bestPruningCandidates": [
+      {
+        "rule": "ALLOC-EARNINGS",
+        "id": "ALLOC-EARNINGS",
+        "action": "REMOVE_CANDIDATE",
+        "reason": "NCS already includes earnings penalty. Allocation score uses NCS as quality input. Adding a separate allocation earnings penalty is triple-counting.",
+        "risk": "Very low — allocation score still reflects earnings via NCS quality component.",
+        "effort": "Trivial — remove calcEarningsPenalty from allocation-score.ts"
+      },
+      {
+        "rule": "MOD-BREADTH position cap (SMALL_ACCOUNT)",
+        "id": "MOD-BREADTH",
+        "action": "REMOVE_CANDIDATE",
+        "reason": "SMALL_ACCOUNT max position = 4, identical to breadth safety cap. Provably redundant.",
+        "risk": "Zero for SMALL_ACCOUNT. Keep for other profiles where max positions > 4.",
+        "effort": "Trivial — add profile check before applying position cap"
+      },
+      {
+        "rule": "FWS-VOL-SHOCK for SOFT_CAP",
+        "id": "FWS-VOL-SHOCK",
+        "action": "REDUCE",
+        "reason": "SCAN-08 already demotes spiking stocks (SOFT_CAP). FWS-VOL-SHOCK adds 20pts penalty on top. Consider reducing to 10 for SOFT_CAP cases.",
+        "risk": "Medium — need data to confirm. If spiking stocks that pass SOFT_CAP still underperform, keep the penalty.",
+        "effort": "Medium — requires changing FWS computation to be spike-action-aware"
+      },
+      {
+        "rule": "FWS-MARGINAL for ADX 20–25",
+        "id": "FWS-MARGINAL",
+        "action": "RETEST",
+        "reason": "ADX 20–25 already barely passed SCAN-02 and gets low BQS-TREND. FWS adds another 7 pts penalty. May over-penalize valid setups.",
+        "risk": "Medium — changing this could let through weaker trends. Need data.",
+        "effort": "Trivial — adjust threshold from 30 to 22 or 25"
+      }
+    ]
+  }
+}

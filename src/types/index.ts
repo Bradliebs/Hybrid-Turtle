@@ -486,16 +486,45 @@ export interface NavItem {
   icon?: string;
 }
 
-export const MAIN_NAV_ITEMS: NavItem[] = [
+export interface NavGroup {
+  label: string;
+  icon?: string;
+  children: NavItem[];
+}
+
+export type NavEntry = NavItem | NavGroup;
+
+export function isNavGroup(entry: NavEntry): entry is NavGroup {
+  return 'children' in entry;
+}
+
+export const MAIN_NAV_ITEMS: NavEntry[] = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'Portfolio', href: '/portfolio/positions' },
   { label: 'Scan', href: '/scan' },
   { label: 'Plan', href: '/plan' },
-  { label: 'Trade Log', href: '/trade-log' },
-  { label: 'Journal', href: '/journal' },
   { label: 'Risk', href: '/risk' },
-  { label: 'Signals', href: '/backtest' },
-  { label: 'Settings', href: '/settings' },
+  {
+    label: 'Research',
+    children: [
+      { label: 'Signals', href: '/backtest' },
+      { label: 'Scorecard', href: '/filter-scorecard' },
+      { label: 'Score Lab', href: '/score-validation' },
+      { label: 'Exec Audit', href: '/execution-audit' },
+      { label: 'Exec Quality', href: '/execution-quality' },
+      { label: 'Signal Audit', href: '/signal-audit' },
+      { label: 'Causal Audit', href: '/causal-audit' },
+    ],
+  },
+  {
+    label: 'More',
+    children: [
+      { label: 'Trade Log', href: '/trade-log' },
+      { label: 'Journal', href: '/journal' },
+      { label: 'Trade Pulse', href: '/plan' },
+      { label: 'Settings', href: '/settings' },
+    ],
+  },
 ];
 
 export const PORTFOLIO_SUB_NAV: NavItem[] = [
@@ -776,4 +805,254 @@ export interface AllModulesResult {
   pyramidAlerts: PyramidAlert[];
   actionCard: WeeklyActionCard;
   moduleStatuses: ModuleStatus[];
+}
+
+// ============================================================
+// Analytics Types — Research & Measurement System
+// ============================================================
+
+/** Per-candidate filter attribution record — captures every filter pass/fail */
+export interface FilterAttributionRecord {
+  ticker: string;
+  scanId: string;
+  regime: string;
+  sleeve: string;
+  status: string;
+  // Stage 2: Technical filters
+  priceAboveMa200: boolean;
+  ma200Value: number;
+  adxAbove20: boolean;
+  adxValue: number;
+  plusDIAboveMinusDI: boolean;
+  plusDIValue: number;
+  minusDIValue: number;
+  atrPctBelow8: boolean;
+  atrPctValue: number;
+  dataQuality: boolean;
+  efficiencyAbove30: boolean;
+  efficiencyValue: number;
+  hurstExponent: number | null;
+  hurstWarn: boolean;
+  atrSpiking: boolean;
+  atrSpikeAction: string | null;
+  // Stage 3
+  distancePct: number;
+  // Stage 5
+  passesRiskGates: boolean;
+  riskGatesFailed: string | null;
+  // Stage 6
+  passesAntiChase: boolean;
+  antiChaseReason: string | null;
+  // Earnings
+  earningsAction: string | null;
+  daysToEarnings: number | null;
+  // Composite
+  passesAllFilters: boolean;
+  rankScore: number;
+  // Outcome (backfilled)
+  tradeLogId?: string | null;
+  outcomeR?: number | null;
+}
+
+/** Score breakdown — all BQS/FWS/NCS sub-component values for one ticker */
+export interface ScoreBreakdownRecord {
+  ticker: string;
+  snapshotId: string;
+  regime: string;
+  sleeve: string | null;
+  // BQS (10 components)
+  bqsTrend: number;
+  bqsDirection: number;
+  bqsVolatility: number;
+  bqsProximity: number;
+  bqsTailwind: number;
+  bqsRs: number;
+  bqsVolBonus: number;
+  bqsWeeklyAdx: number;
+  bqsBis: number;
+  bqsHurst: number;
+  bqsTotal: number;
+  // FWS (5 components)
+  fwsVolume: number;
+  fwsExtension: number;
+  fwsMarginalTrend: number;
+  fwsVolShock: number;
+  fwsRegimeInstability: number;
+  fwsTotal: number;
+  // Penalties (3)
+  penaltyEarnings: number;
+  penaltyCluster: number;
+  penaltySuperCluster: number;
+  // NCS
+  baseNcs: number;
+  ncsTotal: number;
+  actionNote: string | null;
+  // Outcome (backfilled)
+  tradeLogId?: string | null;
+  outcomeR?: number | null;
+}
+
+/** Execution drag — model vs. actual for one trade */
+export interface ExecutionDragRecord {
+  tradeLogId: string;
+  ticker: string;
+  tradeDate: string;
+  // Entry drag
+  modelEntry: number;
+  actualEntry: number | null;
+  entrySlippagePct: number | null;
+  // Stop drag (planned initial vs what was actually set)
+  modelStop: number;
+  actualStop: number | null;
+  // R-multiple drag
+  modelR: number | null;
+  actualR: number | null;
+  rDrag: number | null;  // actualR - modelR
+  // Timing cost: days between scan-ready and actual entry
+  daysToFill: number | null;
+}
+
+/** Aggregated execution drag stats */
+export interface ExecutionDragSummary {
+  totalTrades: number;
+  withFills: number;
+  avgEntrySlippagePct: number;
+  medianEntrySlippagePct: number;
+  p90EntrySlippagePct: number;
+  avgRDrag: number;
+  medianRDrag: number;
+  avgDaysToFill: number;
+  totalSlippageCostGbp: number;
+}
+
+/** Capital allocation ranking — one entry per recommended position */
+export interface AllocationEntry {
+  rank: number;
+  ticker: string;
+  name: string;
+  sleeve: Sleeve;
+  ncs: number;
+  fws: number;
+  bqs: number;
+  entryTrigger: number;
+  stopPrice: number;
+  shares: number;
+  positionSizeGbp: number;
+  riskGbp: number;
+  riskPct: number;
+  tier: 'RECOMMENDED' | 'IF_BUDGET_ALLOWS';
+  cumulativeRiskPct: number;
+  riskGatesPassed: boolean;
+}
+
+/** Rule overlap pair — two rules that co-fire frequently */
+export interface RuleOverlapPair {
+  ruleA: string;
+  ruleB: string;
+  coOccurrenceRate: number;   // 0–1: how often both fire together
+  sampleSize: number;
+  aAloneAvgR: number | null;  // avg R when only A fires (not B)
+  bAloneAvgR: number | null;  // avg R when only B fires (not A)
+  bothAvgR: number | null;    // avg R when both fire
+  redundancyScore: number;    // 0–1: 1 = fully redundant
+}
+
+/** Scan mode: FULL (production), BENCHMARK (MA200-only), CORE_LITE (minimal trend-following) */
+export type ScanMode = 'FULL' | 'BENCHMARK' | 'CORE_LITE';
+
+/** Which pipeline stage a candidate reached before stopping */
+export type CandidateStage =
+  | 'UNIVERSE'       // loaded from DB but no data fetched yet
+  | 'TECH_FILTER'    // stage 2 filters evaluated (may have failed)
+  | 'CLASSIFIED'     // stage 3 status assigned (READY/WATCH/FAR)
+  | 'RANKED'         // stage 4 rank score computed
+  | 'RISK_GATED'     // stage 5 risk gates evaluated
+  | 'ANTI_CHASE'     // stage 6 anti-chase guard evaluated
+  | 'SIZED';         // stage 7 position sizing computed
+
+/** Research-grade record: one per candidate per scan run */
+export interface CandidateOutcomeRecord {
+  // ── Identity ──
+  scanId: string;
+  ticker: string;
+  name: string | null;
+  sleeve: string;
+  sector: string | null;
+  cluster: string | null;
+
+  // ── Pipeline result ──
+  status: string;
+  stageReached: CandidateStage;
+  passedTechFilter: boolean;
+  passedRiskGates: boolean;
+  passedAntiChase: boolean;
+  blockedByRegime: boolean;
+  blockedReasons: string | null;
+
+  // ── Regime ──
+  regime: string;
+
+  // ── Technicals at scan time ──
+  price: number;
+  ma200: number;
+  adx: number;
+  plusDI: number;
+  minusDI: number;
+  atrPct: number;
+  atr: number;
+  efficiency: number;
+  volumeRatio: number;
+  relativeStrength: number;
+  hurstExponent: number | null;
+  hurstWarn: boolean;
+  atrSpiking: boolean;
+  atrSpikeAction: string | null;
+
+  // ── Scores ──
+  bqs: number | null;
+  fws: number | null;
+  ncs: number | null;
+  rankScore: number;
+  dualScoreAction: string | null;  // Auto-Yes / Auto-No (fragile) / Conditional
+
+  // ── Entry / Stop ──
+  entryTrigger: number;
+  stopPrice: number;
+  distancePct: number;
+  entryMode: string | null;
+
+  // ── Suggested sizing ──
+  suggestedShares: number | null;
+  suggestedRiskGbp: number | null;
+  suggestedRiskPct: number | null;
+  suggestedCostGbp: number | null;
+
+  // ── Anti-chase / earnings ──
+  antiChaseReason: string | null;
+  earningsAction: string | null;
+  daysToEarnings: number | null;
+
+  // ── Risk gate detail ──
+  riskGatesFailed: string | null;
+
+  // ── Data quality ──
+  dataFreshness: string | null;
+
+  // ── Trade linkage ──
+  tradePlaced: boolean;
+  tradeLogId: string | null;
+  actualFill: number | null;
+
+  // ── Forward outcome enrichment (null until populated) ──
+  priceAtScan: number | null;
+  fwdReturn5d: number | null;
+  fwdReturn10d: number | null;
+  fwdReturn20d: number | null;
+  mfeR: number | null;
+  maeR: number | null;
+  reached1R: boolean | null;
+  reached2R: boolean | null;
+  reached3R: boolean | null;
+  stopHit: boolean | null;
+  enrichedAt: Date | null;
 }

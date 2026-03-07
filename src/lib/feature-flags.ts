@@ -36,6 +36,15 @@ export const FEATURE_FLAGS = {
    * WARNING: Affects position sizing — extra caution required.
    */
   MODULE_MOMENTUM_EXPANSION: false,
+
+  /**
+   * Benchmark Scan Mode
+   * Enables /api/scan/benchmark endpoint that runs MA200-only scan.
+   * Produces an "unfiltered" baseline for measuring the value added
+   * by ADX, Hurst, earnings, anti-chase, and other pipeline filters.
+   * Safe to enable — read-only, no orders, no risk impact.
+   */
+  BENCHMARK_SCAN_MODE: false,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;
@@ -53,6 +62,7 @@ export function isEnabled(flag: FeatureFlag): boolean {
 const FLAG_DESCRIPTIONS: Record<FeatureFlag, string> = {
   MODULE_FAST_FOLLOWER: 'Module 9: Fast Follower — re-entry after breakout pullback. Requires backtesting.',
   MODULE_MOMENTUM_EXPANSION: 'Module 13: Momentum Expansion — expands risk in strong trends. Requires backtesting. WARNING: affects position sizing.',
+  BENCHMARK_SCAN_MODE: 'Benchmark Scan: MA200-only baseline scan for filter attribution analysis. Safe — read-only.',
 };
 
 /**

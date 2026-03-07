@@ -6,6 +6,7 @@ import BrokerPanel from '@/components/settings/BrokerPanel';
 import NotificationsPanel from '@/components/settings/NotificationsPanel';
 import DataPanel from '@/components/settings/DataPanel';
 import SystemPanel from '@/components/settings/SystemPanel';
+import PredictionPanel from '@/components/settings/PredictionPanel';
 import { Settings as SettingsIcon, Link } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -38,6 +39,7 @@ export default function SettingsPage() {
         <NotificationsPanel />
         <DataPanel />
         <SystemPanel />
+        <PredictionPanel />
       </main>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import StatusBadge from '@/components/shared/StatusBadge';
 import { cn, formatPrice, formatPercent } from '@/lib/utils';
-import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap, Info, X, Download } from 'lucide-react';
+import { ArrowUpRight, Clock, Target, CheckCircle2, AlertTriangle, Crosshair, BarChart3, Briefcase, Zap, Info, X, Download, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 interface Candidate {
@@ -37,6 +37,19 @@ interface Candidate {
     action: 'AUTO_NO' | 'DEMOTE_WATCH' | null;
     reason: string | null;
   };
+  // Allocation score breakdown
+  allocationScore?: number | null;
+  allocationRank?: number | null;
+  qualityComponent?: number;
+  expectancyComponent?: number;
+  sleeveBalanceBonus?: number;
+  clusterCrowdingPenalty?: number;
+  sectorCrowdingPenalty?: number;
+  earningsNearPenalty?: number;
+  correlationPenalty?: number;
+  capitalInefficiencyPenalty?: number;
+  expectancyR?: number | null;
+  correlatedHoldings?: string[];
 }
 
 interface ReadyCandidatesProps {
@@ -76,15 +89,22 @@ function downloadCsv(rows: Candidate[]) {
 
 export default function ReadyCandidates({ candidates, heldTickers = new Set() }: ReadyCandidatesProps) {
   const [showScoreHelp, setShowScoreHelp] = useState(false);
+  const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const ready = candidates.filter(c => c.status === 'READY');
   const watch = candidates.filter(c => c.status === 'WATCH');
 
-  // Sort: BOTH_RECOMMEND first, then by agreement score
+  const hasAllocationScores = ready.some(c => c.allocationScore != null);
+
+  // Sort: trigger-met first, then by allocationScore (if available) or matchType + agreementScore
   const sortedReady = [...ready].sort((a, b) => {
     // Trigger-met candidates first
     const aTriggerMet = a.price > 0 && a.entryTrigger > 0 && a.price >= a.entryTrigger ? 1 : 0;
     const bTriggerMet = b.price > 0 && b.entryTrigger > 0 && b.price >= b.entryTrigger ? 1 : 0;
     if (bTriggerMet !== aTriggerMet) return bTriggerMet - aTriggerMet;
+    // If allocation scores available, use them for primary sort
+    if (hasAllocationScores) {
+      return (b.allocationScore ?? -999) - (a.allocationScore ?? -999);
+    }
     const typeOrder: Record<string, number> = { BOTH_RECOMMEND: 0, SCAN_ONLY: 1, DUAL_ONLY: 2, CONFLICT: 3 };
     const oa = typeOrder[a.matchType || 'SCAN_ONLY'] ?? 4;
     const ob = typeOrder[b.matchType || 'SCAN_ONLY'] ?? 4;
@@ -392,6 +412,48 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
                   </div>
                 )}
 
+                {/* Allocation Score Breakdown (expandable) */}
+                {c.allocationScore != null && (
+                  <div className="mt-2 pt-2 border-t border-navy-600">
+                    <button
+                      onClick={() => setExpandedTicker(expandedTicker === c.ticker ? null : c.ticker)}
+                      className="flex items-center justify-between w-full text-[10px] group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Allocation Score</span>
+                        {c.allocationRank != null && (
+                          <span className="text-primary-400 font-bold">#{c.allocationRank}</span>
+                        )}
+                      </div>
+                      <span className={cn(
+                        "font-mono font-bold text-xs",
+                        c.allocationScore >= 30 ? 'text-emerald-400' :
+                        c.allocationScore >= 15 ? 'text-amber-400' : 'text-red-400'
+                      )}>
+                        {c.allocationScore.toFixed(1)}
+                        <ChevronDown className={cn(
+                          "inline w-3 h-3 ml-0.5 transition-transform",
+                          expandedTicker === c.ticker && 'rotate-180'
+                        )} />
+                      </span>
+                    </button>
+
+                    {expandedTicker === c.ticker && (
+                      <div className="mt-1.5 space-y-0.5 text-[10px]">
+                        <ScoreRow label="Quality (NCS)" value={c.qualityComponent} maxPositive={40} />
+                        <ScoreRow label="Expectancy (EV)" value={c.expectancyComponent} maxPositive={15} subtitle={c.expectancyR != null ? `${c.expectancyR >= 0 ? '+' : ''}${c.expectancyR.toFixed(2)}R hist.` : undefined} />
+                        <ScoreRow label="Sleeve balance" value={c.sleeveBalanceBonus} maxPositive={10} />
+                        <ScoreRow label="Cluster crowding" value={c.clusterCrowdingPenalty ? -c.clusterCrowdingPenalty : 0} maxNegative={15} />
+                        <ScoreRow label="Sector crowding" value={c.sectorCrowdingPenalty ? -c.sectorCrowdingPenalty : 0} maxNegative={10} />
+                        <ScoreRow label="Earnings near" value={c.earningsNearPenalty ? -c.earningsNearPenalty : 0} maxNegative={10} />
+                        <ScoreRow label="Correlation" value={c.correlationPenalty ? -c.correlationPenalty : 0} maxNegative={10}
+                          subtitle={c.correlatedHoldings && c.correlatedHoldings.length > 0 ? `w/ ${c.correlatedHoldings.join(', ')}` : undefined} />
+                        <ScoreRow label="Capital efficiency" value={c.capitalInefficiencyPenalty ? -c.capitalInefficiencyPenalty : 0} maxNegative={10} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {c.shares && (
                   <div className="mt-2 pt-2 border-t border-navy-600 grid grid-cols-2 gap-2 text-xs">
                     <div>
@@ -411,6 +473,58 @@ export default function ReadyCandidates({ candidates, heldTickers = new Set() }:
       )}
 
 
+    </div>
+  );
+}
+
+// ── Score breakdown row component ─────────────────────────────
+// Shows one component of the allocation score as a labeled bar.
+
+function ScoreRow({ label, value, maxPositive, maxNegative, subtitle }: {
+  label: string;
+  value?: number;
+  maxPositive?: number;
+  maxNegative?: number;
+  subtitle?: string;
+}) {
+  const v = value ?? 0;
+  const isPositive = v >= 0;
+  const absV = Math.abs(v);
+  const maxAbs = isPositive ? (maxPositive ?? 40) : (maxNegative ?? 15);
+  const barWidth = maxAbs > 0 ? Math.min(100, (absV / maxAbs) * 100) : 0;
+
+  if (v === 0) {
+    return (
+      <div className="flex items-center justify-between py-0.5">
+        <span className="text-muted-foreground/60">{label}</span>
+        <span className="text-muted-foreground/40 font-mono">—</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-0.5">
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={cn(
+          "font-mono font-medium",
+          isPositive ? 'text-emerald-400' : 'text-red-400'
+        )}>
+          {isPositive ? '+' : ''}{v.toFixed(1)}
+        </span>
+      </div>
+      <div className="w-full h-0.5 bg-navy-700 rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            isPositive ? 'bg-emerald-500/60' : 'bg-red-500/60'
+          )}
+          style={{ width: `${barWidth}%` }}
+        />
+      </div>
+      {subtitle && (
+        <div className="text-[9px] text-muted-foreground/60 mt-0.5">{subtitle}</div>
+      )}
     </div>
   );
 }

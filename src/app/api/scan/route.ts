@@ -25,6 +25,9 @@ import { isNightlyRunning } from '@/lib/nightly-guard';
 import { normalizePersistedPassFlag } from '@/lib/scan-pass-flags';
 import { updateScanProgress, clearScanProgress } from '@/lib/scan-progress';
 import { getSlippageStats } from '@/lib/slippage-tracker';
+import { saveFilterAttributions } from '@/lib/filter-attribution';
+import { saveCandidateOutcomes } from '@/lib/candidate-outcome';
+import { getDataFreshness } from '@/lib/market-data';
 
 const scanRequestSchema = z.object({
   userId: z.string().trim().min(1),
@@ -129,6 +132,28 @@ export async function POST(request: NextRequest) {
         },
       });
       console.log(`[Scan] Saved scan ${scan.id} with ${result.candidates.length} candidates to DB`);
+
+      // ── Filter Attribution: record per-candidate filter decisions for analytics ──
+      try {
+        const attrResult = await saveFilterAttributions(result.candidates, scan.id, result.regime);
+        console.log(`[FilterAttribution] Saved ${attrResult.saved}, errors: ${attrResult.errors}`);
+      } catch (attrError) {
+        console.warn('[FilterAttribution] Failed:', (attrError as Error).message);
+      }
+
+      // ── Candidate Outcome: research-grade dataset for every candidate ──
+      try {
+        const freshness = getDataFreshness();
+        const coResult = await saveCandidateOutcomes(
+          result.candidates,
+          scan.id,
+          result.regime,
+          freshness.source
+        );
+        console.log(`[CandidateOutcome] Saved ${coResult.saved}, errors: ${coResult.errors}`);
+      } catch (coError) {
+        console.warn('[CandidateOutcome] Failed:', (coError as Error).message);
+      }
     } catch (dbError) {
       console.warn('[Scan] Failed to persist scan to DB:', (dbError as Error).message);
       // Non-fatal — scan still returns results via cache

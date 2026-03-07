@@ -55,6 +55,12 @@ import { calculateRMultiple } from '@/lib/position-sizer';
 import { sendAlert } from '@/lib/alert-service';
 import { backupDatabase } from '@/lib/db-backup';
 import { isEnabled } from '@/lib/feature-flags';
+import { saveScoreBreakdowns } from '@/lib/score-tracker';
+import { scoreRow, normaliseRow } from '@/lib/dual-score';
+import { runFullCalibration } from '@/lib/prediction/bootstrap-calibration';
+import { runTraining as runMetaModelTraining } from '@/lib/prediction/meta-model-trainer';
+import { recomputeLeadLagGraph } from '@/lib/prediction/lead-lag-graph';
+import { runGNNTraining } from '@/lib/prediction/gnn/gnn-trainer';
 import { RISK_PROFILES, EQUITY_REVIEW_THRESHOLDS, type RiskProfileType, type Sleeve } from '@/types';
 
 /**
@@ -874,7 +880,7 @@ async function runNightlyProcess() {
             title: `Equity milestone: £${threshold.equity.toLocaleString()}`,
             message: threshold.message,
             data: { threshold: threshold.equity, equity },
-            priority: 'LOW',
+            priority: 'INFO',
           });
           console.log(`        Equity milestone: £${threshold.equity}`);
         }
@@ -925,6 +931,47 @@ async function runNightlyProcess() {
       alerts.push('Snapshot sync failed — scores may be stale');
     }
     console.log(`        Snapshot: ${snapshotSync.rowCount} synced, ${snapshotSync.failed.length} failed`);
+
+    // ── Score Breakdown: record BQS/FWS/NCS component decomposition for analytics ──
+    if (snapshotSync.snapshotId && snapshotSync.synced) {
+      try {
+        const allSnapshotRows = await prisma.snapshotTicker.findMany({
+          where: { snapshotId: snapshotSync.snapshotId },
+        });
+        const scoredTickers = allSnapshotRows.map((st) => {
+          const row = normaliseRow({
+            ticker: st.ticker, name: st.name || st.ticker, sleeve: st.sleeve || 'CORE',
+            status: st.status || 'FAR', close: st.close, atr_14: st.atr14,
+            atr_pct: st.atrPct, adx_14: st.adx14, plus_di: st.plusDi,
+            minus_di: st.minusDi, vol_ratio: st.volRatio,
+            market_regime: st.marketRegime, market_regime_stable: st.marketRegimeStable,
+            distance_to_20d_high_pct: st.distanceTo20dHighPct,
+            entry_trigger: st.entryTrigger, stop_level: st.stopLevel,
+            chasing_20_last5: st.chasing20Last5, chasing_55_last5: st.chasing55Last5,
+            atr_spiking: st.atrSpiking, atr_collapsing: st.atrCollapsing,
+            rs_vs_benchmark_pct: st.rsVsBenchmarkPct,
+            days_to_earnings: st.daysToEarnings, earnings_in_next_5d: st.earningsInNext5d,
+            cluster_name: st.clusterName, super_cluster_name: st.superClusterName,
+            cluster_exposure_pct: st.clusterExposurePct,
+            super_cluster_exposure_pct: st.superClusterExposurePct,
+            max_cluster_pct: st.maxClusterPct, max_super_cluster_pct: st.maxSuperClusterPct,
+            weekly_adx: st.weeklyAdx, vol_regime: st.volRegime,
+            dual_regime_aligned: st.dualRegimeAligned, bis_score: st.bisScore,
+            currency: st.currency,
+          });
+          return scoreRow(row);
+        });
+        const sbResult = await saveScoreBreakdowns(
+          scoredTickers,
+          snapshotSync.snapshotId,
+          allSnapshotRows[0]?.marketRegime || 'NEUTRAL'
+        );
+        console.log(`        ScoreBreakdown: ${sbResult.saved} saved, ${sbResult.errors} errors`);
+      } catch (sbError) {
+        console.warn('  [7] ScoreBreakdown save failed:', (sbError as Error).message);
+        // Non-fatal — analytics data loss, not pipeline failure
+      }
+    }
 
     let readyToBuy: NightlyReadyCandidate[] = [];
     let triggerMetCandidates: NightlyTriggerMetCandidate[] = [];
@@ -1090,6 +1137,78 @@ async function runNightlyProcess() {
         console.log('        Weekly summary alert sent');
       } catch (error) {
         console.warn('  [7d] Weekly summary alert failed:', (error as Error).message);
+      }
+    }
+
+    // Step 7b: Conformal calibration recalibration (non-critical)
+    console.log('  [7b] Checking conformal calibration...');
+    try {
+      const calResult = await runFullCalibration(null, false);
+      if (calResult.calibrated) {
+        console.log(`        Recalibrated: ${calResult.sampleSize} samples across ${calResult.coverageLevels.length} coverage levels`);
+        await sendAlert({
+          type: 'CALIBRATION_COMPLETE',
+          title: 'NCS Calibration Complete',
+          message: `Conformal calibration updated: ${calResult.sampleSize} samples, ${calResult.coverageLevels.length} coverage levels`,
+          priority: 'INFO',
+          skipTelegram: true,
+        });
+      } else {
+        console.log(`        Skipped: ${calResult.skippedReason ?? 'unknown reason'}`);
+      }
+    } catch (error) {
+      // Non-critical — calibration failure should not affect the pipeline
+      console.warn('  [7b] Conformal calibration failed:', (error as Error).message);
+    }
+
+    // Step 7c: Signal weight meta-model training (weekly, Sunday only)
+    const ukDay = getUKDayOfWeek();
+    if (ukDay === 0) {
+      console.log('  [7c] Running weekly signal weight training...');
+      try {
+        const trainResult = await runMetaModelTraining(false);
+        if (trainResult.trained) {
+          console.log(`        Trained: source=${trainResult.source}, outcomes=${trainResult.outcomeCount}`);
+          await sendAlert({
+            type: 'SIGNAL_WEIGHTS_SHIFTED',
+            title: 'Signal Weights Updated',
+            message: `Meta-model retrained: source=${trainResult.source}, ${trainResult.outcomeCount} outcomes`,
+            priority: 'INFO',
+            skipTelegram: true,
+          });
+        } else {
+          console.log(`        Skipped: ${trainResult.reason ?? 'unknown reason'}`);
+        }
+      } catch (error) {
+        // Non-critical — training failure should not affect the pipeline
+        console.warn('  [7c] Signal weight training failed:', (error as Error).message);
+      }
+    }
+
+    // Step 7d: Lead-lag graph recomputation (weekly, Sunday only)
+    if (ukDay === 0) {
+      console.log('  [7d] Recomputing lead-lag graph...');
+      try {
+        const llResult = await recomputeLeadLagGraph(50);
+        console.log(`        Found ${llResult.edgesFound} edges across ${llResult.tickersProcessed} tickers`);
+      } catch (error) {
+        // Non-critical — lead-lag failure should not affect the pipeline
+        console.warn('  [7d] Lead-lag graph computation failed:', (error as Error).message);
+      }
+    }
+
+    // Step 7e: GNN training (weekly, Sunday only, after lead-lag graph is fresh)
+    if (ukDay === 0) {
+      console.log('  [7e] Running GNN training...');
+      try {
+        const gnnResult = await runGNNTraining(false);
+        if (gnnResult.trained) {
+          console.log(`        GNN trained: loss=${gnnResult.finalLoss.toFixed(4)}, samples=${gnnResult.sampleSize}`);
+        } else {
+          console.log(`        GNN skipped: ${gnnResult.reason ?? 'unknown'}`);
+        }
+      } catch (error) {
+        console.warn('  [7e] GNN training failed:', (error as Error).message);
       }
     }
 

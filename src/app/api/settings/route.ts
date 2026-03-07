@@ -21,6 +21,10 @@ const settingsPutSchema = z.object({
   gapGuardWeekendPct: z.number().min(0.5).max(20.0).optional(),
   gapGuardDailyATR: z.number().min(0.1).max(5.0).optional(),
   gapGuardDailyPct: z.number().min(0.5).max(20.0).optional(),
+  // Prediction engine toggles
+  showIntradayNCS: z.boolean().optional(),
+  applyKellyMultiplier: z.boolean().optional(),
+  rlShadowMode: z.boolean().optional(),
 });
 
 // GET /api/settings?userId=default-user
@@ -45,6 +49,10 @@ export async function GET(request: NextRequest) {
         gapGuardWeekendPct: true,
         gapGuardDailyATR: true,
         gapGuardDailyPct: true,
+        // Prediction engine toggles
+        showIntradayNCS: true,
+        applyKellyMultiplier: true,
+        rlShadowMode: true,
         // Trading 212 Invest
         t212ApiKey: true,
         t212ApiSecret: true,
