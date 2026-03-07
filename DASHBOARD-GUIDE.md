@@ -841,9 +841,10 @@ These are hardcoded into the system and cannot be overridden:
 
 ---
 
-## 18. Module System — 21 Risk & Analysis Checks
+## 18. Module System — 21 Risk & Analysis Checks + 14-Phase Prediction Engine
 
 All modules run via `GET /api/modules?userId=X` and report to the Dashboard's Module Status Panel.
+The 14-phase prediction engine runs as a separate post-processing layer — see section 19 below.
 
 | # | Module | Status Meaning |
 |---|--------|---------------|
@@ -867,6 +868,40 @@ All modules run via `GET /api/modules?userId=X` and report to the Dashboard's Mo
 | 19 | **Dual Benchmark** | SPY + VWRL regime comparison, chop detection |
 | 20 | **Re-Entry Logic** | Monitors closed positions for bullish re-entry after cooldown |
 | 21 | **Position Tracking** | 🟢 = all positions valid, 🟡/🔴 = mismatches detected |
+
+---
+
+## 19. Prediction Engine — 14 Post-Processing Phases
+
+The prediction engine adds confidence intervals, failure detection, and advanced scoring on top of the core scan/NCS pipeline. All phases are **post-processing only** — they never modify sacred files.
+
+| Phase | Feature | What It Shows |
+|-------|---------|--------------|
+| 1 | Conformal Intervals | NCS score wrapped in confidence bands (e.g. "67.3 [61.1–73.5]") |
+| 2 | Failure Mode Scoring | 5 independent failure modes (breakout, liquidity, correlation, regime, event) |
+| 3 | Dynamic Signal Weighting | Weight bars showing regime-adjusted signal importance |
+| 4 | Adversarial Stress Test | Monte Carlo stop-hit probability gauge |
+| 5 | Signal Pruning Audit | `/signal-audit` page — mutual information analysis |
+| 6 | Immune System | Danger level indicator in navbar — matches current conditions to historical crises |
+| 7 | Lead-Lag Graph | Upstream asset movement signals with NCS adjustment |
+| 8 | GNN | Graph neural network scoring from cross-asset propagation |
+| 9 | Bayesian Beliefs | 7×4 grid of signal reliability per regime |
+| 10 | Meta-RL Advisor | Trade management recommendations (HOLD/TIGHTEN/EXIT) |
+| 11 | Kelly Sizing | Kelly Criterion position size suggestion vs fixed risk |
+| 12 | VPIN Order Flow | Directional order flow imbalance indicator |
+| 13 | Sentiment | News + analyst revision + short interest composite |
+| 14 | Causal Invariance | `/causal-audit` page — identifies regime-stable vs spurious signals |
+
+**New pages:**
+- `/signal-audit` — Run mutual information analysis on signal layers
+- `/causal-audit` — IRM analysis showing causal vs regime-dependent signals
+- `/execution-quality` — Slippage analysis and execution timing recommendations
+- `/trade-pulse/[ticker]` — Full unified confidence dashboard per ticker (A+ to D grading)
+
+**New settings (Settings → Prediction Engine):**
+- Show intraday NCS updates (default: ON)
+- Apply Kelly multiplier to sizing (default: OFF)
+- RL Shadow Mode (default: ON — advisory only)
 
 ---
 

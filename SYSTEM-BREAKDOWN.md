@@ -17,7 +17,7 @@ A self-hosted systematic trading dashboard for momentum/trend-following across ~
 
 ---
 
-## 2. Screens (18 Pages)
+## 2. Screens (22 Pages)
 
 ### `/dashboard` — Command Centre
 
@@ -188,7 +188,31 @@ Risk management:
 
 ---
 
-## 3. API Routes (32 Route Groups, 59 Route Files)
+### `/signal-audit` — Signal Pruning Analysis
+
+Mutual information analysis measuring unique contribution of each signal layer. Heatmap of pairwise MI, conditional MI bars, KEEP/INVESTIGATE/REDUNDANT recommendations. Manual "Run Analysis" button.
+
+---
+
+### `/causal-audit` — Causal Invariance Analysis
+
+IRM (Invariant Risk Minimisation) analysis identifying which signals are causally stable across all market regimes vs regime-dependent. Invariance score bars, beta-per-regime charts, recommendations for spurious signals.
+
+---
+
+### `/execution-quality` — Execution Fill Analysis
+
+Slippage analysis, best execution windows by market cap tier, worst fills table. Summary cards showing average/P90 slippage, total slippage cost. Timing recommendations.
+
+---
+
+### `/trade-pulse/[ticker]` — TradePulse Confidence Dashboard
+
+Full unified analysis page per ticker. Hero score dial (0–100), grade badge (A+ to D), decision bar, signal contribution grid, concerns panel (risks first), opportunities panel, computed timestamp. Accessed via "Full Analysis →" link on ticker cards.
+
+---
+
+## 3. API Routes (32 Route Groups + Prediction Engine Routes)
 
 | Route | Method | Purpose |
 |-------|--------|---------|
@@ -349,11 +373,11 @@ A `watchdog.ts` (`watchdog-task.bat`) runs daily at 10:00 AM to check for missed
 
 ## 7. Database Schema (SQLite + Prisma)
 
-**21 tables** defined in `prisma/schema.prisma`:
+**21 core tables + 16 prediction engine tables** defined in `prisma/schema.prisma`:
 
 | Table | Purpose |
 |-------|---------|
-| `User` | Settings, equity, risk profile, T212 credentials (Invest + ISA), Telegram, Gap Guard config |
+| `User` | Settings, equity, risk profile, T212 credentials (Invest + ISA), Telegram, Gap Guard config, prediction toggles |
 | `Stock` | Ticker universe (~268 rows): ticker, name, sleeve, sector, cluster, region, currency, T212 mapping, ISA eligibility |
 | `Position` | Open/closed positions: entry/exit prices, stops, R-multiples, protection level, T212 ticker, account type (ISA/Invest) |
 | `StopHistory` | Audit trail of every stop change (old → new, level, reason) |
@@ -366,13 +390,30 @@ A `watchdog.ts` (`watchdog-task.bat`) runs daily at 10:00 AM to check for missed
 | `TradeTag` | Tag taxonomy for trade categorisation |
 | `EquitySnapshot` | Periodic equity recordings with open-risk % |
 | `RegimeHistory` | Historical regime readings (SPY + VWRL benchmark data) |
-| `Snapshot` / `SnapshotTicker` | Full universe technical data snapshots (close, ATR, ADX, DI, vol, breadth, regime, BIS, Hurst, etc.) |
-| `EvRecord` | Expected value tracking per closed trade (regime, ATR bucket, cluster, sleeve, outcome, R-multiple) |
+| `Snapshot` / `SnapshotTicker` | Full universe technical data snapshots |
+| `EvRecord` | Expected value tracking per closed trade |
 | `CorrelationFlag` | Pairwise ticker correlation data |
-| `ExecutionLog` | T212 API call audit trail (request/response, phase, errors) |
+| `ExecutionLog` | T212 API call audit trail |
 | `Notification` | In-app alerts with type, priority, read status |
 | `EarningsCache` | Cached next-earnings dates per ticker |
-| `TradeJournal` | Per-position entry/close/learned notes with confidence ratings |
+| `TradeJournal` | Per-position entry/close/learned notes |
+| **Prediction Engine Tables** | |
+| `ConformalCalibration` | Quantile thresholds for NCS confidence intervals |
+| `FailureModeScore` | Per-ticker failure mode score audit trail |
+| `SignalWeightRecord` | Dynamic signal weight snapshots by regime |
+| `StressTestResult` | Adversarial Monte Carlo simulation cache (4h TTL) |
+| `SignalAuditResult` | Mutual information analysis results |
+| `ThreatLibraryEntry` | Historical crisis environment fingerprints |
+| `LeadLagEdge` | Cross-asset directional influence relationships |
+| `LeadLagSignal` | Weekly lead-lag computation snapshots |
+| `GNNModelWeights` | GraphSAGE trained weight snapshots |
+| `GNNInferenceLog` | Per-ticker GNN inference audit trail |
+| `SignalBeliefState` | Beta(α,β) distributions per signal per regime |
+| `TradeEpisode` | Trade episodes for Meta-RL MAML training |
+| `PolicyVersion` | Trained MAML policy weight snapshots |
+| `VPINHistory` | VPIN/DOFI order flow cache |
+| `SentimentHistory` | Sentiment Composite Score cache |
+| `InvarianceAuditResult` | IRM causal invariance analysis results |
 
 ---
 

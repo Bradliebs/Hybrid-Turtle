@@ -1,7 +1,7 @@
 # Hybrid-Turtle — Complete Trading Logic Reference
 
 > Auto-generated reference of all trading rules, thresholds, and decision logic.
-> Last verified against source code: **1 March 2026**
+> Last verified against source code: **7 March 2026**
 
 ---
 
@@ -1139,4 +1139,34 @@ Computes pairwise Pearson correlation on 90 days of daily log returns for open p
 
 ---
 
-*Last verified against source code: 1 March 2026*
+## 14-Phase Prediction Engine (Post-Processing)
+
+All prediction phases operate as **post-processing layers** on top of the core NCS/BQS/FWS pipeline. They never modify the sacred scoring files. Key additions:
+
+**Entry Confidence:**
+- Conformal prediction intervals wrap NCS in statistically calibrated bands. Auto-Yes only fires if the pessimistic (lower) bound clears 70.
+- 5 failure modes (breakout failure, liquidity trap, correlation cascade, regime flip, event gap) independently score risk. Any FM above threshold blocks Auto-Yes.
+- Adversarial stress test runs Monte Carlo simulation — if >25% of paths hit stop within 7 days, the trade is blocked.
+
+**Signal Intelligence:**
+- Dynamic signal weighting adjusts the importance of each BQS component by regime (e.g., Hurst dominates in ranging markets).
+- Bayesian belief tracking updates signal reliability in real-time from trade outcomes (Beta distributions per signal per regime).
+- Mutual information analysis identifies redundant signal pairs and unique contribution per signal.
+- Causal invariance filter (IRM) identifies which signals are stable across all regimes vs regime-dependent.
+
+**Market Context:**
+- Immune system matches current market conditions against historical crisis fingerprints (March 2020, flash crash, rate shock). High danger tightens risk.
+- Lead-lag graph detects upstream asset movements that historically precede ticker price action.
+- GNN (GraphSAGE) learns cross-asset signal propagation patterns.
+- VPIN order flow measures buying vs selling pressure as a leading momentum indicator.
+- Sentiment fusion aggregates news headlines, analyst revision proxies, and short interest.
+
+**Position Management:**
+- Fractional Kelly sizing suggests position sizes using win probability × uncertainty penalties from all prediction layers. Advisory only — hard caps from position-sizer.ts always prevail.
+- Meta-RL trade advisor recommends HOLD/TIGHTEN/TRAIL/EXIT actions based on a MAML-trained policy. Human approves all recommendations.
+
+**TradePulse unified score** aggregates all layers into a single 0–100 score with A+ to D grading, accessible via `/trade-pulse/[ticker]`.
+
+---
+
+*Last verified against source code: 7 March 2026*

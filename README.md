@@ -29,11 +29,14 @@ HybridTurtle helps turn discretionary trading into a repeatable workflow:
 
 - **7-stage scan engine** for candidate discovery and qualification
 - **Dual Score system** (BQS / FWS / NCS) for quantitative screening
+- **14-phase prediction engine** adding conformal intervals, failure mode scoring, dynamic signal weighting, adversarial stress testing, GNN graph analysis, Bayesian belief tracking, Meta-RL trade management, Kelly sizing, VPIN order flow, sentiment fusion, and causal invariance filtering
+- **TradePulse Dashboard** — unified confidence score (A+ to D grading) per ticker
 - **Cross-Reference engine** to reconcile scan and dual score recommendations
 - **Risk controls** (position sizing, open risk caps, concentration limits)
 - **Portfolio management** with stop updates and R-multiple tracking
 - **Plan workspace** for pre-trade checks and weekly execution
 - **Dashboard command center** with health, regime, heartbeat, and modules
+- **Market danger detection** — immune system matching current conditions to historical crises
 - **Automation hooks** for nightly checks and Telegram notifications
 
 ## Quick start (Windows)
@@ -126,13 +129,17 @@ The nightly automation can send alerts covering stop changes, laggard warnings, 
 │   ├── app/             # Next.js App Router (pages + API routes)
 │   │   ├── api/         # REST endpoints (see API routes below)
 │   │   ├── backtest/    # Signal replay & quality audit
+│   │   ├── causal-audit/ # IRM invariance analysis
 │   │   ├── dashboard/   # Main command center
+│   │   ├── execution-quality/ # Slippage & timing analysis
 │   │   ├── notifications/ # Notification inbox
 │   │   ├── portfolio/   # Position management
 │   │   ├── scan/        # Scan engine UI
+│   │   ├── signal-audit/ # MI-based signal pruning analysis
 │   │   ├── plan/        # Weekly execution workspace
 │   │   ├── risk/        # Risk overview
 │   │   ├── trade-log/   # Trade journal
+│   │   ├── trade-pulse/ # Full TradePulse confidence dashboard
 │   │   ├── settings/    # App configuration
 │   │   ├── login/       # Authentication
 │   │   └── register/    # User registration
@@ -140,7 +147,9 @@ The nightly automation can send alerts covering stop changes, laggard warnings, 
 │   ├── cron/            # Nightly automation entry point
 │   ├── hooks/           # Custom React hooks
 │   ├── lib/             # Core business logic
-│   │   └── modules/     # Modular engine plugins (19 active + 2 disabled modules)
+│   │   ├── modules/     # Modular engine plugins (19 active + 2 disabled modules)
+│   │   ├── prediction/  # 14-phase prediction engine (conformal, failure modes, GNN, etc.)
+│   │   └── signals/     # Additional signal layers (VPIN, sentiment)
 │   ├── store/           # Zustand state management
 │   └── types/           # Shared TypeScript types
 ```
@@ -172,6 +181,8 @@ All routes are under `/api`. Key endpoint groups:
 | `/api/trading212` | Trading 212 connect & sync |
 | `/api/backtest` | Signal replay & quality audit |
 | `/api/ev-stats` | Expected value statistics |
+| `/api/prediction/*` | Prediction engine (conformal, failure modes, stress test, GNN, beliefs, Kelly, trade-pulse, etc.) |
+| `/api/signals/*` | Additional signals (VPIN order flow, sentiment fusion) |
 
 ## Documentation
 

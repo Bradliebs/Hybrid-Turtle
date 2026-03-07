@@ -147,6 +147,30 @@ HEDGE positions excluded from open risk and position counting.
 
 ---
 
+## Prediction Engine — 14-Phase Stack
+
+All prediction phases are **post-processing layers** — they never modify sacred files. They read NCS/BQS/FWS outputs and add advisory scoring, confidence intervals, and risk assessment.
+
+| Phase | Feature | Key File(s) | Touches Risk? |
+|-------|---------|------------|---------------|
+| 1 | Conformal Prediction Intervals | `lib/prediction/conformal-*.ts` | No — wraps NCS in confidence bands |
+| 2 | Failure Mode Scoring (5 FMs) | `lib/prediction/failure-mode-*.ts` | No — advisory, blocks Auto-Yes if FM > threshold |
+| 3 | Dynamic Signal Weighting | `lib/prediction/signal-weight-meta-model.ts` | No — display-layer reweighting only |
+| 4 | Adversarial Stress Test | `lib/prediction/adversarial-simulator.ts` | No — Monte Carlo stop-hit probability |
+| 5 | Signal Pruning Audit (MI) | `lib/prediction/mutual-information.ts` | No — analysis page only |
+| 6 | Immune System / Danger Memory | `lib/prediction/threat-library.ts`, `danger-matcher.ts` | No — tightens risk via display layer |
+| 7 | Lead-Lag Cross-Asset Graph | `lib/prediction/lead-lag-*.ts` | No — NCS adjustment display layer |
+| 8 | GNN on Lead-Lag Graph | `lib/prediction/gnn/*.ts` | No — GraphSAGE scoring layer |
+| 9 | Online Bayesian Updating | `lib/prediction/bayesian/*.ts` | No — belief-informed weight adjustments |
+| 10 | Meta-RL Trade Management | `lib/prediction/meta-rl/*.ts` | No — advisory recommendations only |
+| 11 | Fractional Kelly Sizing | `lib/prediction/kelly/*.ts` | No — advisory sizing suggestion |
+| 12 | VPIN / Order Flow | `lib/signals/vpin-calculator.ts` | No — order flow indicator |
+| 13 | Sentiment Fusion | `lib/signals/sentiment/*.ts` | No — sentiment composite score |
+| 14 | Causal Invariance Filter | `lib/prediction/causal/*.ts` | No — IRM analysis, regime transition penalty |
+| F9 | TradePulse Dashboard | `lib/prediction/trade-pulse.ts` | No — unified score aggregation |
+
+---
+
 ## Known Gotchas — Read Before Writing Any Data or Calculation Code
 
 ### Yahoo Finance
@@ -195,7 +219,7 @@ HEDGE positions excluded from open risk and position counting.
 
 ---
 
-## Nightly Automation — 9-Step Sequence
+## Nightly Automation — 9-Step Sequence (+ prediction sub-steps)
 
 Runs via `nightly-task.bat` / Task Scheduler. Runs unattended. Failures must be caught and written to DB heartbeat, not allowed to throw unhandled.
 
@@ -206,6 +230,10 @@ Runs via `nightly-task.bat` / Task Scheduler. Runs unattended. Failures must be 
 5. Risk Modules
 6. Equity Snapshot (rate-limited: once per 6 hours) + Equity Milestone Advisory (£1K/£2K/£5K thresholds)
 7. Snapshot Sync (full universe refresh + top 15 READY candidates)
+   - 7b. Conformal calibration recalibration (non-critical)
+   - 7c. Signal weight meta-model training (Sunday only)
+   - 7d. Lead-lag graph recomputation (Sunday only)
+   - 7e. GNN training (Sunday only, after lead-lag)
 8. Telegram Alert
 9. Heartbeat (write SUCCESS/PARTIAL/FAILED to DB with step-level results)
 
@@ -344,10 +372,14 @@ prisma.positions.update()    // without checking stop monotonicity first
 | `/plan` | Weekly execution board + pre-trade checklist + Early Bird scan + CSV export |
 | `/portfolio` | Position management, stop updates, R-multiple tracking |
 | `/risk` | Risk budget meter, stop panel, trailing stop recommendations |
-| `/settings` | Equity, risk profile, Trading 212, Telegram config |
+| `/settings` | Equity, risk profile, Trading 212, Telegram config, prediction engine toggles |
 | `/trade-log` | Trade journal with execution quality audit |
+| `/signal-audit` | MI analysis — measures unique info per signal layer |
+| `/causal-audit` | IRM analysis — identifies causal vs regime-dependent signals |
+| `/execution-quality` | Slippage analysis, timing recommendations, worst fills |
+| `/trade-pulse/[ticker]` | Full unified confidence dashboard per ticker (TradePulse) |
 
 ---
 
-*Last updated: 4 March 2026*
+*Last updated: 7 March 2026*
 *Account size: ~£429 + £50/week | Profile: SMALL_ACCOUNT | Broker: Trading 212*
