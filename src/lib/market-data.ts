@@ -120,9 +120,19 @@ interface CacheEntry<T> {
   expiry: number;
 }
 
-const quoteCache = new Map<string, CacheEntry<StockQuote>>();
-const historicalCache = new Map<string, CacheEntry<DailyBar[]>>();
-const weeklyCache = new Map<string, CacheEntry<DailyBar[]>>();
+// Use globalThis to survive Next.js dev-mode hot-reloads (same pattern as prisma.ts)
+const globalForCache = globalThis as unknown as {
+  __hybridTurtleQuoteCache?: Map<string, CacheEntry<StockQuote>>;
+  __hybridTurtleHistoricalCache?: Map<string, CacheEntry<DailyBar[]>>;
+  __hybridTurtleWeeklyCache?: Map<string, CacheEntry<DailyBar[]>>;
+  __hybridTurtlePreCacheStarted?: boolean;
+  __hybridTurtleIndicesCache?: { data: MarketIndex[]; expiry: number } | null;
+  __hybridTurtleFxCache?: Map<string, CacheEntry<number>>;
+};
+
+const quoteCache = globalForCache.__hybridTurtleQuoteCache ??= new Map();
+const historicalCache = globalForCache.__hybridTurtleHistoricalCache ??= new Map();
+const weeklyCache = globalForCache.__hybridTurtleWeeklyCache ??= new Map();
 const QUOTE_TTL = 30 * 60_000;     // 30 minutes — prices fetched once per session, manual refresh available
 const HISTORICAL_TTL = 86_400_000; // 24 hours (daily bars don't change intraday)
 const FX_TTL = 30 * 60_000;        // 30 minutes — FX rates move slowly
@@ -190,7 +200,7 @@ function enqueueChartCall<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // ── FX rate cache ──
-const fxCache = new Map<string, CacheEntry<number>>();
+const fxCache = globalForCache.__hybridTurtleFxCache ??= new Map();
 
 interface DailyBar {
   date: string;
@@ -743,15 +753,18 @@ const INDEX_MAP: { name: string; ticker: string }[] = [
 
 // Cache for market indices — avoids hammering Yahoo on every page load
 const INDEX_TTL = 10 * 60_000; // 10 minutes
-let indicesCache: { data: MarketIndex[]; expiry: number } | null = null;
+// Use getter/setter via globalThis so cache survives dev-mode hot-reloads
+function getIndicesCache() { return globalForCache.__hybridTurtleIndicesCache ?? null; }
+function setIndicesCache(v: { data: MarketIndex[]; expiry: number } | null) { globalForCache.__hybridTurtleIndicesCache = v; }
 
 export async function getMarketIndices(): Promise<MarketIndex[]> {
   // Route to EODHD if configured
   if (isEodhd()) return eodhd.getMarketIndices();
 
   // Return cached indices if still fresh
-  if (indicesCache && Date.now() < indicesCache.expiry) {
-    return indicesCache.data;
+  const cached = getIndicesCache();
+  if (cached && Date.now() < cached.expiry) {
+    return cached.data;
   }
 
   const indexTickers = INDEX_MAP.map(idx => idx.ticker);
@@ -775,7 +788,7 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
       });
       // Only cache if we got at least one non-zero value
       if (indices.some(idx => idx.value > 0)) {
-        indicesCache = { data: indices, expiry: Date.now() + INDEX_TTL };
+        setIndicesCache({ data: indices, expiry: Date.now() + INDEX_TTL });
       }
       return indices;
     } catch (error) {
@@ -789,9 +802,10 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
       }
       console.warn('[YF] Batch index fetch failed:', msg);
       // Return stale cache if available, otherwise zeros
-      if (indicesCache) {
+      const stale = getIndicesCache();
+      if (stale) {
         console.warn('[YF] Returning stale cached indices');
-        return indicesCache.data;
+        return stale.data;
       }
       return INDEX_MAP.map(idx => ({
         name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0,
@@ -800,7 +814,7 @@ export async function getMarketIndices(): Promise<MarketIndex[]> {
   }
 
   // Shouldn't reach here, but TypeScript needs it
-  return indicesCache?.data || INDEX_MAP.map(idx => ({
+  return getIndicesCache()?.data || INDEX_MAP.map(idx => ({
     name: idx.name, ticker: idx.ticker, value: 0, change: 0, changePercent: 0,
   }));
 }
@@ -1223,14 +1237,20 @@ export async function preCacheHistoricalData(): Promise<{
 // ── Startup pre-cache ──
 // On first module load, if the historical cache is empty, run pre-cache in
 // the background so the first scan/dashboard load doesn't trigger ~268
-// sequential chart calls.  Fires once per server process.
+// sequential chart calls.  Uses globalThis flag to fire once even across
+// dev-mode hot-reloads.  Flag is set immediately (before setTimeout) to
+// prevent multiple queued callbacks if the module reloads within 3s.
 (function autoPreCache() {
+  if (globalForCache.__hybridTurtlePreCacheStarted) return;
+  globalForCache.__hybridTurtlePreCacheStarted = true;
   // Small delay to let the server finish booting before hammering Yahoo
   setTimeout(() => {
     if (historicalCache.size === 0) {
       console.log('[Startup] Historical cache empty — launching background pre-cache...');
       preCacheHistoricalData().catch(err => {
         console.error('[Startup] Pre-cache failed:', (err as Error).message);
+        // Allow retry on next server restart
+        globalForCache.__hybridTurtlePreCacheStarted = false;
       });
     } else {
       console.log('[Startup] Historical cache already populated — skipping pre-cache');
