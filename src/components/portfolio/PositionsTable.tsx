@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPrice, formatPercent, formatR, formatDate } from '@/lib/utils';
 import StatusBadge from '@/components/shared/StatusBadge';
@@ -58,7 +58,7 @@ const RL_ACTION_STYLES: Record<string, { text: string; bg: string; border: strin
   PYRAMID_ADD: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', label: '📈 Pyramid' },
 };
 
-function PositionRLBadge({ pos }: { pos: Position }) {
+function PositionRLBadge({ pos, shadowMode = true }: { pos: Position; shadowMode?: boolean }) {
   const atrEstimate = Math.abs(pos.currentPrice - pos.currentStop);
   const daysInTrade = Math.max(1, Math.round((Date.now() - new Date(pos.entryDate).getTime()) / (1000 * 60 * 60 * 24)));
 
@@ -78,9 +78,10 @@ function PositionRLBadge({ pos }: { pos: Position }) {
     <span className={cn(
       'inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border',
       actionStyle.bg, actionStyle.border, actionStyle.text,
-      actionStyle.pulse && 'animate-pulse'
-    )} title={`RL Advisor: ${rlData.label} (${confPct}% confidence)`}>
-      {actionStyle.label} {confPct}%
+      actionStyle.pulse && 'animate-pulse',
+      shadowMode && 'opacity-60'
+    )} title={`RL Advisor${shadowMode ? ' (shadow)' : ''}: ${rlData.label} (${confPct}% confidence)`}>
+      {actionStyle.label} {confPct}%{shadowMode && ' 👁'}
     </span>
   );
 }
@@ -89,6 +90,15 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
   const [tab, setTab] = useState<'all' | 'open' | 'closed'>('open');
   const [sortField, setSortField] = useState<string>('ticker');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // RL Shadow Mode setting — controls whether RL badges are advisory-only
+  const [rlShadowMode, setRlShadowMode] = useState(true);
+  useEffect(() => {
+    fetch('/api/settings?userId=default-user')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.rlShadowMode !== undefined) setRlShadowMode(d.rlShadowMode); })
+      .catch(() => { /* default ON */ });
+  }, []);
 
   // Stop modal state
   const [stopModal, setStopModal] = useState<Position | null>(null);
@@ -306,7 +316,7 @@ export default function PositionsTable({ positions, onUpdateStop, onExitPosition
                     <div className="text-xs text-muted-foreground">{pos.name}</div>
                     {/* RL Trade Advisor badge — inline on open positions */}
                     {pos.status === 'OPEN' && (
-                      <PositionRLBadge pos={pos} />
+                      <PositionRLBadge pos={pos} shadowMode={rlShadowMode} />
                     )}
                   </div>
                 </td>

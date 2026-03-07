@@ -518,13 +518,13 @@ export const MAIN_NAV_ITEMS: NavEntry[] = [
     children: [
       { label: 'Execution Quality', href: '/execution-quality' },
       { label: 'Exec Audit', href: '/execution-audit' },
-      { label: 'Causal Audit', href: '/causal-audit' },
     ],
   },
   {
     label: 'System',
     children: [
       { label: 'Signal Audit', href: '/signal-audit' },
+      { label: 'Causal Audit', href: '/causal-audit' },
       { label: 'Trade Log', href: '/trade-log' },
       { label: 'Journal', href: '/journal' },
       { label: 'Settings', href: '/settings' },

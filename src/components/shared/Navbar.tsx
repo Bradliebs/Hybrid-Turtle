@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { MAIN_NAV_ITEMS, RISK_PROFILES, isNavGroup, type NavEntry, type NavGroup, type NavItem } from '@/types';
 import { useStore } from '@/store/useStore';
 import DangerLevelIndicator, { useDangerLevel } from '@/components/DangerLevelIndicator';
+import TDARegimeBadge, { type TDAState } from '@/components/TDARegimeBadge';
 import {
   LayoutDashboard,
   Briefcase,
@@ -206,6 +207,9 @@ export default function Navbar() {
             {/* Market Danger Indicator (persistent) */}
             <NavDangerBadge />
 
+            {/* TDA Regime Badge (persistent) */}
+            <NavTDABadge />
+
             {/* Notification Bell */}
             <Link
               href="/notifications"
@@ -285,6 +289,39 @@ function NavDangerBadge() {
       immuneAlert={dangerData.immuneAlert}
       riskTighteningPercent={dangerData.riskTighteningPercent}
       topMatches={dangerData.topMatches}
+      compact
+    />
+  );
+}
+
+// ── Persistent TDA Regime Badge ──
+
+function NavTDABadge() {
+  const [tdaState, setTdaState] = useState<{ state: TDAState; transitionWarning: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchTDA = async () => {
+      try {
+        const res = await fetch('/api/prediction/tda-regime');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok && json.data) {
+          setTdaState({ state: json.data.state, transitionWarning: json.data.transitionWarning });
+        }
+      } catch { /* silent */ }
+    };
+    fetchTDA();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!tdaState) return null;
+
+  return (
+    <TDARegimeBadge
+      state={tdaState.state}
+      transitionWarning={tdaState.transitionWarning}
       compact
     />
   );

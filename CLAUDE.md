@@ -10,9 +10,13 @@ A systematic trading dashboard for momentum trend-following across ~268 tickers 
 - **Stack:** Next.js 14 App Router + React 18 + TypeScript + TailwindCSS + Prisma ORM + SQLite
 - **Data:** Yahoo Finance (free, no API key — this is intentional, do not suggest replacing it)
 - **Notifications:** Telegram Bot API
-- **Broker:** Trading 212
+- **Broker:** Trading 212 (dual-account: Invest + ISA)
 - **Account type:** Small account (SMALL_ACCOUNT risk profile), starting ~£429 + £50/week additions
-- **Testing:** Vitest + Zod validation
+- **Testing:** Vitest (36 test files) + Zod validation
+- **Pages:** 20 content pages + 5 redirects
+- **API Routes:** 35 route groups (~90 endpoints)
+- **DB Tables:** 40 (24 core + 16 prediction engine)
+- **Architecture:** Two-layer: Core Trading Engine (sacred) + Prediction Engine (post-processing)
 
 ---
 
@@ -49,6 +53,37 @@ The Monday trading block and Tuesday execution window are **behavioural guardrai
 | `regime-detector.ts` | risk-gates.ts, scan-engine.ts, nightly.ts |
 | `dual-score.ts` | `/api/scan/route.ts`, cross-reference logic |
 | `nightly.ts` | Task Scheduler automation — changes affect unattended runs |
+| `signal-weight-meta-model.ts` | Signal weights API, NCS display layer — handle with care |
+| `conformal-calibrator.ts` | Interval API, NCSIntervalBadge — handle with care |
+
+---
+
+## Two-Layer Architecture
+
+**Layer 1 — Core Trading Engine (sacred, never modify):**
+```
+scan-engine → dual-score → risk-gates → position-sizer → stop-manager
+regime-detector feeds all layers
+```
+All capital allocation, position sizing, and stop management lives here. Never modified by prediction work.
+
+**Layer 2 — Prediction Engine (post-processing, advisory only):**
+```
+Conformal intervals → Failure modes → Dynamic weights → Stress test
+→ Signal audit → Immune system → Lead-lag/GNN → Bayesian beliefs
+→ Kelly multiplier → Meta-RL advisor → VPIN → Sentiment → TDA
+→ Execution quality → Causal invariance → TradePulse synthesis
+```
+Sits entirely above Layer 1. Wraps NCS output — never replaces it. All suppression of Auto-Yes is **advisory display only** — never touches execution logic in sacred files.
+
+### Key Design Decisions
+- Auto-Yes suppression is **advisory display only** — never touches execution
+- RL advisor is **shadow mode by default** — never fires orders autonomously
+- Kelly multiplier is **opt-in** — default OFF in settings
+- Conformal intervals are **post-processing** — dual-score.ts unchanged
+- Invariance penalty applied **after** dynamic weighting, **before** display
+- Monday hard block on new entries — enforced in code, not just UI
+- Wednesday–Friday opportunistic entries require higher bar than Tuesday
 
 ---
 
@@ -147,27 +182,31 @@ HEDGE positions excluded from open risk and position counting.
 
 ---
 
-## Prediction Engine — 14-Phase Stack
+## Prediction Engine — Quick Reference
 
 All prediction phases are **post-processing layers** — they never modify sacred files. They read NCS/BQS/FWS outputs and add advisory scoring, confidence intervals, and risk assessment.
 
-| Phase | Feature | Key File(s) | Touches Risk? |
-|-------|---------|------------|---------------|
-| 1 | Conformal Prediction Intervals | `lib/prediction/conformal-*.ts` | No — wraps NCS in confidence bands |
-| 2 | Failure Mode Scoring (5 FMs) | `lib/prediction/failure-mode-*.ts` | No — advisory, blocks Auto-Yes if FM > threshold |
-| 3 | Dynamic Signal Weighting | `lib/prediction/signal-weight-meta-model.ts` | No — display-layer reweighting only |
-| 4 | Adversarial Stress Test | `lib/prediction/adversarial-simulator.ts` | No — Monte Carlo stop-hit probability |
-| 5 | Signal Pruning Audit (MI) | `lib/prediction/mutual-information.ts` | No — analysis page only |
-| 6 | Immune System / Danger Memory | `lib/prediction/threat-library.ts`, `danger-matcher.ts` | No — tightens risk via display layer |
-| 7 | Lead-Lag Cross-Asset Graph | `lib/prediction/lead-lag-*.ts` | No — NCS adjustment display layer |
-| 8 | GNN on Lead-Lag Graph | `lib/prediction/gnn/*.ts` | No — GraphSAGE scoring layer |
-| 9 | Online Bayesian Updating | `lib/prediction/bayesian/*.ts` | No — belief-informed weight adjustments |
-| 10 | Meta-RL Trade Management | `lib/prediction/meta-rl/*.ts` | No — advisory recommendations only |
-| 11 | Fractional Kelly Sizing | `lib/prediction/kelly/*.ts` | No — advisory sizing suggestion |
-| 12 | VPIN / Order Flow | `lib/signals/vpin-calculator.ts` | No — order flow indicator |
-| 13 | Sentiment Fusion | `lib/signals/sentiment/*.ts` | No — sentiment composite score |
-| 14 | Causal Invariance Filter | `lib/prediction/causal/*.ts` | No — IRM analysis, regime transition penalty |
-| F9 | TradePulse Dashboard | `lib/prediction/trade-pulse.ts` | No — unified score aggregation |
+| # | Component | Key File(s) | Reads | Writes | Touches Risk? |
+|---|-----------|------------|-------|--------|---------------|
+| 1 | Conformal Intervals | `conformal-calibrator.ts`, `conformal-store.ts`, `bootstrap-calibration.ts` | ScoreBreakdown, ScanResult | ConformalCalibration | No — wraps NCS in confidence bands |
+| 2 | Failure Mode Scoring | `failure-mode-scorer.ts`, `failure-mode-thresholds.ts` | ScanResult, RegimeHistory | FailureModeScore | No — advisory, blocks Auto-Yes if FM > threshold |
+| 3 | Dynamic Signal Weighting | `signal-weight-meta-model.ts`, `meta-model-trainer.ts` | VIX, RegimeHistory, InvarianceAuditResult | SignalWeightRecord | No — display-layer reweighting only |
+| 4 | Adversarial Stress Test | `adversarial-simulator.ts` | Market data, ATR | StressTestResult | No — Monte Carlo stop-hit probability |
+| 5 | Signal Pruning (MI) | `mutual-information.ts` | ScoreBreakdown | SignalAuditResult | No — analysis page only |
+| 6 | Immune System | `threat-library.ts`, `danger-matcher.ts`, `environment-encoder.ts` | VIX, SPY, breadth | ThreatLibraryEntry | No — tightens risk via display layer |
+| 7 | Lead-Lag Graph | `lead-lag-analyser.ts`, `lead-lag-graph.ts` | Daily prices | LeadLagEdge, LeadLagSignal | No — NCS adjustment display layer |
+| F1 | GNN (GraphSAGE) | `gnn/*.ts` (4 files) | LeadLagEdge | GNNModelWeights, GNNInferenceLog | No — graph propagation scoring |
+| F2 | Bayesian NCS | `bayesian/*.ts` (3 files) | TradeLog outcomes | SignalBeliefState | No — belief-informed weight adjustments |
+| F3 | Kelly Sizing | `kelly/*.ts` (3 files) | NCS, conformal width, GNN conf | — (advisory only) | No — advisory sizing suggestion |
+| F4 | Meta-RL Advisor | `meta-rl/*.ts` (4 files) | R-multiple, days held, ATR | TradeEpisode, PolicyVersion | No — advisory recommendations only |
+| F5 | VPIN / Order Flow | `signals/vpin-calculator.ts`, `order-flow-imbalance.ts` | Yahoo volume bars | VPINHistory | No — order flow indicator |
+| F6 | Sentiment Fusion | `signals/sentiment/*.ts` (4 files) | News RSS, Yahoo data | SentimentHistory | No — sentiment composite score |
+| F7 | TDA Regime | `TDARegimeBadge.tsx` (component only) | — (prop-based) | — | No — topology-based regime badge |
+| F8 | Execution Quality | `execution-audit.ts`, `execution-drag.ts`, `slippage-tracker.ts` | TradeLog fills | — | No — slippage analysis |
+| F9 | TradePulse | `trade-pulse.ts` | All signal APIs | — | No — unified score aggregation |
+| 14 | Causal Invariance | `causal/*.ts` (4 files) | ScoreBreakdown | InvarianceAuditResult | No — IRM analysis, feeds back into Phase 3 weights |
+
+> All files live under `lib/prediction/` or `lib/signals/`. None modify sacred files.
 
 ---
 
@@ -275,6 +314,10 @@ prisma.positions.update()    // without checking stop monotonicity first
 - Prefer **surgical edits** over full rewrites
 - Add a brief comment on non-obvious trading logic decisions
 
+### Testing Coverage (36 test files)
+Before any sacred file change (which should essentially never happen), the full Vitest suite must pass.
+Coverage areas: position-sizer, risk-gates, stop-manager, dual-score, regime-detector, scan-guards, scan-pass-flags, correlation-scalar, breakout-probability, breakout-integrity, breakout-failure, hurst, EV-modifier, laggard-detector, ready-to-buy, risk-fields, execution-audit, execution-drag, filter-attribution, filter-scorecard, score-tracker, score-validation, allocation-score, candidate-outcome, candidate-outcome-enrichment, adaptive-atr-buffer, T212-dual, market-data, fetch-retry, scan-engine-core-lite, scan-db-reconstruction, audit-harness, research-loop, plus 3 API route tests.
+
 ---
 
 ## Dependency Header (add to any file you edit)
@@ -369,17 +412,27 @@ prisma.positions.update()    // without checking stop monotonicity first
 |------|---------|
 | `/dashboard` | Health, regime, heartbeat, modules, Fear & Greed |
 | `/scan` | 7-stage scan results — READY/WATCH/FAR |
-| `/plan` | Weekly execution board + pre-trade checklist + Early Bird scan + CSV export |
-| `/portfolio` | Position management, stop updates, R-multiple tracking |
+| `/plan` | Weekly execution board + pre-trade checklist + Early Bird scan + TodayPanel |
+| `/portfolio/positions` | Position management, stop updates, R-multiple tracking, RL badges |
 | `/risk` | Risk budget meter, stop panel, trailing stop recommendations |
 | `/settings` | Equity, risk profile, Trading 212, Telegram config, prediction engine toggles |
 | `/trade-log` | Trade journal with execution quality audit |
+| `/journal` | Per-position entry/close notes and lessons |
+| `/backtest` | Signal replay with forward R-multiples |
+| `/notifications` | System notification centre with read tracking |
 | `/signal-audit` | MI analysis — measures unique info per signal layer |
 | `/causal-audit` | IRM analysis — identifies causal vs regime-dependent signals |
 | `/execution-quality` | Slippage analysis, timing recommendations, worst fills |
-| `/trade-pulse/[ticker]` | Full unified confidence dashboard per ticker (TradePulse) |
+| `/execution-audit` | Plan-vs-execution gap analysis |
+| `/filter-scorecard` | Filter effectiveness audit with forward outcomes |
+| `/score-validation` | NCS/BQS/FWS prediction validation |
+| `/trade-pulse` | TradePulse landing — candidates ranked by NCS |
+| `/trade-pulse/[ticker]` | Full unified confidence dashboard per ticker |
+| `/login` | Authentication |
+| `/register` | Account creation |
 
 ---
 
 *Last updated: 7 March 2026*
 *Account size: ~£429 + £50/week | Profile: SMALL_ACCOUNT | Broker: Trading 212*
+*Prediction Engine: 17 phases | DB Tables: 40 | API Routes: ~90 | Test Files: 36*

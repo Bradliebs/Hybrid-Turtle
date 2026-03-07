@@ -9,18 +9,21 @@
 
 import { NextResponse } from 'next/server';
 import { apiError } from '@/lib/api-response';
-import { getLatestInvarianceScores, computeAndStoreInvarianceScores } from '@/lib/prediction/causal/invariance-scores';
+import { getLatestInvarianceScores, getHistoricalInvarianceRuns, computeAndStoreInvarianceScores } from '@/lib/prediction/causal/invariance-scores';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const latest = await getLatestInvarianceScores();
+    const [latest, historicalRuns] = await Promise.all([
+      getLatestInvarianceScores(),
+      getHistoricalInvarianceRuns(),
+    ]);
 
     if (!latest) {
       return NextResponse.json({
         ok: true,
-        data: { hasResult: false, result: null },
+        data: { hasResult: false, result: null, historicalRuns: [] },
       });
     }
 
@@ -33,6 +36,10 @@ export async function GET() {
           computedAt: latest.computedAt,
           sampleSize: latest.sampleSize,
         },
+        historicalRuns: historicalRuns.map(r => ({
+          runAt: r.computedAt.toISOString(),
+          signalScores: r.signalScores,
+        })),
       },
     });
   } catch (error) {

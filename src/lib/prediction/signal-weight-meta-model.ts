@@ -23,6 +23,7 @@
 
 import { getStockQuote, getDailyPrices, getMarketRegime } from '@/lib/market-data';
 import { prisma } from '@/lib/prisma';
+import type { SignalInvariance } from '@/lib/prediction/causal/invariance-scores';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -196,7 +197,10 @@ export async function buildMetaModelContext(): Promise<MetaModelContext> {
  */
 export async function computeSignalWeights(): Promise<SignalWeightResult> {
   const context = await buildMetaModelContext();
-  const weights = computeRuleBasedWeights(context);
+  let weights = computeRuleBasedWeights(context);
+
+  // Apply invariance penalty: down-weight causally unreliable signals
+  weights = await applyInvariancePenalty(weights);
 
   return {
     weights,
@@ -204,6 +208,67 @@ export async function computeSignalWeights(): Promise<SignalWeightResult> {
     source: 'rule_based',
     defaultWeights: { ...DEFAULT_WEIGHTS },
   };
+}
+
+// ── Invariance Penalty ───────────────────────────────────────
+// Maps signal keys to their InvarianceAuditResult signal names.
+// Weights are multiplied by (invarianceScore) so a signal at 0.30
+// invariance gets its weight reduced to 30% of its dynamic value.
+// Default invarianceScore = 0.75 if no audit has been run (cautiously optimistic).
+
+const SIGNAL_TO_IRM_KEY: Record<keyof SignalWeights, string> = {
+  adx: 'bqsTrend',
+  di: 'bqsDirection',
+  hurst: 'bqsHurst',
+  bis: 'bqsBis',
+  drs: 'bqsTailwind',
+  weeklyAdx: 'bqsWeeklyAdx',
+  bps: 'bqsVolBonus', // BPS maps to vol bonus in score breakdown
+};
+
+const DEFAULT_INVARIANCE = 0.75;
+
+async function applyInvariancePenalty(weights: SignalWeights): Promise<SignalWeights> {
+  let invarianceMap: Record<string, number> = {};
+
+  try {
+    const latest = await prisma.invarianceAuditResult.findFirst({
+      orderBy: { computedAt: 'desc' },
+      select: { scoresJson: true },
+    });
+
+    if (latest) {
+      const signals = JSON.parse(latest.scoresJson) as SignalInvariance[];
+      for (const s of signals) {
+        invarianceMap[s.signal] = s.invarianceScore;
+      }
+    }
+  } catch {
+    // DB unavailable — use defaults
+  }
+
+  const adjusted = { ...weights };
+
+  for (const key of Object.keys(adjusted) as (keyof SignalWeights)[]) {
+    const irmKey = SIGNAL_TO_IRM_KEY[key];
+    const score = invarianceMap[irmKey] ?? DEFAULT_INVARIANCE;
+    const originalWeight = adjusted[key];
+    adjusted[key] = originalWeight * score;
+
+    if (score < DEFAULT_INVARIANCE) {
+      console.log(`[meta-model] Invariance penalty: ${key} weight ${originalWeight.toFixed(3)} × ${score.toFixed(3)} → ${adjusted[key].toFixed(3)}`);
+    }
+  }
+
+  // Re-normalise so weights sum to ~1.0
+  const total = Object.values(adjusted).reduce((s, v) => s + v, 0);
+  if (total > 0) {
+    for (const key of Object.keys(adjusted) as (keyof SignalWeights)[]) {
+      adjusted[key] = adjusted[key] / total;
+    }
+  }
+
+  return adjusted;
 }
 
 // ── Adjusted NCS Computation ─────────────────────────────────

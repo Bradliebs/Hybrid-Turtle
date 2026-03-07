@@ -45,6 +45,9 @@ import DangerLevelIndicator, { useDangerLevel } from '@/components/DangerLevelIn
 import LeadLagPanel, { useLeadLagSignals } from '@/components/LeadLagPanel';
 import GraphScorePanel, { useGNNScore } from '@/components/GraphScorePanel';
 import BeliefStatePanel, { useBeliefStates } from '@/components/BeliefStatePanel';
+import VPINBadge, { useVPIN } from '@/components/VPINBadge';
+import SentimentPanel, { useSentiment } from '@/components/SentimentPanel';
+import LiveNCSTracker from '@/components/LiveNCSTracker';
 import { TradePulseGradePill } from '@/components/TradePulseGrade';
 import { classifyGrade } from '@/lib/prediction/trade-pulse';
 
@@ -486,6 +489,19 @@ function TimeToActCard({ candidate, regime, advancedView, getIntervalForNCS, fmD
   // Bayesian belief states for signal reliability
   const beliefData = useBeliefStates();
 
+  // VPIN / order flow for this candidate
+  const vpinData = useVPIN(candidate.ticker);
+
+  // Sentiment score for this candidate
+  const sentimentData = useSentiment(candidate.ticker);
+
+  // Determine trade classification for conditional rendering
+  const tradeClassification = candidate.dualNCS != null && (candidate.dualNCS ?? 0) >= 70 && (candidate.dualFWS ?? 100) <= 30
+    ? 'AUTO_YES'
+    : (candidate.dualFWS ?? 0) > 65
+      ? 'AUTO_NO'
+      : 'CONDITIONAL';
+
   const stars = ncsToStars(candidate.dualNCS);
   const reasons = buildTradeReasons({
     adx: candidate.scanAdx,
@@ -708,6 +724,26 @@ function TimeToActCard({ candidate, regime, advancedView, getIntervalForNCS, fmD
           {/* GNN graph score — advanced only */}
           {advancedView && gnnData.hasResult && (
             <GraphScorePanel data={gnnData} ticker={candidate.ticker} />
+          )}
+
+          {/* VPIN order flow — advanced only */}
+          {advancedView && vpinData.hasResult && (
+            <VPINBadge data={vpinData} />
+          )}
+
+          {/* Sentiment — advanced only, CONDITIONAL trades only */}
+          {advancedView && (
+            <SentimentPanel data={sentimentData} tradeClassification={tradeClassification} />
+          )}
+
+          {/* Live NCS tracker — advanced only, trading hours only */}
+          {advancedView && candidate.dualNCS != null && (
+            <LiveNCSTracker
+              ticker={candidate.ticker}
+              priorNCS={candidate.dualNCS}
+              posteriorNCS={candidate.dualNCS}
+              updateCount={0}
+            />
           )}
 
           {/* Bayesian belief states — advanced only */}

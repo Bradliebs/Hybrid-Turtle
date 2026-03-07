@@ -1,483 +1,516 @@
-# HybridTurtle — Complete System Breakdown
+# HybridTurtle — System Breakdown
 
-> Full architectural reference: every screen, API route, core module, database table, and data flow in the system.
+> Complete technical reference for the HybridTurtle systematic trading dashboard.  
+> Every number in this document is counted from actual code — not estimated.
 
 ---
 
 ## 1. What It Is
 
-A self-hosted systematic trading dashboard for momentum/trend-following across ~268 tickers (US, UK, European markets). It turns discretionary stock trading into a repeatable, risk-first weekly workflow.
+A systematic trading dashboard for momentum trend-following across ~268 tickers (US, UK, European markets). Built to turn discretionary stock trading into a repeatable, risk-first workflow.
 
-- **Account:** ~£429 + £50/week additions via Trading 212 (ISA + Invest)
-- **Stack:** Next.js 14 App Router · React 18 · TypeScript strict · TailwindCSS · Prisma ORM · SQLite · Vitest · Zod
-- **Data:** Yahoo Finance (free, no API key)
+- **Stack:** Next.js 14 App Router + React 18 + TypeScript + TailwindCSS + Prisma ORM + SQLite
+- **Data:** Yahoo Finance (free, no API key — intentional)
 - **Notifications:** Telegram Bot API
-- **Broker:** Trading 212 API (dual-account: ISA + Invest)
-- **Deployment:** Local Windows machine, single-user, self-hosted
+- **Broker:** Trading 212 (dual-account: Invest + ISA)
+- **Account:** Small account (SMALL_ACCOUNT risk profile)
+- **Testing:** Vitest + Zod validation
+- **Auth:** NextAuth JWT (optional — single-user local app)
+- **Pages:** 20 content pages + 4 redirects
+- **API Routes:** 35 route groups (~89 endpoints)
+- **DB Tables:** 40 (24 core + 16 prediction engine)
+- **Prediction Engine:** 17 phases (conformal, failure modes, signal weighting, stress test, MI audit, immune system, lead-lag, GNN, Bayesian, Kelly, Meta-RL, VPIN, sentiment, TDA, execution quality, TradePulse, causal invariance)
 
 ---
 
-## 2. Screens (22 Pages)
+## 2. Screens (24 Pages)
 
 ### `/dashboard` — Command Centre
+Health status, market indices bar, Fear & Greed gauge, weekly phase indicator, heartbeat monitor, module status panels, action directives, dual regime widget, risk modules, pyramid alerts, hedge card, scoring guide.
+**Components:** `Navbar`, `MarketIndicesBar`, `QuickActions`, `FearGreedGauge`, `WeeklyPhaseIndicator`, `HealthTrafficLight`, `HeartbeatMonitor`, `DataSourceTile`, `ModuleStatusPanel`, `ActionCardWidget`, `DualRegimeWidget`, `RiskModulesWidget`, `PyramidAlertsWidget`, `HedgeCard`, `ScoringGuideWidget`, `MigrationBanner`, `TodayDirectiveCard`, `OnboardingBanner`, `RegimeBadge`
 
-**Components:** `MarketIndicesBar`, `QuickActions`, `FearGreedGauge`, `WeeklyPhaseIndicator`, `HealthTrafficLight`, `HeartbeatMonitor`, `DataSourceTile`, `ModuleStatusPanel`, `ActionCardWidget`, `DualRegimeWidget`, `RiskModulesWidget`, `PyramidAlertsWidget`, `HedgeCard`, `ScoringGuideWidget`, `MigrationBanner`, `TodayDirectiveCard`, `OnboardingBanner`
-
-Shows at a glance:
-
-- Market regime (BULLISH / SIDEWAYS / BEARISH / NEUTRAL) with dual-benchmark (SPY + VWRL) status
-- Weekly phase indicator (PLANNING → OBSERVATION → EXECUTION → MAINTENANCE)
-- 16-point health check traffic light (GREEN / YELLOW / RED)
-- Heartbeat monitor (last nightly run status + timestamp)
-- Fear & Greed gauge
-- All 21 module statuses (climax, breadth, whipsaw, swaps, laggards, etc.)
-- Pyramid opportunity alerts
-- Hedge position card
-- Quick-action buttons (Run Nightly, Run Scan, etc.)
-
----
-
-### `/scan` — 7-Stage Scan Engine
-
-**Components:** `StageFunnel`, `TechnicalFilterGrid`, `CandidateTable`, `PositionSizer`, `TickerChart` (lazy-loaded)
-
-The main scan page:
-
-- Runs the full 7-stage scan pipeline (Universe → Filters → Status → Rank → Risk Gates → Anti-Chase → Sizing)
-- Live funnel visualisation showing how many tickers pass each stage
-- Technical filter grid showing ADX, MA200, ATR%, +DI/−DI for each ticker
-- Candidate table with READY / WATCH / FAR status badges, rank scores, entry triggers, stop prices, and position size
-- Interactive price chart (lightweight-charts) for any selected ticker
-- Live price overlay from Yahoo Finance
-
-**Sub-pages:**
-
-- `/scan/scores` — **Dual Score Dashboard:** BQS vs FWS scatter, NCS distribution chart, filterable table of all scored tickers, "Why Card" explaining each score, scoring guide
-- `/scan/cross-ref` — **Cross-Reference:** merges scan pipeline results with dual-score system, showing alignment or disagreement between the two scoring angles
-
----
+### `/scan` — 7-Stage Scanner
+Technical filter grid, stage funnel visualisation, candidate table with real-time price overlays, position sizer, chart view. Lazy-loaded tabs for scores and cross-ref analysis.
+**Components:** `Navbar`, `StageFunnel`, `TechnicalFilterGrid`, `CandidateTable`, `PositionSizer`, `TickerChart`, `ScoresTab`, `CrossRefTab`, `StatusBadge`, `RegimeBadge`
 
 ### `/plan` — Weekly Execution Board
-
-**Components:** `PhaseTimeline`, `ReadyCandidates`, `PreTradeChecklist`, `StopUpdateQueue`, `PositionSizerWidget`, `SwapSuggestionsWidget`, `LaggardAlertsWidget`, `EarlyBirdWidget`, `TodayPanel`
-
-The weekly hub:
-
-- Phase timeline showing current day's phase (Sun=PLANNING, Mon=OBSERVATION, Tue=EXECUTION, Wed–Fri=MAINTENANCE)
-- Ready candidates from last scan — sorted and actionable
-- Pre-trade checklist (mandatory before buying)
-- Stop update queue showing pending stop-raise recommendations
-- Position sizer for manual what-if calculations
-- Swap suggestions (Module 7: Heatmap Swap)
-- Laggard alerts (Module 3)
-- Early Bird scanner (Module 2: alternative entry logic, on-demand Yahoo fetch)
-- "Today" panel with context-aware actions
-
----
+Phase timeline, ready candidates, pre-trade checklist, position sizing widget, swap suggestions, laggard alerts, early bird scan, today's directive panel (TodayPanel — novice-first actionable card).
+**Components:** `Navbar`, `RegimeBadge`, `PhaseTimeline`, `ReadyCandidates`, `PreTradeChecklist`, `PositionSizerWidget`, `SwapSuggestionsWidget`, `LaggardAlertsWidget`, `EarlyBirdWidget`, `TodayPanel`
 
 ### `/portfolio/positions` — Position Management
+KPI banner, positions table with inline RL trade advisor badges, T212 sync panel, stop update queue, journal drawer, ready-to-buy panel, breakout failure panel. Lazy tabs for distribution and performance.
+**Components:** `Navbar`, `KPIBanner`, `PositionsTable`, `T212SyncPanel`, `PositionSyncButton`, `StopUpdateQueue`, `JournalDrawer`, `ReadyToBuyPanel`, `BreakoutFailurePanel`, `DistributionTab`, `PerformanceTab`
 
-**Components:** `KPIBanner`, `PositionsTable`, `T212SyncPanel`, `PositionSyncButton`, `ReadyToBuyPanel` (lazy), `BreakoutFailurePanel` (lazy), `StopUpdateQueue`
-
-Live position management:
-
-- KPI banner (total value, unrealised P&L, open risk, position count)
-- Full positions table with R-multiples, gain%, protection levels, stop prices
-- "Ready to Buy" panel with one-click execution flow → `BuyConfirmationModal` → SSE-streamed 4-phase T212 execution
-- T212 sync: auto-detect closed positions, sync account types (ISA vs Invest), reset from T212 data
-- Breakout failure detection panel
-- Per-position actions: close, update stop, reset from T212, journal entry
-
----
-
-### `/portfolio/distribution` — Portfolio Visualisation
-
-**Components:** `KPIBanner`, `DistributionDonut` (lazy), `PerformanceChart` (lazy), `SleeveAllocation`
-
-Charts and allocation:
-
-- Donut charts by sleeve (CORE / HIGH_RISK / ETF / HEDGE), cluster, and protection level
-- Performance curve over time
-- Sleeve allocation bars vs limits
-
----
-
-### `/risk` — Risk Budget & Stops
-
-**Components:** `RiskProfileSelector`, `StopLossPanel`, `TrailingStopPanel`, `ProtectionProgress`, `RiskBudgetMeter`, `CorrelationPanel`
-
-Risk management:
-
-- Risk budget meter (used vs max open risk %)
-- Sleeve utilisation breakdown
-- Stop-loss panel showing all position stops with R-based protection levels
-- Trailing stop recommendations (ATR-based)
-- Protection progress bars (INITIAL → BREAKEVEN → LOCK_08R → LOCK_1R_TRAIL)
-- Correlation panel showing cross-position correlation flags
-
----
+### `/risk` — Risk Dashboard
+Risk profile selector, stop-loss panel, trailing stop recommendations, protection progress meter, risk budget visualisation, correlation analysis panel.
+**Components:** `Navbar`, `RiskProfileSelector`, `StopLossPanel`, `TrailingStopPanel`, `ProtectionProgress`, `RiskBudgetMeter`, `CorrelationPanel`
 
 ### `/settings` — Configuration
+Account settings, broker API credentials, notifications, data sources, system preferences, prediction engine toggles (intraday NCS, Kelly multiplier, RL shadow mode).
+**Components:** `Navbar`, `AccountPanel`, `BrokerPanel`, `NotificationsPanel`, `DataPanel`, `SystemPanel`, `PredictionPanel`
 
-**Components:** `T212ImportPanel`
-
-- Risk profile selector (CONSERVATIVE / BALANCED / SMALL_ACCOUNT / AGGRESSIVE)
-- Equity input (manual update)
-- Starting equity override for performance calculations
-- Gap Guard configuration (thresholds for weekend/daily ATR gaps)
-- Trading 212 credentials (Invest + ISA dual-account)
-- T212 trade history CSV import
-- Telegram bot token + chat ID with test button
-- Market data provider (Yahoo / EODHD)
-
----
-
-### `/trade-log` — Trade Journal + Audit
-
-**Components:** `RecordPastTradeModal`
-
-- Full trade history table with entry/exit prices, R-multiples, gain/loss, slippage
-- Execution quality audit (planned vs actual entry, fill time)
-- Decision reasons, tags, lessons learned
-- Summary stats: win rate, expectancy, avg slippage
-- Regime-based breakdown
-- Monthly trend chart
-- Manual past-trade recording
-
----
+### `/trade-log` — Trade Journal
+Filterable trade history, summary statistics (win rate, expectancy, regime breakdown), monthly trends. Record past trades with decision reasons and lessons learned.
+**Components:** `Navbar`, `RecordPastTradeModal`
 
 ### `/journal` — Position Journal
-
-- Per-position entry notes with confidence rating (1–5)
-- Close notes when exiting
-- Lessons learned notes
-- Auto-opens via `?position=xxx` query param on position close
-
----
-
-### `/performance` — Performance Dashboard
-
-- Weeks running, starting equity, current equity, total gain/loss
-- Win rate, best/worst trades, average days held
-- Equity curve (line chart)
-- Exit reason breakdown (stop-loss vs manual sale)
-- Open positions with unrealised gain/loss
-
----
+Per-position timeline for entry notes, confidence levels, close notes, and post-trade lessons learned.
+**Components:** `Navbar`
 
 ### `/backtest` — Signal Replay
+Historical trigger hits with forward R-multiples, stop ladder simulation, performance analysis. Read-only audit of past signals.
+**Components:** `Navbar`, `RegimeBadge`
 
-- Historical trigger hit analysis from SnapshotTicker data
-- Forward R-multiples and stop ladder simulation
-- Read-only, no position creation or DB writes
+### `/notifications` — Notification Centre
+System notifications with filtering by read status, notification type badges, mark-read actions.
+**Components:** `Navbar`
+
+### `/signal-audit` — Signal Pruning Audit *(added)*
+7×7 MI heatmap, conditional MI bars with KEEP/INVESTIGATE/REDUNDANT recommendations, CSV export, manual "Run Analysis" button.
+**Components:** `Navbar`, `ConditionalMIBar`, `MIHeatmap`
+
+### `/causal-audit` — Causal Invariance Audit *(added)*
+IRM analysis showing which signals are causally stable vs regime-dependent. Invariance scores per signal, beta-per-environment charts.
+**Components:** `Navbar`, `InvarianceBar`, `BetaChart`
+
+### `/execution-quality` — Execution Quality *(added)*
+Summary cards (avg slippage, P90 slippage, total cost), slippage by hour bar chart, slippage trend line chart, timing recommendations by market cap tier, worst 10 fills table.
+**Components:** `Navbar`, `SummaryCard`, `SlippageByHourChart`, `SlippageTrendChart`
+
+### `/execution-audit` — Execution Audit
+Entry slippage, stop placement accuracy, position sizing accuracy, risk drift, anti-chase compliance.
+**Components:** `Navbar`
+
+### `/filter-scorecard` — Filter Scorecard
+Forward outcomes (5d/10d/20d returns, 1R/2R hit rates) of candidates passed vs blocked by each pipeline rule.
+**Components:** `Navbar`
+
+### `/score-validation` — Score Validation
+NCS/FWS/BQS band prediction validation, auto-action classification effectiveness, monotonicity checks.
+**Components:** `Navbar`, `BandTable`
+
+### `/trade-pulse` — TradePulse Landing *(added)*
+Recent READY/WATCH candidates ranked by NCS with grade pills, linking to individual analysis pages.
+**Components:** `Navbar`, `TradePulseGradePill`
+
+### `/trade-pulse/[ticker]` — TradePulse Dashboard *(added)*
+Full unified confidence dashboard: hero score dial, decision bar, signal contribution grid (12+ signals), concerns (risks first), opportunities, Kelly sizing advisory, RL recommendation badge, stale data indicator.
+**Components:** `Navbar`, `TradePulseDial`, `SignalCard`, `KellySizePanel`, `TradeAdvisorPanel`
+
+### `/login` — Sign In
+Email/password authentication via NextAuth.
+
+### `/register` — Registration
+Account creation with password validation.
+
+### Redirect Pages
+| Route | Redirects To |
+|-------|-------------|
+| `/` | `/dashboard` |
+| `/scan/scores` | `/scan?tab=scores` |
+| `/scan/cross-ref` | `/scan?tab=cross-ref` |
+| `/portfolio/distribution` | `/portfolio/positions?tab=distribution` |
+| `/performance` | `/portfolio/positions?tab=performance` |
 
 ---
 
-### `/notifications` — Alert Centre
+## 3. API Routes (35 Route Groups)
 
-- In-app notifications: trade triggers, stop hits, breakout failures, pyramid adds
-- Read/unread status with mark-all-read
-- Priority levels and type icons
+### Core Routes
 
----
+| Route | Methods | Purpose |
+|-------|---------|---------|
+| `/api/scan` | GET, POST | 7-stage scan pipeline (filters, ranking, risk gates, anti-chase, sizing) |
+| `/api/scan/snapshots` | GET | Parse snapshot data for READY/WATCH/FAR candidates |
+| `/api/scan/snapshots/sync` | POST | Sync full universe snapshot (triggers Yahoo fetch) |
+| `/api/scan/scores` | GET | Fetch scored ticker data (BQS, FWS, NCS) |
+| `/api/scan/progress` | GET | Poll scan progress (stage, processed/total) |
+| `/api/scan/live-prices` | POST | Live Yahoo quotes for READY/WATCH candidates |
+| `/api/scan/cross-ref` | GET | Cross-reference candidates vs DB positions |
+| `/api/scan/benchmark` | GET | Benchmark FULL vs CORE_LITE mode |
+| `/api/positions` | GET, POST | Fetch/create positions (dual-account ISA/Invest) |
+| `/api/positions/execute` | POST | 4-phase T212 execution (buy → poll → stop → DB) via SSE |
+| `/api/positions/sync` | POST | Sync closed positions from T212 |
+| `/api/positions/hedge` | GET | HEDGE positions with live prices and stop guidance |
+| `/api/positions/sync-account-types` | POST | Sync ISA vs Invest metadata from T212 |
+| `/api/positions/reset-from-t212` | POST | Reset entry price/stop from T212 ground truth |
+| `/api/stops` | GET, PUT | R-based + trailing ATR stop recommendations; apply updates |
+| `/api/stops/apply` | POST | One-click apply: DB write + T212 order |
+| `/api/stops/sync` | GET, POST, PUT | CSV import; trailing recommendations; apply |
+| `/api/stops/t212` | GET, POST, DELETE, PUT | T212 stop orders: list, set, remove, bulk sync |
+| `/api/risk` | GET | Open risk per position, total vs limit, utilisation % |
+| `/api/risk/correlation-scalar` | POST | Correlation-based position size reduction |
+| `/api/risk/correlation` | GET | Correlation matrix flags between positions |
+| `/api/plan` | GET | Weekly execution plan and current phase |
+| `/api/plan/allocation` | GET | Rank READY/WATCH for capital allocation |
+| `/api/plan/allocation-score` | GET | Score candidates with EV expectations |
+| `/api/portfolio/summary` | GET | Distributions by sector/cluster/sleeve; total P&L |
+| `/api/market-data` | GET | Multi-action: quotes, indices, fear-greed, regime, prices |
+| `/api/modules` | GET | Unified module results: laggards, climax, swaps, breadth |
+| `/api/modules/early-bird` | GET | Alternative/early entry scanner |
+| `/api/nightly` | POST | 9-step nightly automation pipeline |
+| `/api/health-check` | GET, POST | 16-point system health audit |
+| `/api/heartbeat` | GET, POST | Fetch/record nightly completion status |
+| `/api/trade-log` | GET | Query trade log with filters |
+| `/api/trade-log/summary` | GET | Stats: top/worst trades, tags, regime breakdowns |
+| `/api/journal` | GET | List trade journal entries |
+| `/api/journal/[positionId]/entry` | POST | Add/update entry note |
+| `/api/journal/[positionId]/close` | POST | Add/update close note |
+| `/api/dashboard/today-directive` | GET | Lightweight directive: phase, mode, stops, laggards |
+| `/api/notifications` | GET, POST | Fetch notifications; create client-side alerts |
+| `/api/notifications/[id]/read` | POST | Mark notification as read |
+| `/api/notifications/read-all` | POST | Mark all as read |
+| `/api/settings` | GET, PUT | Fetch/update user settings |
+| `/api/settings/dismiss-equity-milestone` | POST | Dismiss equity milestone notifications |
+| `/api/settings/telegram-test` | POST | Test Telegram integration |
+| `/api/stocks` | GET, POST, PATCH | List/filter/create/update stock records |
+| `/api/trading212/sync` | POST | Sync positions from T212 Invest + ISA |
+| `/api/trading212/connect` | POST | Test T212 connection; save credentials |
+| `/api/t212-import` | POST | Import T212 historical trades |
+| `/api/telegram/webhook` | POST | Receive inbound Telegram messages |
+| `/api/telegram/test-command` | POST | Test command without webhook |
+| `/api/telegram/register-webhook` | GET, POST | Register/retrieve Telegram webhook URL |
+| `/api/auth/[...nextauth]` | GET, POST | NextAuth authentication handler |
+| `/api/auth/register` | POST | User registration |
+| `/api/performance/summary` | GET | Equity curve, PnL, win rate |
+| `/api/publications` | GET | Recent events timeline |
+| `/api/onboarding` | GET, POST | Onboarding step completion |
+| `/api/backup` | GET, POST | List/create database backups |
+| `/api/backup/restore` | POST | Restore named backup |
+| `/api/cache-status` | GET, POST | Cache status; clear persisted caches |
+| `/api/data-source` | GET | Data source health and freshness |
+| `/api/db-status` | GET, POST | Pending migrations; auto-migrate |
+| `/api/ev-modifiers` | GET | Expectancy modifiers by regime/sleeve/ATR |
+| `/api/ev-stats` | GET | Expectancy stats sliced by dimensions |
+| `/api/feature-flags` | GET | Active feature flags |
+| `/api/backtest` | GET | Signal replay backtest |
+| `/api/backtest/compare` | GET | FULL vs CORE_LITE comparison |
 
-### `/login` & `/register` — Auth
+### Analytics Routes
 
-- NextAuth credentials-based authentication
-- Email + password login/registration
+| Route | Methods | Purpose |
+|-------|---------|---------|
+| `/api/analytics/score-validation` | GET, POST | Score prediction validation; backfill |
+| `/api/analytics/score-contribution` | GET | Score component correlation vs outcomes |
+| `/api/analytics/rule-overlap` | GET | Filter co-occurrence / redundancy |
+| `/api/analytics/filter-scorecard` | GET | Filter effectiveness audit |
+| `/api/analytics/filter-attribution` | GET | Filter contribution to winners vs losers |
+| `/api/analytics/execution-drag` | GET | Slippage vs planned entries |
+| `/api/analytics/execution-audit` | GET | Execution quality: timing, fills, conditions |
+| `/api/analytics/candidate-outcomes` | GET | Scan candidates matched to trade outcomes |
 
----
+### Prediction Engine Routes *(added)*
 
-### `/signal-audit` — Signal Pruning Analysis
+| Route | Methods | Purpose |
+|-------|---------|---------|
+| `/api/prediction/interval` | GET | NCS prediction interval (conformal bands) |
+| `/api/prediction/calibrate` | GET, POST | Conformal calibration status; trigger recalibration |
+| `/api/prediction/failure-modes` | GET, POST | 5 failure mode scores; compute FM results |
+| `/api/prediction/signal-weights` | GET, POST | Dynamic signal weights; meta-model retraining |
+| `/api/prediction/stress-test` | POST | Adversarial Monte Carlo stop-hit simulation |
+| `/api/prediction/signal-audit` | GET, POST | Mutual information analysis |
+| `/api/prediction/danger-level` | GET, POST | Market danger assessment; seed threat library |
+| `/api/prediction/lead-lag` | GET, POST | Lead-lag upstream signals; recompute graph |
+| `/api/prediction/gnn-score` | GET, POST | GraphSAGE score; trigger GNN training |
+| `/api/prediction/beliefs` | GET, POST | Bayesian belief states; process closures |
+| `/api/prediction/kelly-size` | GET | Kelly-adjusted sizing suggestion (advisory) |
+| `/api/prediction/trade-recommendation` | GET, POST | Meta-RL policy action; MAML training |
+| `/api/prediction/trade-pulse` | GET | Unified confidence dashboard aggregation |
+| `/api/prediction/invariance` | GET, POST | IRM causal invariance scores |
 
-Mutual information analysis measuring unique contribution of each signal layer. Heatmap of pairwise MI, conditional MI bars, KEEP/INVESTIGATE/REDUNDANT recommendations. Manual "Run Analysis" button.
+### Signal Routes *(added)*
 
----
-
-### `/causal-audit` — Causal Invariance Analysis
-
-IRM (Invariant Risk Minimisation) analysis identifying which signals are causally stable across all market regimes vs regime-dependent. Invariance score bars, beta-per-regime charts, recommendations for spurious signals.
-
----
-
-### `/execution-quality` — Execution Fill Analysis
-
-Slippage analysis, best execution windows by market cap tier, worst fills table. Summary cards showing average/P90 slippage, total slippage cost. Timing recommendations.
-
----
-
-### `/trade-pulse/[ticker]` — TradePulse Confidence Dashboard
-
-Full unified analysis page per ticker. Hero score dial (0–100), grade badge (A+ to D), decision bar, signal contribution grid, concerns panel (risks first), opportunities panel, computed timestamp. Accessed via "Full Analysis →" link on ticker cards.
-
----
-
-## 3. API Routes (32 Route Groups + Prediction Engine Routes)
-
-| Route | Method | Purpose |
-|-------|--------|---------|
-| `/api/scan` | POST / GET | Run 7-stage scan, cache results, persist to DB |
-| `/api/scan/progress` | GET | Polling endpoint for scan progress (stage, count) |
-| `/api/scan/scores` | GET | Dual Score (BQS/FWS/NCS) for all tickers |
-| `/api/scan/cross-ref` | GET | Merge scan + dual-score for cross-reference view |
-| `/api/scan/live-prices` | POST | Live Yahoo quotes for scan candidates |
-| `/api/scan/snapshots` | POST / GET | Upload/read master_snapshot CSV data |
-| `/api/scan/snapshots/sync` | POST | Full Yahoo Finance data sync → SnapshotTicker rows |
-| `/api/positions` | GET / POST | List positions (with live prices, R-multiples) / Create new position (with full risk gate enforcement) |
-| `/api/positions/execute` | POST | 4-phase T212 execution: buy → poll fill → set stop → create DB position (SSE streamed) |
-| `/api/positions/sync` | POST | Detect closed positions from T212 API |
-| `/api/positions/sync-account-types` | POST | Correct ISA vs Invest account types from T212 |
-| `/api/positions/hedge` | GET | Hedge sleeve positions with live prices & stop guidance |
-| `/api/positions/reset-from-t212` | POST | Overwrite corrupted position data from T212 ground truth |
-| `/api/nightly` | POST | HTTP-triggered nightly (same 9-step pipeline as cron) |
-| `/api/modules` | GET | All 21 module checks in one call (cached 5 min) |
-| `/api/modules/early-bird` | GET | On-demand Early Bird scan (Module 2) |
-| `/api/risk` | GET | Risk budget, positions enriched with GBP values, risk efficiency |
-| `/api/risk/correlation` | GET | Correlation flags between open positions |
-| `/api/risk/correlation-scalar` | POST | Correlation-based position size reducer for buy flow |
-| `/api/settings` | GET / PUT | User settings (risk profile, equity, T212, Telegram, Gap Guard) |
-| `/api/settings/telegram-test` | POST | Send test Telegram message |
-| `/api/health-check` | GET / POST | 16-point health audit |
-| `/api/heartbeat` | GET | Latest nightly heartbeat status |
-| `/api/stops` | GET / PUT | Stop recommendations and updates |
-| `/api/trade-log` | GET / POST | Trade journal CRUD |
-| `/api/journal` | GET + sub-routes | Position journal entries |
-| `/api/performance/summary` | GET | Performance stats and equity curve |
-| `/api/notifications` | GET / PUT | Notification CRUD and read status |
-| `/api/stocks` | GET | Stock universe management |
-| `/api/trading212` | Various | T212 connection test, position fetch |
-| `/api/t212-import` | POST | T212 trade history CSV import |
-| `/api/db-status` | GET / POST | Migration status check / Auto-migrate (gated behind `ALLOW_AUTO_MIGRATE` env var) |
-| `/api/data-source` | GET | Data provider health |
-| `/api/ev-stats` | GET | Expected value statistics |
-| `/api/ev-modifiers` | GET | EV modifier lookup |
-| `/api/backtest` | GET | Signal replay data |
-| `/api/publications` | GET | Publication feed |
-| `/api/backup` | GET / POST | Database backup |
-| `/api/cache-status` | GET / POST | Cache status check / Clear all caches |
-| `/api/dashboard/today-directive` | GET | AI-generated daily trading directive |
-| `/api/onboarding` | GET / POST | Onboarding state management |
-| `/api/portfolio/summary` | GET | Portfolio summary stats |
-| `/api/plan` | GET / POST | Weekly execution plan CRUD |
-| `/api/feature-flags` | GET | Feature flag status |
-| `/api/stops/apply` | POST | Apply stop recommendations to T212 |
-| `/api/stops/sync` | GET / POST / PUT | Sync stops from CSV / T212 |
-| `/api/stops/t212` | GET / POST / DELETE / PUT | Direct T212 stop management |
+| Route | Methods | Purpose |
+|-------|---------|---------|
+| `/api/signals/vpin` | GET | VPIN / DOFI order flow signal (24h cache) |
+| `/api/signals/sentiment` | GET | Sentiment Composite Score (6h cache) |
 
 ---
 
 ## 4. Core Lib Modules (The Brain)
 
-### Sacred Files (affect real money)
+### 🔴 Sacred Files (changes affect real money)
 
-| Module | File | What It Does |
-|--------|------|-------------|
-| **Stop Manager** | `src/lib/stop-manager.ts` | R-based stop ladder (INITIAL → BREAKEVEN → LOCK_08R → LOCK_1R_TRAIL). **Stops NEVER decrease** — monotonic enforcement is the #1 rule. Trailing stop = max(Entry + 1R, Close − 2×ATR) |
-| **Position Sizer** | `src/lib/position-sizer.ts` | `Shares = floor(Equity × Risk% / (Entry − Stop) × FX)`. Uses `floorShares()` only (never round/ceil). FX conversion before sizing. Fractional shares for T212 (floor to 0.01) |
-| **Risk Gates** | `src/lib/risk-gates.ts` | 6 hard gates, all must pass: (1) Total Open Risk ≤ max, (2) Max Positions, (3) Sleeve Limit, (4) Cluster Concentration ≤ 25%, (5) Sector Concentration ≤ 30%, (6) Position Size Cap. HEDGE excluded from risk counting. Also: `canPyramid()`, `calculatePyramidAddSize()` |
-| **Regime Detector** | `src/lib/regime-detector.ts` | Multi-signal scoring: SPY vs MA200, ADX, DI, VIX, A/D breadth. ±2% CHOP band forces SIDEWAYS. 3-day stability requirement. Vol regime detector (LOW/NORMAL/HIGH based on SPY ATR%). Dual benchmark (SPY + VWRL) |
-| **Dual Score** | `src/lib/dual-score.ts` | BQS (0–100, higher = better): trend, direction, volatility, proximity, tailwind, RS, volume, weekly ADX, BIS, Hurst. FWS (0–95 achievable): volume risk, extension/chasing, marginal trend, vol shock, regime instability. NCS = BQS − 0.8×FWS + 10 minus penalties. Auto-Yes/No/Conditional |
-| **Scan Engine** | `src/lib/scan-engine.ts` | 7-stage pipeline: Universe → Technical Filters → Status Classification → Ranking → Risk Gates → Anti-Chase Guard → Position Sizing |
+| File | Purpose |
+|------|---------|
+| `stop-manager.ts` | Monotonic stop protection ladder. Stops NEVER decrease. |
+| `position-sizer.ts` | Share calculation using `floorShares()`. FX conversion before sizing. |
+| `risk-gates.ts` | 6 hard risk gates. All must pass. No bypass, no override. |
+| `regime-detector.ts` | Market regime detection. 3 consecutive days for BULLISH confirmation. |
+| `dual-score.ts` | BQS/FWS/NCS scoring system. Weights are intentional. |
+| `scan-engine.ts` | 7-stage pipeline. Stages cannot be added/removed/reordered casually. |
 
-### Important Support Files
+### Important Support Modules
 
-| Module | File | Purpose |
-|--------|------|---------|
-| **Market Data** | `src/lib/market-data.ts` | Yahoo Finance wrapper: prices, quotes, historical bars, MA, ADX, ATR, efficiency, volume ratio, relative strength. 30-min quote cache. Batch pre-caching. Retry with exponential backoff (3 attempts via `fetch-retry.ts`). `forceRefresh` parameter bypasses cache on Tuesdays. Data freshness tracking (`getDataFreshness()` → LIVE/CACHE/STALE_CACHE) |
-| **Fetch Retry** | `src/lib/fetch-retry.ts` | `withRetry()` utility: 3 attempts, 1s→2s→4s backoff. Retries on 429, 5xx, network errors. No retry on 4xx client errors |
-| **Data Provider** | `src/lib/data-provider.ts` | Resilient fallback chain: Yahoo → AV → EODHD → DB cache. Tracks health (LIVE/STALE/CACHED) |
-| **Scan Guards** | `src/lib/scan-guards.ts` | Anti-chase guard (gap > 0.75 ATR or > 3% above trigger → block). Pullback continuation entry detection. Optional slippage buffer tightens ATR threshold based on historical trade slippage |
-| **Slippage Tracker** | `src/lib/slippage-tracker.ts` | Queries last 20 trades for avg/median/max slippage. When avg > 0.15%, tightens anti-chase ATR threshold (floor 0.5 ATR) |
-| **Correlation Matrix** | `src/lib/correlation-matrix.ts` | Cross-position correlation computation, stored in DB |
-| **Correlation Scalar** | `src/lib/correlation-scalar.ts` | Reduces position size when high correlation with existing holdings |
-| **Risk Fields** | `src/lib/risk-fields.ts` | Computes GBP-normalised initial risk, open risk for portfolio aggregation |
-| **Equity Snapshot** | `src/lib/equity-snapshot.ts` | Rate-limited (6h) equity recording. Weekly change % calculation |
-| **Snapshot Sync** | `src/lib/snapshot-sync.ts` | Full Yahoo data refresh for entire ticker universe → SnapshotTicker DB rows |
-| **Laggard Detector** | `src/lib/laggard-detector.ts` | Identifies underperforming positions (dead money) |
-| **Breakout Failure** | `src/lib/breakout-failure-detector.ts` | Detects failed breakouts on open positions |
-| **Breakout Integrity** | `src/lib/breakout-integrity.ts` | BIS (Breakout Integrity Score 0–15) from latest candle pattern |
-| **Breakout Probability** | `src/lib/breakout-probability.ts` | BPS: probabilistic breakout success scoring |
-| **Hurst Exponent** | `src/lib/hurst.ts` | Hurst > 0.5 = trending (favourable), < 0.5 = mean-reverting |
-| **Earnings Calendar** | `src/lib/earnings-calendar.ts` | Caches next earnings dates, evaluates risk proximity |
-| **EV Tracker** | `src/lib/ev-tracker.ts` | Expected Value tracking per trade outcome |
-| **EV Modifier** | `src/lib/ev-modifier.ts` | Adjusts EV estimates by regime, ATR bucket, cluster, sleeve |
-| **Position Sync** | `src/lib/position-sync.ts` | Detects T212 closures and auto-closes DB positions |
-| **Trading 212** | `src/lib/trading212.ts` | T212 REST API client: market buy, stop-loss, position fetch, order polling |
-| **Trading 212 Dual** | `src/lib/trading212-dual.ts` | Dual-account (ISA + Invest) wrapper |
-| **T212 History Importer** | `src/lib/t212-history-importer.ts` | CSV import of T212 trade history |
-| **Telegram** | `src/lib/telegram.ts` | Nightly summary formatter and sender |
-| **Alert Service** | `src/lib/alert-service.ts` | In-app notification creation |
-| **Health Check** | `src/lib/health-check.ts` | 16-point system audit |
-| **Ready-to-Buy** | `src/lib/ready-to-buy.ts` | Identifies actionable candidates from last scan |
-| **Sector ETF Cache** | `src/lib/sector-etf-cache.ts` | Sector momentum caching |
-| **Signal Translations** | `src/lib/signal-translations.ts` | Human-readable signal explanations |
-| **Glossary** | `src/lib/glossary.ts` | Trading term definitions |
-| **Nightly Guard** | `src/lib/nightly-guard.ts` | Prevents manual scans while nightly is running |
-| **Scan Cache** | `src/lib/scan-cache.ts` | In-memory scan result caching with TTL |
-| **Scan Progress** | `src/lib/scan-progress.ts` | In-memory progress store using `globalThis` for SSE/polling. Updated by scan engine, polled by `/api/scan/progress` |
-| **Secrets** | `src/lib/secrets.ts` | Centralised credential loading: ENV vars → DB fallback. `getT212Credentials()`, `getTelegramCredentials()`, `isT212FromEnv()` |
+| File | Purpose |
+|------|---------|
+| `market-data.ts` | Yahoo Finance wrapper. 30-min cache. Adjusted closes. |
+| `fetch-retry.ts` | Retry with exponential backoff (3 attempts: 1s→2s→4s). |
+| `data-provider.ts` | Abstraction layer over Yahoo/EODHD data sources. |
+| `scan-guards.ts` | Pre/post-scan validation guards. |
+| `scan-cache.ts` | In-memory scan result caching. |
+| `scan-progress.ts` | Real-time scan progress tracking (SSE). |
+| `scan-pass-flags.ts` | Pass/fail flag computation per filter stage. |
+| `scan-db-reconstruction.ts` | Reconstruct scan results from DB snapshots. |
+| `correlation-matrix.ts` | Pairwise correlation computation. |
+| `correlation-scalar.ts` | Position size reduction for correlated assets. |
+| `slippage-tracker.ts` | Track execution slippage for timing analysis. |
+| `equity-snapshot.ts` | Rate-limited equity snapshots (once per 6 hours). |
+| `snapshot-sync.ts` | Full universe snapshot sync with Yahoo Finance. |
+| `trading212.ts` | Trading 212 API wrapper. |
+| `trading212-dual.ts` | Dual-account (Invest + ISA) T212 operations. |
+| `position-sync.ts` | Auto-detect T212 position closures. |
+| `telegram.ts` | Telegram Bot API wrapper. |
+| `telegram-commands.ts` | Inbound Telegram command handlers. |
+| `alert-service.ts` | 3-layer alert delivery: DB → Telegram → Email (placeholder). |
+| `health-check.ts` | 16-point system health audit. |
+| `laggard-detector.ts` | Detect underperforming positions for review. |
+| `breakout-failure-detector.ts` | Detect failed breakouts within 5 days. |
+| `breakout-integrity.ts` | Breakout Integrity Score (BIS) — candle quality. |
+| `breakout-probability.ts` | Breakout probability estimation. |
+| `hurst.ts` | Hurst exponent calculation for trend persistence. |
+| `capital-ranker.ts` | Rank candidates for capital allocation. |
+| `allocation-score.ts` | EV-weighted allocation scoring. |
+| `ready-to-buy.ts` | Pre-trade readiness checks and buy button state. |
+| `execution-mode.ts` | Determine execution mode from phase + regime. |
+| `execution-audit.ts` | Measure plan-vs-execution gaps. |
+| `execution-drag.ts` | Quantify slippage drag on returns. |
+| `ev-modifier.ts` | Expected value modifiers per regime/sleeve/ATR. |
+| `ev-tracker.ts` | Track completed trade outcomes for EV analysis. |
+| `candidate-outcome.ts` | Candidate outcome dataset builder. |
+| `candidate-outcome-enrichment.ts` | Forward price return enrichment. |
+| `filter-attribution.ts` | Per-filter pass/fail recording for analytics. |
+| `filter-scorecard.ts` | Filter effectiveness scoring. |
+| `score-tracker.ts` | BQS/FWS/NCS breakdown recording. |
+| `score-validation.ts` | Score band prediction validation. |
+| `score-backfill.ts` | Backfill score breakdowns from snapshots. |
+| `signal-translations.ts` | Human-friendly signal descriptions for UI. |
+| `why-explanations.ts` | "Why" card text for risk gate results. |
+| `glossary.ts` | Trading term glossary definitions. |
+| `pre-trade-checklist-items.ts` | Pre-trade checklist item definitions. |
+| `onboarding-steps.ts` | Onboarding flow step definitions. |
+| `rule-overlap.ts` | Detection of overlapping/redundant rules. |
+| `benchmark-scan.ts` | Benchmark CORE_LITE vs FULL scan mode. |
+| `opportunistic-filter.ts` | Mid-week opportunistic trade filtering. |
+| `nightly-guard.ts` | Guards against concurrent nightly runs. |
+| `earnings-calendar.ts` | Earnings date lookup and caching. |
+| `sector-etf-cache.ts` | Sector ETF mapping cache. |
+| `t212-history-importer.ts` | Import historical T212 trades. |
+| `db-backup.ts` | SQLite database backup utility. |
+| `market-data-eodhd.ts` | EODHD alternative data source wrapper. |
+| `api-client.ts` | Client-side API request helper with error handling. |
+| `api-response.ts` | Standardised API response builder. |
+| `request-validation.ts` | Request validation utilities. |
+| `prisma.ts` | Prisma client singleton. |
+| `auth.ts` | NextAuth configuration. |
+| `secrets.ts` | Secret management. |
+| `env.ts` | Environment variable loading. |
+| `default-user.ts` | Default user bootstrap. |
+| `utils.ts` | General utilities (formatting, FX, dates). |
+| `feature-flags.ts` | Feature flag management. |
+| `cache-keys.ts` | Cache key constants. |
+| `cache-init.ts` | In-memory cache initialisation. |
+| `cache-persistence.ts` | Cache persistence to disk. |
+| `cache-warmup.ts` | Cache pre-warming on startup. |
+| `module-buckets.ts` | Module result grouping. |
+| `modules-cache.ts` | Module result caching (10-min TTL). |
+| `risk-fields.ts` | Risk field computations. |
 
 ---
 
-## 5. The 21 Modules (Trading Intelligence)
+## 5. Trading Modules
 
-Located in `src/lib/modules/`:
+| # | Module | File | Purpose |
+|---|--------|------|---------|
+| 2 | Early Bird | `early-bird.ts` | Alternative entry logic, on-demand scan from Plan page |
+| 3 | Laggard Purge | `laggard-purge.ts` | Flags underperformers (TRIM_LAGGARD / DEAD_MONEY) |
+| 5/14 | Climax Detector | `climax-detector.ts` | Detects blow-off tops and climax patterns |
+| 7 | Heatmap Swap | `heatmap-swap.ts` | Suggests swapping weak positions for stronger candidates |
+| 8 | Heat Check | `heat-check.ts` | Cluster position concentration logic |
+| 9 | Fast-Follower | `fast-follower.ts` | Re-entry logic for missed breakouts |
+| 10 | Breadth Safety | `breadth-safety.ts` | Caps max positions at 4 based on market breadth |
+| 11 | Whipsaw Guard | `whipsaw-guard.ts` | Blocks re-entry after stop-out (cooldown period) |
+| 11b | Adaptive ATR Buffer | `adaptive-atr-buffer.ts` | Entry buffer scaling based on ATR conditions |
+| 12 | Super-Cluster | `super-cluster.ts` | 50% aggregate cluster cap enforcement |
+| 13 | Momentum Expansion | `momentum-expansion.ts` | Expands risk limit in strong momentum environments |
+| 15 | Trade Logger | `trade-logger.ts` | Logging only — no risk impact |
+| 16 | Turnover Monitor | `turnover-monitor.ts` | Monitoring only — tracks portfolio turnover |
+| 17 | Weekly Action Card | `weekly-action-card.ts` | Reporting only — weekly summary card |
+| 18 | Data Validator | `data-validator.ts` | Indirect risk — data quality gate |
+| 20 | Re-Entry Logic | `re-entry-logic.ts` | Re-entry conditions after previous exit |
 
-| # | Module | File | Risk? | What It Does |
-|---|--------|------|-------|-------------|
-| 2 | Early Bird | `early-bird.ts` | Yes | Alternative entry scan during BULLISH regime — finds pre-breakout candidates |
-| 3 | Laggard Purge | `laggard-purge.ts` | No | Flags dead-money positions for potential exit |
-| 5/14 | Climax Detector | `climax-detector.ts` | No | Detects exhaustion/climax signals (volume + extension) |
-| 7 | Heatmap Swap | `heatmap-swap.ts` | Yes | Suggests swapping weak positions for stronger candidates |
-| 8 | Heat Check | `heat-check.ts` | Yes | Cluster position logic — prevents overconcentration |
-| 9 | Fast Follower | `fast-follower.ts` | Yes | Re-entry after breakout pullback (currently disabled) |
-| 10 | Breadth Safety | `breadth-safety.ts` | Yes | Market breadth check — caps max positions at 4 when breadth deteriorates |
-| 11 | Whipsaw Guard | `whipsaw-guard.ts` | Yes | Blocks re-entry after recent stop-out |
-| 11b | Adaptive ATR Buffer | `adaptive-atr-buffer.ts` | Yes | Dynamically scales entry buffer based on volatility |
-| 12 | Super Cluster | `super-cluster.ts` | Yes | 50% aggregate cap on super-cluster exposure |
-| 13 | Momentum Expansion | `momentum-expansion.ts` | Yes | Expands risk limit in strong trends (currently disabled) |
-| 15 | Trade Logger | `trade-logger.ts` | No | Automated trade log entry creation |
-| 16 | Turnover Monitor | `turnover-monitor.ts` | No | Tracks portfolio turnover rate |
-| 17 | Weekly Action Card | `weekly-action-card.ts` | No | Generates weekly action summary |
-| 18 | Data Validator | `data-validator.ts` | Indirect | Yahoo data quality gate |
-| 20 | Re-Entry Logic | `re-entry-logic.ts` | Yes | Conditions for re-entering after exit |
-
-> Module numbers are intentionally non-sequential — gaps (1, 4, 6, 19, 21) are reserved or not yet built.
+> Module numbers are intentionally non-sequential. Gaps (1, 4, 6, 19, 21) are reserved or not yet built.
 
 ---
 
 ## 6. Nightly Automation (9-Step Pipeline)
 
-Runs via `nightly-task.bat` → `src/cron/nightly.ts` through Windows Task Scheduler. Also triggerable via `/api/nightly` POST.
+Runs via `nightly-task.bat` / Windows Task Scheduler. Runs unattended.
 
-| Step | What Happens |
-|------|-------------|
-| **0** | Pre-cache historical data for all ~268 tickers (warm Yahoo cache) |
-| **1** | 16-point health check (DB, data freshness, positions, stops, etc.) |
-| **2** | Fetch live prices for open positions (Yahoo → AV → EODHD → DB fallback chain) + FX normalisation to GBP |
-| **3** | Generate R-based stop recommendations. Auto-apply trailing ATR stops for LOCK_1R_TRAIL positions only |
-| **4** | Detect laggards (underperformers) + breakout failures |
-| **5** | Run risk modules: climax, swap suggestions, whipsaw blocks, breadth safety, correlation matrix, sector momentum, earnings cache |
-| **6** | Record equity snapshot (rate-limited 6h). Check pyramid opportunities for positions ≥ 2R. Check equity milestones (£1K/£2K/£5K) for advisory notifications |
-| **7** | Full universe snapshot sync (Yahoo → DB) + query top 15 READY candidates + trigger-met detection |
-| **8** | Send Telegram summary with: positions, stops, ready candidates, triggers met, laggards, climax, swaps, breadth, pyramids, gap risks, breakout failures, data source health |
-| **9** | Write heartbeat to DB (SUCCESS, PARTIAL, or FAILED with step-level results) |
+| # | Step | Key Functions | Details |
+|---|------|---------------|---------|
+| 0 | Pre-cache | `preCacheHistoricalData()` | Pre-fetch daily bars for all active tickers |
+| 0b | DB Backup | `backupDatabase()` | SQLite backup to `/prisma/backups/` |
+| 1 | Health Check | `runHealthCheck()` | 16-point audit → RED/YELLOW/GREEN |
+| 2 | Live Prices + Sync | `fetchWithFallback()` | **2b**: T212 position auto-closure detection |
+| 3 | Stop Management | `generateStopRecommendations()` | **3a**: R-based stops. **3b**: Trailing ATR. **3c**: Gap risk (HIGH_RISK). **3d**: Stop-hit alerts. **3e**: Breakout failure detection |
+| 4 | Laggard Detection | `detectLaggards()` | TRIM_LAGGARD / DEAD_MONEY flags |
+| 5 | Risk Modules | Climax, Swap, Whipsaw, Breadth, Correlation | Module-level risk signals |
+| 6 | Equity Snapshot | `recordEquitySnapshot()` | Rate-limited (6h). **6b**: Equity milestones (£1K/£2K/£5K) |
+| 7 | Snapshot Sync | `syncSnapshot()` | **7a**: Full universe + score breakdowns. **7b**: Conformal recalibration. **7c** (Sun): Meta-model training + earnings cache. **7d** (Sun): Lead-lag graph. **7e** (Sun): GNN training |
+| 8 | Telegram Alert | `sendNightlySummary()` | Consolidated report with all alerts |
+| 9 | Heartbeat | `prisma.heartbeat.create()` | SUCCESS / PARTIAL / FAILED |
 
-**Failure handling:** Each step wraps in try/catch with `startStep()`/`finalizeSteps()` timing. Failures set `hadFailure = true` and continue. Heartbeat status is ternary: **SUCCESS** (all OK), **PARTIAL** (some steps failed, pipeline completed), **FAILED** (critical). Step-level results with timing stored in heartbeat details JSON.
+**Step-level tracking:** Each step is timed via `startStep()`/`finalizeSteps()`. Failed steps are recorded individually.
 
-There is also a `midday-sync.ts` (`midday-sync-task.bat`) for mid-day position sync against T212. It writes a `SKIPPED` heartbeat when exiting early (weekend or zero open positions) so the dashboard can distinguish a skip from a silent crash.
+**Heartbeat status is ternary:**
+- **SUCCESS** — all steps completed without error
+- **PARTIAL** — some steps failed but pipeline completed
+- **FAILED** — critical failure
 
-A `watchdog.ts` (`watchdog-task.bat`) runs daily at 10:00 AM to check for missed nightly/midday heartbeats and sends a Telegram alert if the nightly hasn't run in 26+ hours.
+**If any step fails: log the error, continue remaining steps. Never let one step abort the whole run.**
+
+### Midday Sync (`midday-sync.ts`)
+Runs every 2–3 hours during market hours. Single step: detect T212 position auto-closures (stop-outs, manual closes). Skips weekends. Non-blocking.
+
+### Watchdog (`watchdog.ts`)
+Runs daily at 10:00 AM UK time. Checks if nightly heartbeat is >26 hours stale. Sends Telegram alert if nightly missed.
 
 ---
 
-## 7. Database Schema (SQLite + Prisma)
+## 7. Database Schema (40 Tables)
 
-**21 core tables + 16 prediction engine tables** defined in `prisma/schema.prisma`:
+### Core Tables (24)
 
 | Table | Purpose |
 |-------|---------|
-| `User` | Settings, equity, risk profile, T212 credentials (Invest + ISA), Telegram, Gap Guard config, prediction toggles |
-| `Stock` | Ticker universe (~268 rows): ticker, name, sleeve, sector, cluster, region, currency, T212 mapping, ISA eligibility |
-| `Position` | Open/closed positions: entry/exit prices, stops, R-multiples, protection level, T212 ticker, account type (ISA/Invest) |
-| `StopHistory` | Audit trail of every stop change (old → new, level, reason) |
+| `User` | User account, equity, risk profile, broker keys, prediction settings |
+| `Stock` | Ticker universe (~268 stocks) with sleeve/sector/cluster/region |
+| `Position` | Open/closed positions with entry, stop, shares, protection level |
+| `StopHistory` | Audit trail of every stop-loss change |
 | `Scan` | Scan run metadata (date, regime) |
-| `ScanResult` | Per-ticker scan results (technicals, status, rank, gates, sizing) |
-| `ExecutionPlan` | Weekly execution plan storage |
-| `HealthCheck` | Health check results (overall, individual check details) |
-| `Heartbeat` | Nightly run status (RUNNING / SUCCESS / FAILED) |
-| `TradeLog` | Full trade journal: entry/exit, R-multiples, slippage, lessons, tags, T212 import fields |
-| `TradeTag` | Tag taxonomy for trade categorisation |
-| `EquitySnapshot` | Periodic equity recordings with open-risk % |
-| `RegimeHistory` | Historical regime readings (SPY + VWRL benchmark data) |
-| `Snapshot` / `SnapshotTicker` | Full universe technical data snapshots |
-| `EvRecord` | Expected value tracking per closed trade |
-| `CorrelationFlag` | Pairwise ticker correlation data |
-| `ExecutionLog` | T212 API call audit trail |
-| `Notification` | In-app alerts with type, priority, read status |
-| `EarningsCache` | Cached next-earnings dates per ticker |
-| `TradeJournal` | Per-position entry/close/learned notes |
-| **Prediction Engine Tables** | |
-| `ConformalCalibration` | Quantile thresholds for NCS confidence intervals |
-| `FailureModeScore` | Per-ticker failure mode score audit trail |
-| `SignalWeightRecord` | Dynamic signal weight snapshots by regime |
-| `StressTestResult` | Adversarial Monte Carlo simulation cache (4h TTL) |
-| `SignalAuditResult` | Mutual information analysis results |
-| `ThreatLibraryEntry` | Historical crisis environment fingerprints |
-| `LeadLagEdge` | Cross-asset directional influence relationships |
-| `LeadLagSignal` | Weekly lead-lag computation snapshots |
-| `GNNModelWeights` | GraphSAGE trained weight snapshots |
-| `GNNInferenceLog` | Per-ticker GNN inference audit trail |
-| `SignalBeliefState` | Beta(α,β) distributions per signal per regime |
-| `TradeEpisode` | Trade episodes for Meta-RL MAML training |
+| `ScanResult` | Per-ticker scan results (filters, ranking, sizing) |
+| `ExecutionPlan` | Weekly execution plans |
+| `HealthCheck` | 16-point health audit results |
+| `Heartbeat` | Nightly pipeline completion status |
+| `TradeLog` | Trade journal with execution quality metrics |
+| `TradeTag` | Tag taxonomy for trade classification |
+| `EquitySnapshot` | Point-in-time equity readings (rate-limited) |
+| `RegimeHistory` | Historical regime readings with dual-benchmark data |
+| `Snapshot` | Universe snapshot metadata |
+| `SnapshotTicker` | Per-ticker snapshot data (60+ technical/fundamental fields) |
+| `EvRecord` | Expected value records per regime/sleeve/ATR |
+| `CorrelationFlag` | Pairwise correlation flags between tickers |
+| `ExecutionLog` | T212 execution request/response audit trail |
+| `Notification` | In-app notification centre records |
+| `EarningsCache` | Cached earnings dates per ticker |
+| `TradeJournal` | Entry/close notes per position |
+| `FilterAttribution` | Per-filter pass/fail for every scan candidate |
+| `ScoreBreakdown` | Full BQS/FWS/NCS component decomposition |
+| `CandidateOutcome` | Full pipeline journey + forward price returns |
+
+### Prediction Engine Tables (16) *(added)*
+
+| Table | Purpose |
+|-------|---------|
+| `ConformalCalibration` | Calibrated quantile thresholds for NCS intervals |
+| `FailureModeScore` | Per-ticker failure mode score breakdowns (FM1–FM5) |
+| `SignalWeightRecord` | Dynamic signal weight snapshots per regime |
+| `StressTestResult` | Cached adversarial Monte Carlo results (4h TTL) |
+| `SignalAuditResult` | MI matrix + per-signal recommendations (JSON) |
+| `ThreatLibraryEntry` | Dangerous market environment fingerprints |
+| `LeadLagEdge` | Statistically significant lead-lag relationships |
+| `LeadLagSignal` | Weekly lead-lag computation audit records |
+| `GNNModelWeights` | Trained GraphSAGE weight snapshots (~200 params) |
+| `GNNInferenceLog` | Per-ticker GNN score audit trail |
+| `SignalBeliefState` | Beta(α,β) distributions — 7 signals × 4 regimes = 28 rows |
+| `TradeEpisode` | (observation, action, reward) sequences for MAML |
 | `PolicyVersion` | Trained MAML policy weight snapshots |
-| `VPINHistory` | VPIN/DOFI order flow cache |
-| `SentimentHistory` | Sentiment Composite Score cache |
-| `InvarianceAuditResult` | IRM causal invariance analysis results |
+| `VPINHistory` | VPIN/DOFI computations per ticker per day |
+| `SentimentHistory` | Sentiment Composite Scores with source breakdown |
+| `InvarianceAuditResult` | IRM analysis: per-signal invariance + β values |
 
 ---
 
 ## 8. Data Flow Summary
 
 ```
-Yahoo Finance (free, no API key)
-    ↓
-market-data.ts (fetch, cache 30 min, compute ATR/ADX/MA/RS)
-    ↓
-┌─── scan-engine.ts (7-stage pipeline) ──→ /scan page
-│       Stage 1: Universe (DB stocks)
-│       Stage 2: Technical Filters (MA200, ADX≥20, +DI>−DI, ATR cap)
-│       Stage 3: Status (READY ≤2%, WATCH ≤3%, FAR >3%)
-│       Stage 4: Ranking (composite score)
-│       Stage 5: Risk Gates (6 hard gates)
-│       Stage 6: Anti-Chase Guard
-│       Stage 7: Position Sizing (floorShares)
-│
-├─── dual-score.ts (BQS/FWS/NCS scoring) ──→ /scan/scores, /scan/cross-ref
-│
-├─── snapshot-sync.ts (full universe refresh) ──→ SnapshotTicker DB
-│
-├─── risk-gates.ts ──→ Position creation gate enforcement
-│
-├─── stop-manager.ts ──→ Monotonic stop ladder ──→ T212 stop-loss API
-│
-├─── position-sizer.ts ──→ Share calculation ──→ T212 buy order
-│
-└─── regime-detector.ts ──→ Dashboard regime badge, entry blocking
-
-Trading 212 API
-    ↕
-trading212.ts / trading212-dual.ts
-    ↓
-positions/execute (buy → poll → stop → DB) ←→ BuyConfirmationModal
-positions/sync (detect closures) ←→ PositionSyncButton
-
-Telegram Bot API
-    ←
-telegram.ts (nightly summary, alerts)
+                    Yahoo Finance (free, no API key)
+                              │
+                              ▼
+                    ┌──────────────────┐
+                    │  market-data.ts  │ ← 30-min TTL cache
+                    │  fetch-retry.ts  │ ← 3× retry, exponential backoff
+                    └────────┬─────────┘
+                             │
+                ┌────────────┼────────────────┐
+                ▼            ▼                ▼
+         ┌────────────┐ ┌──────────┐  ┌──────────────┐
+         │scan-engine │ │snapshot- │  │ regime-      │
+         │  (7-stage) │ │ sync.ts  │  │ detector.ts  │
+         └─────┬──────┘ └────┬─────┘  └──────┬───────┘
+               │             │               │
+               ▼             ▼               ▼
+        ┌────────────┐ ┌──────────┐  ┌──────────────┐
+        │dual-score  │ │ Snapshot │  │ RegimeHistory│
+        │ BQS/FWS/NCS│ │ Ticker   │  │    (DB)      │
+        └─────┬──────┘ │  (DB)    │  └──────────────┘
+              │        └────┬─────┘
+              ▼             │
+       ┌─────────────┐     │     ┌───────────────────────┐
+       │ risk-gates  │     ├────►│  Prediction Engine     │
+       │ (6 gates)   │     │     │  ├─ conformal intervals│
+       └──────┬──────┘     │     │  ├─ failure modes      │
+              │            │     │  ├─ signal weights      │
+              ▼            │     │  ├─ stress test         │
+       ┌─────────────┐    │     │  ├─ danger/immune       │
+       │ stop-manager│    │     │  ├─ lead-lag + GNN      │
+       │ (monotonic) │    │     │  ├─ Bayesian beliefs    │
+       └──────┬──────┘    │     │  ├─ Kelly sizing        │
+              │           │     │  ├─ Meta-RL advisor     │
+              ▼           │     │  ├─ VPIN/sentiment      │
+       ┌─────────────┐   │     │  └─ TradePulse (F9)     │
+       │position-sizer│  │     └───────────────────────┘
+       │ floorShares()│  │
+       └──────┬──────┘   │
+              │          │
+              ▼          ▼
+       ┌────────────────────┐
+       │   Trading 212 API  │ ← buy / stop / sync
+       │   (Invest + ISA)   │
+       └────────┬───────────┘
+                │
+                ▼
+       ┌────────────────────┐
+       │   Telegram Alerts  │ ← nightly + stop-hit + trade trigger
+       └────────────────────┘
 ```
 
 ---
 
-## 9. Weekly Workflow (enforced by code)
+## 9. Weekly Workflow
 
-| Day | Phase | What The System Does |
-|-----|-------|---------------------|
-| **Sunday** | PLANNING | Full scan available. Dual scores refresh. Draft trade plan. Review Early Bird candidates |
-| **Monday** | OBSERVATION | **New entries blocked.** Anti-chase guard active. Observe market, no trading. Nightly runs normally |
-| **Tuesday** | EXECUTION | Pre-trade checklist enforced. Execute planned trades via Buy Confirmation Modal → T212. Risk gates checked at execution time |
-| **Wednesday–Friday** | MAINTENANCE | Stop updates, risk monitoring, laggard detection, equity snapshots. No new scan urgency |
+| Day | Phase | Rules |
+|-----|-------|-------|
+| Sunday | PLANNING | Full scan, draft trade plan, prediction engine recalibration |
+| Monday | OBSERVATION | No trading. Anti-chase guard active. Study candidates. |
+| Tuesday | EXECUTION | Pre-trade checklist, execute planned trades via T212 |
+| Wed–Fri | MAINTENANCE | Stop updates, risk monitoring, laggard detection |
+
+The Monday trading block and Tuesday execution window are **behavioural guardrails**, not bugs.
 
 ---
 
 ## 10. Risk Profiles
 
-| Profile | Risk/Trade | Max Positions | Max Open Risk | Status |
-|---------|-----------|--------------|---------------|--------|
-| CONSERVATIVE | 0.75% | 8 | 7.0% | Available |
-| BALANCED | 0.95% | 5 | 5.5% | Available |
-| **SMALL_ACCOUNT** | **2.00%** | **4** | **10.0%** | **ACTIVE** |
-| AGGRESSIVE | 3.00% | 3 | 12.0% | Available |
+| Profile | Risk/Trade | Max Positions | Max Open Risk |
+|---------|-----------|--------------|--------------|
+| CONSERVATIVE | 0.75% | 8 | 7.0% |
+| BALANCED | 0.95% | 5 | 5.5% |
+| **SMALL_ACCOUNT** | **2.00%** | **4** | **10.0%** |
+| AGGRESSIVE | 3.00% | 3 | 12.0% |
+
+**Active profile is SMALL_ACCOUNT.** Max 4 positions.
 
 ---
 
@@ -496,161 +529,396 @@ telegram.ts (nightly summary, alerts)
 
 ## 12. The 6 Risk Gates (all must pass)
 
-1. **Total Open Risk** — Current + new risk ≤ profile max (HEDGE excluded)
-2. **Max Positions** — Open count < profile limit (HEDGE excluded)
-3. **Sleeve Limit** — Sleeve value ≤ cap (CORE 80%, HIGH_RISK 40%)
-4. **Cluster Concentration** — ≤ 20% of portfolio (SMALL_ACCOUNT: 25%)
-5. **Sector Concentration** — ≤ 25% of portfolio (SMALL_ACCOUNT: 30%)
-6. **Position Size Cap** — Per-position value ≤ profile-aware % of portfolio
+1. **Total Open Risk** — Current + new risk ≤ 10.0% (SMALL_ACCOUNT). HEDGE excluded.
+2. **Max Positions** — Open count < 4 (SMALL_ACCOUNT). HEDGE excluded.
+3. **Sleeve Limit** — CORE ≤ 80%, HIGH_RISK ≤ 40%, ETF ≤ 80%, HEDGE uncapped.
+4. **Cluster Concentration** — ≤ 25% of portfolio (SMALL_ACCOUNT override; normally 20%).
+5. **Sector Concentration** — ≤ 30% of portfolio (SMALL_ACCOUNT override; normally 25%).
+6. **Position Size Cap** — CORE ≤ 20%, HIGH_RISK ≤ 12%, ETF ≤ 16%, HEDGE ≤ 20%.
+
+HEDGE positions excluded from open risk and position counting.
 
 ---
 
 ## 13. Dual Score System
 
-### BQS (Breakout Quality Score, 0–100) — Higher is better
+**BQS (Breakout Quality Score, 0–100)** — Higher is better:
 
-Components: trend strength, direction dominance, volatility health, proximity to breakout, market tailwind, relative strength, volume, weekly ADX, BIS (Breakout Integrity Score), Hurst exponent.
+| Component | Range | Key Thresholds |
+|-----------|-------|----------------|
+| Trend Strength | 0–25 | ADX ≥ 35 = max |
+| Direction Dominance | 0–10 | +DI − −DI > 25 |
+| Volatility Health | 0–15 | ATR% 1–4% optimal |
+| Proximity to Breakout | 0–15 | < 3% to high |
+| Dual Regime Score | −10 to +20 | BEARISH = −10, BULL+BULL = +20 |
+| Relative Strength | 0–15 | RS% > 15 |
+| Volume Bonus | 0–5 | vol_ratio > 1.2 |
+| Weekly ADX Bonus | −5 to +10 | wADX ≥ 30 = +10 |
+| BIS (Breakout Integrity) | 0–15 | Candle OHLCV quality |
+| Hurst Bonus | 0–8 | H ≥ 0.7 = +8 |
 
-### FWS (Fatal Weakness Score, 0–95 achievable, clamped to 100) — Higher is WORSE
+**FWS (Fatal Weakness Score, 0–95 achievable)** — Higher is WORSE:
 
-Components: volume risk (max 30) + extension/chasing risk (max 25) + marginal trend (max 10) + vol shock (max 20) + regime instability (max 10) = 95 max achievable in practice.
+| Component | Max | Trigger |
+|-----------|-----|---------|
+| Volume Risk | 30 | vol_ratio < 0.6 |
+| Extension Risk | 25 | Chasing near highs |
+| Marginal Trend | 10 | ADX < 20 |
+| Vol Shock | 10 | ATR spiking or collapsing |
+| Regime Instability | 10 | SPY/VWRL disagreement |
 
-### NCS (Net Composite Score)
+**NCS (Net Composite Score):**
+```
+BaseNCS = clamp(BQS − 0.8 × FWS + 10, 0, 100)
+NCS = clamp(BaseNCS − min(Penalties, 40), 0, 100)
+```
 
-`NCS = BQS − (0.8 × FWS) + 10`, minus earnings/cluster penalties.
-
-### Auto-actions
-
+**Auto-actions:**
 - NCS ≥ 70 AND FWS ≤ 30 → **Auto-Yes**
 - FWS > 65 → **Auto-No**
 - Otherwise → **Conditional**
 
 ---
 
-## 14. State Management
+## 14. Prediction Engine (17 Phases)
 
-- **Server:** Prisma ORM → SQLite (`dev.db`). All truth lives in the database
-- **Client:** Zustand store (`src/store/useStore.ts`) for ephemeral UI state (equity, risk profile, selected items)
-- **Caching:** In-memory caches with TTL: scan results, module results (5 min), Yahoo quotes (30 min), scan progress. Scan and module caches are **auto-invalidated** when positions are created or closed
-- **API:** RESTful JSON, Zod-validated requests, standardised error responses via `apiError()`
-- **Auth:** Lightweight NextAuth JWT middleware (`src/middleware.ts`) protects all `/api/*` routes except `/api/auth/*` and `/api/health`
-- **Error Boundaries:** React `error.tsx` files at root and key route segments (dashboard, scan, positions, distribution, risk) catch runtime exceptions and show recovery UI
+### Phase 1: Conformal Prediction Intervals
+Wraps NCS in statistically calibrated confidence bands using split-conformal prediction. Bootstrap calibration from historical score-vs-outcome data, transitioning to live trades as outcomes accumulate. Nightly recalibration when sample size grows by ≥20 or >30 days since last run. Narrow band (width < 8) = high conviction; wide band (> 15) = high uncertainty → forces Conditional.
+**Files:** `conformal-calibrator.ts`, `conformal-store.ts`, `bootstrap-calibration.ts`
+
+### Phase 2: Failure Mode Scoring (5 FMs)
+Scores each candidate on 5 independent failure modes: FM1 Breakout Failure Risk, FM2 Liquidity Trap Risk, FM3 Correlation Cascade Risk, FM4 Regime Flip Risk, FM5 Event Gap Risk. Each scored 0–100 with PASS/WARN/BLOCK thresholds. Any BLOCK → Auto-Yes suppressed. Advisory layer — does not modify NCS directly.
+**Files:** `failure-mode-scorer.ts`, `failure-mode-thresholds.ts`
+
+### Phase 3: Dynamic Signal Weighting
+Meta-model that adjusts BQS signal weights based on market regime + VIX context. 7 weights (ADX, DI, Hurst, BIS, DRS, wADX, BPS) shift from static defaults to learned values. Rule-based initially, transitions to trained model as signal belief data accumulates. Retrained Sunday nights.
+**Files:** `signal-weight-meta-model.ts`, `meta-model-trainer.ts`
+
+### Phase 4: Adversarial Stress Test
+Monte Carlo simulation with adversarial bias: generates N price paths with regime-aware drift and vol, measures fraction that hit the stop-loss within horizon. PASS/FAIL gate at configurable threshold. Runs on-demand (not automatic) with 4-hour result caching.
+**Files:** `adversarial-simulator.ts`
+
+### Phase 5: Signal Pruning / MI Analysis
+Pairwise mutual information between all BQS signal layers, plus conditional MI per signal against outcomes. Identifies KEEP / INVESTIGATE / REDUNDANT signals. Results stored as JSON in DB. Manual trigger with CSV export on the `/signal-audit` page.
+**Files:** `mutual-information.ts`
+
+### Phase 6: Immune System / Danger Memory
+Threat library of dangerous market environment fingerprints (VIX, breadth, regime, momentum). Current environment encoded and cosine-matched against library. dangerScore > 75 → 24h cooldown alert. Pre-populated with historical crises; expanded with real losses.
+**Files:** `threat-library.ts`, `danger-matcher.ts`, `environment-encoder.ts`
+
+### Phase 7: Lead-Lag Cross-Asset Graph
+Computes lagged cross-correlations between top tickers to find statistically significant lead-lag relationships (p-value filtered). Edges stored in DB. Used by downstream GNN and NCS adjustment layer. Recomputed weekly (Sunday).
+**Files:** `lead-lag-analyser.ts`, `lead-lag-graph.ts`
+
+### F1: GNN on Lead-Lag Graph
+2-layer GraphSAGE operating on the lead-lag graph. Message passing aggregates upstream movement signals. Produces per-ticker GNN score (0–1) and NCS adjustment. UNVALIDATED when weights >7 days stale. Trained Sunday after lead-lag refresh.
+**Files:** `gnn/graph-builder.ts`, `gnn/message-passing.ts`, `gnn/gnn-trainer.ts`, `gnn/gnn-inference.ts`
+
+### F2: Online Bayesian NCS
+Beta(α,β) distributions per (signal, regime) pair — 7 signals × 4 regimes = 28 belief states. Updated after each trade closes based on whether the signal's prediction was correct. Produces posterior belief-informed weight adjustments that feed back into signal weighting.
+**Files:** `bayesian/belief-state.ts`, `bayesian/bayesian-updater.ts`, `bayesian/belief-informed-weights.ts`
+
+### F3: Fractional Kelly Sizing
+Kelly criterion calculator with fractional scaling. Estimates edge from NCS, applies uncertainty penalty from conformal width + GNN confidence + belief divergence. Output is advisory only (default OFF) — shows Kelly-suggested risk % vs profile fixed risk %. Controlled by settings toggle.
+**Files:** `kelly/kelly-calculator.ts`, `kelly/portfolio-kelly.ts`, `kelly/uncertainty-penalty.ts`
+
+### F4: Meta-RL Trade Management
+MAML-based policy network for trade lifecycle recommendations: HOLD, TIGHTEN_STOP, TRAIL_STOP_ATR, PYRAMID_ADD, PARTIAL_EXIT, FULL_EXIT. Encodes trade state (R-multiple, days held, ATR distance, regime) as observation vector. Shadow mode (default ON) = advisory only. Trained on trade episodes stored in DB.
+**Files:** `meta-rl/policy-network.ts`, `meta-rl/maml-trainer.ts`, `meta-rl/trade-state-encoder.ts`, `meta-rl/episode-memory.ts`
+
+### F5: VPIN / Order Flow
+Volume-synchronised Probability of Informed Trading. Bulk-classifies volume bars as buy/sell using tick rule approximation. Produces VPIN (0–1) and DOFI (−1 to +1). INFORMED_BUYING → green signal; INFORMED_SELLING → NCS −15 adjustment. 24h cache per ticker.
+**Files:** `signals/vpin-calculator.ts`, `signals/order-flow-imbalance.ts`
+
+### F6: Sentiment Fusion
+Composite sentiment from multiple sources: news RSS keyword scoring (via lexicon), analyst revision proxy (52-week range position), short interest proxy (volume spike detection). Fused into SCS (0–100). Divergence detection: falling sentiment + rising price = false breakout risk. 6h cache.
+**Files:** `signals/sentiment/news-sentiment.ts`, `signals/sentiment/analyst-revision.ts`, `signals/sentiment/sentiment-fusion.ts`, `signals/sentiment/sentiment-lexicon.ts`
+
+### F7: TDA Regime Detector
+Topological Data Analysis approximation using Takens embedding of SPY returns. Estimates topological complexity as proxy for regime stability. STABLE / TRANSITIONING / TURBULENT states. When diverging from primary regime detector → transition warning badge with early-warning banner. Fires TDA_DIVERGENCE alert. Prop-based component — no dedicated API route.
+**Files:** Component: `TDARegimeBadge.tsx`
+
+### F8: Execution Quality Loop
+Analyses historical trade fills: planned entry vs actual fill, slippage by hour of day, slippage trend over time, timing recommendations by market cap tier. Feeds back into pre-trade screen with effective risk display.
+**Files:** `execution-audit.ts`, `execution-drag.ts`, `slippage-tracker.ts`
+
+### F9: TradePulse Dashboard
+Unified synthesis layer aggregating all prediction phases into a single per-ticker confidence dashboard. Computes composite score (0–100), grade (A+ through D), and decision (AUTO_YES/CONDITIONAL/AUTO_NO). Signal grid shows each contributing layer's score and weight.
+**Files:** `prediction/trade-pulse.ts`
+
+### Bonus: Causal Invariance (IRM)
+Invariant Risk Minimisation identifies which signals are causally stable across regime environments vs regime-dependent. Partitions data by environment, trains per-environment models, measures β-variance. High invariance = signal works everywhere; low = regime-dependent (less trustworthy).
+**Files:** `prediction/causal/irm-trainer.ts`, `prediction/causal/invariance-scores.ts`, `prediction/causal/invariant-ncs.ts`, `prediction/causal/environment-partitioner.ts`
 
 ---
 
-## 15. Shared Components
+## 15. State Management
 
-| Component | Purpose |
-|-----------|---------|
-| `Navbar` | Top navigation across all pages |
-| `RegimeBadge` | Colour-coded regime indicator (BULLISH=green, SIDEWAYS/NEUTRAL=amber, BEARISH=red) |
-| `StatusBadge` | READY/WATCH/FAR status pills |
-| `TrafficLight` | Green/yellow/red health indicator |
-| `LiveDataBootstrap` | Root-level component that hydrates client store on app load |
-| `GlossaryTerm` | Hover-tooltip for trading terms |
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Server/DB** | Prisma + SQLite | Source of truth for all persistent data |
+| **Client State** | Zustand (`useStore`) | Ephemeral UI state: health, regime, phase, positions, modules |
+| **Persistence** | localStorage | Only `riskProfile` + `equity` survive page reload |
+| **Caching** | In-memory TTL | Scan/modules 5min, quotes 30min, modules 10min |
+| **API** | REST + Zod | All external data validated with Zod schemas |
+| **Auth** | NextAuth JWT | Opt-in via `ENFORCE_API_AUTH=true` (default: off for local use) |
+
+### Zustand Store Sections
+- **System:** healthStatus, marketRegime, weeklyPhase, heartbeat status
+- **User:** riskProfile, equity, userId
+- **Market Data:** marketIndices, fearGreed
+- **Portfolio:** positions, totalValue, totalGain, cash
+- **UI:** isLoading, error, healthOverlayDismissed
+- **Cache:** modulesData (10-min TTL), nightlyRunning state
 
 ---
 
-## 16. Testing
+## 16. Shared Components
 
-- **Framework:** Vitest
-- **Test files:** Co-located with source (`.test.ts` alongside `.ts`)
-- **Coverage areas:** Position sizer, risk gates, stop manager, dual score, scan guards, regime detector, correlation scalar, breakout probability, risk fields, hurst exponent, EV modifier, laggard detector, breakout failure detector, breakout integrity, adaptive ATR buffer, scan pass flags, scan DB reconstruction, trading 212 dual, market data trigger window, fetch retry (8 tests)
-- **Validation:** Zod schemas on every API endpoint and external data source
+| Component | File | Purpose |
+|-----------|------|---------|
+| Navbar | `shared/Navbar.tsx` | Top navigation with dropdowns for Analysis/Performance/System groups, danger badge |
+| RegimeBadge | `shared/RegimeBadge.tsx` | Colour-coded market regime pill |
+| StatusBadge | `shared/StatusBadge.tsx` | Generic status pill (READY/WATCH/FAR/etc.) |
+| TrafficLight | `shared/TrafficLight.tsx` | 3-state health indicator |
+| LiveDataBootstrap | `shared/LiveDataBootstrap.tsx` | Init-time data fetch (regime, heartbeat, indices) |
+| GlossaryTerm | `GlossaryTerm.tsx` | Hoverable glossary term with tooltip definition |
+| WhyCardPopover | `shared/WhyCardPopover.tsx` | "Why?" explanation popover for risk gate results |
+| JournalDrawer | `shared/JournalDrawer.tsx` | Slide-out panel for position journal notes |
+| StopUpdateQueue | `shared/StopUpdateQueue.tsx` | Batch stop update queue manager |
+
+### Prediction Engine Components *(added)*
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| NCSIntervalBadge | `NCSIntervalBadge.tsx` | NCS score + conformal interval + lead-lag adjustment |
+| FailureModePanel | `FailureModePanel.tsx` | Collapsible FM1–FM5 results with PASS/WARN/BLOCK |
+| SignalWeightPanel | `SignalWeightPanel.tsx` | Collapsible bar chart of dynamic signal weights |
+| StressTestGauge | `StressTestGauge.tsx` | Semi-circular gauge with on-demand stress test button |
+| DangerLevelIndicator | `DangerLevelIndicator.tsx` | 5-segment danger indicator with threat drawer |
+| LeadLagPanel | `LeadLagPanel.tsx` | Upstream asset lead-lag signals per ticker |
+| GraphScorePanel | `GraphScorePanel.tsx` | GNN score + top influencers display |
+| LiveNCSTracker | `LiveNCSTracker.tsx` | Intraday NCS drift tracking (trading hours only) |
+| VPINBadge | `VPINBadge.tsx` | Order flow direction badge (Informed Buying/Selling) |
+| SentimentPanel | `SentimentPanel.tsx` | Sentiment breakdown by source (news/analyst/short) |
+| TDARegimeBadge | `TDARegimeBadge.tsx` | TDA topology regime badge with transition warning |
+| BeliefStatePanel | `BeliefStatePanel.tsx` | Bayesian belief state display |
+| KellySizePanel | `KellySizePanel.tsx` | Kelly-suggested sizing vs profile fixed risk |
+| TradeAdvisorPanel | `TradeAdvisorPanel.tsx` | RL trade recommendation with approve/override |
+| TradePulseGrade | `TradePulseGrade.tsx` | Grade pill (A+ through D) + score dial |
 
 ---
 
-## 17. Deployment & Scripts
+## 17. Testing
+
+**Framework:** Vitest. Co-located `.test.ts` files alongside source.
+
+**36 test files covering:**
+
+| Area | Test Files |
+|------|-----------|
+| Core Sacred | `stop-manager.test.ts`, `position-sizer.test.ts`, `risk-gates.test.ts`, `dual-score.test.ts`, `regime-detector.test.ts` |
+| Scan Pipeline | `scan-guards.test.ts`, `scan-pass-flags.test.ts`, `scan-engine-core-lite.test.ts`, `scan-db-reconstruction.test.ts` |
+| Risk & Sizing | `risk-fields.test.ts`, `correlation-scalar.test.ts`, `ready-to-buy.test.ts` |
+| Indicators | `hurst.test.ts`, `breakout-integrity.test.ts`, `breakout-probability.test.ts`, `breakout-failure-detector.test.ts` |
+| Analytics | `filter-attribution.test.ts`, `filter-scorecard.test.ts`, `score-tracker.test.ts`, `score-validation.test.ts`, `allocation-score.test.ts`, `execution-audit.test.ts`, `execution-drag.test.ts` |
+| Data & Research | `candidate-outcome.test.ts`, `candidate-outcome-enrichment.test.ts`, `research-loop.test.ts`, `audit-harness.test.ts`, `ev-modifier.test.ts` |
+| Infrastructure | `fetch-retry.test.ts`, `market-data.trigger-window.test.ts`, `trading212-dual.test.ts`, `laggard-detector.test.ts` |
+| Modules | `adaptive-atr-buffer.test.ts` |
+| API Routes | `api/risk/route.test.ts`, `api/positions/route.test.ts`, `api/positions/execute/route.test.ts` |
+
+All external data responses validated with Zod schemas.
+
+---
+
+## 18. Deployment & Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `start.bat` | `prisma migrate deploy` → `next dev` |
-| `install.bat` | `npm install` → `prisma generate` → `prisma migrate deploy` → seed |
-| `update.bat` | Pull latest → install → migrate |
-| `nightly-task.bat` | Windows Task Scheduler → `npx tsx src/cron/nightly.ts --run-now` |
-| `midday-sync-task.bat` | Scheduled midday data refresh |
-| `register-nightly-task.bat` | Create Windows scheduled task for nightly automation |
-| `register-midday-sync.bat` | Create Windows scheduled task for midday sync |
-| `watchdog-task.bat` | Check for missed nightly/midday heartbeats, send Telegram alert |
-| `register-watchdog-task.bat` | Create Windows scheduled task for watchdog (10:00 AM daily) |
-| `seed-tickers.bat` | Seed stock universe into DB |
-| `run-dashboard.bat` | Start dashboard only |
-| `package-for-distribution.bat` | Package for deployment to another machine |
+| `start.bat` | Launch dashboard (runs `prisma migrate deploy` then `npm run dev`) |
+| `install.bat` | First-time setup (npm install, prisma generate, migrate, seed) |
+| `update.bat` | Pull changes, install deps, migrate, restart |
+| `nightly-task.bat` | Nightly automation entry point (Task Scheduler) |
+| `nightly.bat` | Manual nightly trigger |
+| `midday-sync-task.bat` | Midday position sync (Task Scheduler) |
+| `watchdog-task.bat` | Heartbeat watchdog (Task Scheduler, 10 AM) |
+| `register-nightly-task.bat` | Register nightly Task Scheduler job |
+| `register-midday-sync.bat` | Register midday sync Task Scheduler job |
+| `register-watchdog-task.bat` | Register watchdog Task Scheduler job |
+| `research-refresh-task.bat` | Research data refresh (candidate outcomes) |
+| `seed-tickers.bat` | Seed ticker universe from CSV |
+| `restore-backup.bat` | Restore SQLite backup |
+| `fix-account-types.bat` | Fix ISA/Invest account type metadata |
+| `run-dashboard.bat` | Quick dashboard launcher |
+| `package-for-distribution.bat` | Package project for distribution |
 
-No cloud deployment — fully self-hosted, single-user, local Windows machine.
+Self-hosted on Windows. Single-user. No cloud deployment.
 
 ---
 
-## 18. File Structure Overview
+## 19. File Structure Overview
 
 ```
 prisma/
-  schema.prisma          — 21-table SQLite schema
-  seed.ts                — Stock universe seeder
-  migrations/            — Prisma migration history
+  schema.prisma              40 tables
+  seed.ts                    Ticker universe seeding
+  migrations/                Migration history
+  backups/                   SQLite backups
+  cache/                     Persistent cache files
 
 src/
-  middleware.ts          — API auth middleware (NextAuth JWT, protects /api/*)
+  middleware.ts              API auth (NextAuth JWT, opt-in)
+  
   app/
-    page.tsx             — Root redirect → /dashboard
-    layout.tsx           — Root layout (dark theme, Inter font, LiveDataBootstrap)
-    error.tsx             — Root error boundary (recovery UI)
-    dashboard/page.tsx   — Command centre
-    dashboard/error.tsx  — Dashboard error boundary
-    scan/page.tsx        — 7-stage scan
-    scan/error.tsx       — Scan error boundary
-    scan/scores/page.tsx — Dual score dashboard
-    scan/cross-ref/      — Cross-reference view
-    plan/page.tsx        — Weekly execution board
-    portfolio/positions/ — Position management
-    portfolio/positions/error.tsx — Positions error boundary
-    portfolio/distribution/ — Charts & allocation
-    portfolio/distribution/error.tsx — Distribution error boundary
-    risk/page.tsx        — Risk budget & stops
-    risk/error.tsx       — Risk error boundary
-    settings/page.tsx    — Configuration
-    trade-log/page.tsx   — Trade journal
-    journal/page.tsx     — Position journal
-    performance/page.tsx — Performance dashboard
-    backtest/page.tsx    — Signal replay
-    notifications/page.tsx — Alert centre
-    login/page.tsx       — Login
-    register/page.tsx    — Registration
-    api/                 — 32 route groups, 59 route files (see Section 3)
-
+    layout.tsx               Root layout + LiveDataBootstrap
+    page.tsx                 Redirect → /dashboard
+    error.tsx                Global error boundary
+    globals.css              Tailwind + custom tokens
+    
+    dashboard/               Command centre
+    scan/                    7-stage scanner + scores + cross-ref tabs
+    plan/                    Weekly execution board + TodayPanel
+    portfolio/
+      positions/             Position management + distribution + performance tabs
+      distribution/          Redirect → positions?tab=distribution
+    risk/                    Risk dashboard
+    settings/                Configuration + prediction toggles
+    trade-log/               Trade journal
+    journal/                 Position notes
+    performance/             Redirect → positions?tab=performance
+    backtest/                Signal replay
+    notifications/           Notification centre
+    login/                   Authentication
+    register/                Registration
+    signal-audit/            MI heatmap *(added)*
+    causal-audit/            IRM invariance *(added)*
+    execution-audit/         Execution quality audit
+    execution-quality/       Slippage analysis *(added)*
+    filter-scorecard/        Filter effectiveness
+    score-validation/        Score prediction validation
+    trade-pulse/             TradePulse landing *(added)*
+      [ticker]/              Per-ticker analysis *(added)*
+    
+    api/
+      scan/                  7-stage pipeline + snapshots + scores
+      positions/             CRUD + T212 execution + sync
+      stops/                 R-based + trailing + T212 orders
+      risk/                  Budget + correlation
+      plan/                  Execution plans + allocation
+      portfolio/             Distribution summary
+      market-data/           Yahoo Finance multi-action
+      modules/               Trading modules + early bird
+      nightly/               9-step automation
+      health-check/          16-point audit
+      heartbeat/             Pipeline status
+      dashboard/             Today directive
+      notifications/         CRUD + read tracking
+      settings/              User config + Telegram test
+      trade-log/             Query + summary
+      journal/               Position notes CRUD
+      trading212/            Sync + connect
+      t212-import/           Historical import
+      telegram/              Webhook + commands
+      stocks/                Ticker CRUD
+      auth/                  NextAuth + register
+      backtest/              Signal replay + compare
+      backup/                DB backup/restore
+      analytics/             8 analytics endpoints
+      prediction/            14 prediction endpoints *(added)*
+      signals/               VPIN + sentiment *(added)*
+      performance/           Equity curve summary
+      publications/          Events timeline
+      onboarding/            Setup wizard
+      feature-flags/         Feature toggles
+      cache-status/          Cache management
+      data-source/           Data freshness
+      db-status/             Migration check
+      ev-modifiers/          EV adjustments
+      ev-stats/              EV statistics
+  
   lib/
-    stop-manager.ts      — Monotonic stop ladder (SACRED)
-    position-sizer.ts    — Share calculation (SACRED)
-    risk-gates.ts        — 6 hard gates (SACRED)
-    regime-detector.ts   — Market regime (SACRED)
-    dual-score.ts        — BQS/FWS/NCS (SACRED)
-    scan-engine.ts       — 7-stage pipeline (SACRED)
-    market-data.ts       — Yahoo Finance wrapper
-    ...                  — 40+ support modules (see Section 4)
-    modules/             — 18 trading intelligence modules (see Section 5)
-
+    # Sacred (6)
+    stop-manager.ts          Monotonic stop ladder
+    position-sizer.ts        Share calculation
+    risk-gates.ts            6 hard gates
+    regime-detector.ts       Market regime
+    dual-score.ts            BQS/FWS/NCS
+    scan-engine.ts           7-stage pipeline
+    
+    # Support (~65 files)
+    market-data.ts           Yahoo wrapper
+    fetch-retry.ts           Retry logic
+    # ... (see Section 4 for complete list)
+    
+    modules/                 16 trading modules + index
+    
+    prediction/              Prediction engine core
+      conformal-calibrator.ts
+      conformal-store.ts
+      bootstrap-calibration.ts
+      failure-mode-scorer.ts
+      failure-mode-thresholds.ts
+      signal-weight-meta-model.ts
+      meta-model-trainer.ts
+      adversarial-simulator.ts
+      mutual-information.ts
+      threat-library.ts
+      danger-matcher.ts
+      environment-encoder.ts
+      lead-lag-analyser.ts
+      lead-lag-graph.ts
+      trade-pulse.ts
+      bayesian/              3 files (beliefs, updater, weights)
+      gnn/                   4 files (builder, passing, trainer, inference)
+      kelly/                 3 files (calculator, portfolio, penalty)
+      meta-rl/               4 files (policy, MAML, encoder, memory)
+      causal/                4 files (IRM, invariance, partitioner, invariant-NCS)
+    
+    signals/
+      vpin-calculator.ts     VPIN computation
+      order-flow-imbalance.ts  DOFI signal
+      sentiment/             4 files (news, analyst, fusion, lexicon)
+  
   components/
-    shared/              — Navbar, RegimeBadge, StatusBadge, etc.
-    dashboard/           — 15 dashboard widgets
-    scan/                — Scan components + scores/ sub-folder
-    plan/                — 9 plan widgets
-    portfolio/           — 11 portfolio components
-    risk/                — 6 risk components
-    settings/            — T212ImportPanel
-    trade-log/           — RecordPastTradeModal
+    shared/                  9 shared components
+    dashboard/               Dashboard-specific panels
+    plan/                    TodayPanel + plan widgets
+    portfolio/               PositionsTable, BuyConfirmationModal, etc.
+    scan/                    Scanner components
+    risk/                    Risk dashboard components
+    settings/                Settings panels
+    trade-log/               Trade log components
+    # Prediction components (15 files at root level)
+    NCSIntervalBadge.tsx     ... through TradePulseGrade.tsx
 
   cron/
-    nightly.ts           — Standalone nightly automation (9 steps, step-level tracking)
-    midday-sync.ts       — Mid-day data refresh
-    watchdog.ts          — Missed heartbeat detection + Telegram alert
+    nightly.ts               9-step nightly pipeline
+    midday-sync.ts           Position sync
+    watchdog.ts              Heartbeat monitor
 
-  store/
-    useStore.ts          — Zustand client state
-
-  types/
-    index.ts             — All TypeScript types, risk profiles, constants, EQUITY_REVIEW_THRESHOLDS, DISABLED_MODULES
+  hooks/                     Custom React hooks
+  store/                     Zustand store
+  types/                     TypeScript types + constants
+  test/                      Test utilities
 ```
+
+### Summary Counts
+
+| Category | Count |
+|----------|-------|
+| Content Pages | 20 |
+| Redirect Pages | 5 |
+| API Route Groups | 35 |
+| API Endpoints | ~89 |
+| DB Tables | 40 (24 core + 16 prediction) |
+| Sacred Files | 6 |
+| Lib Modules | ~75 |
+| Trading Modules | 16 |
+| Prediction Engine Files | ~30 |
+| Components | ~60 |
+| Test Files | 36 |
+| Scripts (.bat) | 16 |
 
 ---
 
-*Last updated: 4 March 2026*
+*Last updated: 7 March 2026*

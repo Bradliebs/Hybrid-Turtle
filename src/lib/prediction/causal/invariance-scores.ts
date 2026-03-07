@@ -57,6 +57,30 @@ export async function getLatestInvarianceScores(): Promise<{
 }
 
 /**
+ * Load all historical invariance audit runs (for trend chart).
+ * Returns up to 20 most recent runs.
+ */
+export async function getHistoricalInvarianceRuns(): Promise<Array<{
+  computedAt: Date;
+  signalScores: Record<string, number>;
+}>> {
+  const runs = await prisma.invarianceAuditResult.findMany({
+    orderBy: { computedAt: 'desc' },
+    take: 20,
+    select: { computedAt: true, scoresJson: true },
+  });
+
+  return runs.reverse().map(r => {
+    const signals = JSON.parse(r.scoresJson) as SignalInvariance[];
+    const scores: Record<string, number> = {};
+    for (const s of signals) {
+      scores[s.signal] = s.invarianceScore;
+    }
+    return { computedAt: r.computedAt, signalScores: scores };
+  });
+}
+
+/**
  * Get invariance score for a specific signal (from latest audit).
  * Returns 0.5 (unknown) if no audit exists.
  */
