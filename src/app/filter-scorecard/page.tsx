@@ -480,7 +480,7 @@ export default function FilterScorecardPage() {
                 <div><strong>Stop Hit:</strong> % of candidates whose intraday low touched the stop price within 20 bars</div>
                 <div><strong>Pass Rate:</strong> % of total candidates that passed this filter/rule</div>
                 <div><strong>Enriched:</strong> Count of candidates with forward price data available (≥ 8 days old)</div>
-                <div><strong>"—":</strong> Insufficient data — need more scans + enrichment runs</div>
+                <div><strong>&ldquo;&mdash;&rdquo;:</strong> Insufficient data — need more scans + enrichment runs</div>
               </div>
             </section>
           </>
