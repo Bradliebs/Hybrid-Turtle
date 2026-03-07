@@ -251,6 +251,9 @@ export default function CausalAuditPage() {
   const [historicalRuns, setHistoricalRuns] = useState<HistoricalRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [dataSourceInfo, setDataSourceInfo] = useState<{
+    source?: string; tradesUsed?: number; scanMatchRate?: number; message?: string;
+  } | null>(null);
 
   useEffect(() => {
     const fetchLatest = async () => {
@@ -271,7 +274,15 @@ export default function CausalAuditPage() {
   const runAudit = async () => {
     setRunning(true);
     try {
-      const data = await apiRequest<{ ok: boolean; data: { signals: SignalInvariance[]; totalSamples?: number; computedAt?: string } }>(
+      const data = await apiRequest<{ ok: boolean; data: {
+        signals: SignalInvariance[];
+        totalSamples?: number;
+        computedAt?: string;
+        dataSource?: string;
+        tradesUsed?: number;
+        scanMatchRate?: number;
+        dataSourceMessage?: string;
+      } }>(
         '/api/prediction/invariance', { method: 'POST' }
       );
       if (data.data) {
@@ -279,6 +290,12 @@ export default function CausalAuditPage() {
           signals: data.data.signals,
           computedAt: data.data.computedAt ?? new Date().toISOString(),
           sampleSize: data.data.totalSamples ?? 0,
+        });
+        setDataSourceInfo({
+          source: data.data.dataSource,
+          tradesUsed: data.data.tradesUsed,
+          scanMatchRate: data.data.scanMatchRate,
+          message: data.data.dataSourceMessage,
         });
       }
     } catch (e) { console.error('IRM failed:', e); }
@@ -378,6 +395,31 @@ export default function CausalAuditPage() {
                 <div className="text-[10px] text-muted-foreground/60 mt-0.5">invariance &lt; 30%</div>
               </div>
             </div>
+
+            {/* Data Source Info */}
+            {dataSourceInfo && (
+              <div className={cn(
+                'flex items-start gap-2 p-3 rounded-lg border text-sm',
+                dataSourceInfo.source === 'TRADELOG'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+              )}>
+                <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  {dataSourceInfo.source === 'TRADELOG' ? (
+                    <span>
+                      Analysis based on <strong>{dataSourceInfo.tradesUsed}</strong> real trades
+                      ({dataSourceInfo.scanMatchRate}% matched to scan results).
+                    </span>
+                  ) : (
+                    <span>
+                      Using NCS scores as outcome proxy — complete more trades for real outcome analysis.
+                      {dataSourceInfo.message && <span className="block text-xs mt-1 opacity-70">{dataSourceInfo.message}</span>}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Invariance Score Bar Chart */}
             <div className="card-surface p-4">

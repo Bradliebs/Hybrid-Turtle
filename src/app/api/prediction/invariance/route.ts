@@ -57,6 +57,12 @@ export async function POST() {
         environmentsUsed: result.environmentsUsed,
         totalSamples: result.totalSamples,
         computedAt: result.computedAt,
+        dataSource: result.dataSource.source,
+        tradesUsed: result.dataSource.tradesUsed,
+        scanMatchRate: result.dataSource.scanMatchRate,
+        regimeCounts: result.dataSource.regimeCounts,
+        lowSampleRegimes: result.dataSource.lowSampleRegimes,
+        dataSourceMessage: result.dataSource.message,
       },
     });
   } catch (error) {

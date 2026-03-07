@@ -17,6 +17,7 @@ import {
   SIGNAL_COUNT,
   type EnvironmentData,
   type IRMEnvironment,
+  type DataSourceMeta,
 } from './environment-partitioner';
 
 // ── Types ────────────────────────────────────────────────────
@@ -38,6 +39,7 @@ export interface IRMTrainingResult {
   environmentsUsed: IRMEnvironment[];
   totalSamples: number;
   computedAt: Date;
+  dataSource: DataSourceMeta;
 }
 
 // ── Linear Regression (OLS) ──────────────────────────────────
@@ -74,7 +76,7 @@ function fitLinearRegression(
  * then compute variance of β across environments.
  */
 export async function runIRMTraining(): Promise<IRMTrainingResult> {
-  const envData = await loadEnvironmentData(10);
+  const { envData, meta } = await loadEnvironmentData(10);
 
   if (envData.length < 2) {
     // Need at least 2 environments to measure invariance
@@ -89,6 +91,7 @@ export async function runIRMTraining(): Promise<IRMTrainingResult> {
       environmentsUsed: envData.map(e => e.environment),
       totalSamples: envData.reduce((s, e) => s + e.samples.length, 0),
       computedAt: new Date(),
+      dataSource: meta,
     };
   }
 
@@ -147,5 +150,6 @@ export async function runIRMTraining(): Promise<IRMTrainingResult> {
     environmentsUsed: envData.map(e => e.environment),
     totalSamples,
     computedAt: new Date(),
+    dataSource: meta,
   };
 }
