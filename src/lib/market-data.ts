@@ -1240,7 +1240,9 @@ export async function preCacheHistoricalData(): Promise<{
 // sequential chart calls.  Uses globalThis flag to fire once even across
 // dev-mode hot-reloads.  Flag is set immediately (before setTimeout) to
 // prevent multiple queued callbacks if the module reloads within 3s.
+// Skipped during `next build` (NEXT_PHASE = phase-production-build).
 (function autoPreCache() {
+  if (process.env.NEXT_PHASE === 'phase-production-build') return;
   if (globalForCache.__hybridTurtlePreCacheStarted) return;
   globalForCache.__hybridTurtlePreCacheStarted = true;
   // Small delay to let the server finish booting before hammering Yahoo
