@@ -332,6 +332,11 @@ export default function CausalAuditPage() {
   const mixedCount = result?.signals.filter(s => s.classification === 'MIXED').length ?? 0;
   const spuriousCount = result?.signals.filter(s => s.classification === 'SPURIOUS').length ?? 0;
 
+  // Detect default/insufficient data: all signals at exactly 0.5
+  const allDefaulted = result
+    ? result.signals.length > 0 && result.signals.every(s => s.invarianceScore === 0.5)
+    : false;
+
   // Sort by invariance ascending (most problematic first) for the recommendation table
   const sortedSignals = result ? [...result.signals].sort((a, b) => a.invarianceScore - b.invarianceScore) : [];
 
@@ -395,6 +400,21 @@ export default function CausalAuditPage() {
                 <div className="text-[10px] text-muted-foreground/60 mt-0.5">invariance &lt; 30%</div>
               </div>
             </div>
+
+            {/* Insufficient data warning */}
+            {allDefaulted && (
+              <div className="flex items-start gap-2 p-3 rounded-lg border text-sm bg-amber-500/10 border-amber-500/30 text-amber-300">
+                <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <div>
+                  <strong>Insufficient regime diversity.</strong> All scores are defaulting to 50% because the system
+                  has only seen one market regime (BULLISH). IRM needs data from at least 2 different regimes
+                  (e.g. BULLISH + SIDEWAYS/BEARISH) to measure which signals are truly causal vs. regime-dependent.
+                  <span className="block text-xs mt-1 opacity-70">
+                    As the system runs through different market conditions, this analysis will become meaningful.
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Data Source Info */}
             {dataSourceInfo && (
