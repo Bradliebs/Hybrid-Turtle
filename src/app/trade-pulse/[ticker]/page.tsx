@@ -112,8 +112,28 @@ export default function TradePulsePage() {
 
     const fetchPulse = async () => {
       try {
-        // For now, fetch with baseline params — in production, these come from the scan
-        const qs = new URLSearchParams({ ticker, ncs: '65', fws: '25', danger: '20' });
+        // Fetch cross-ref data to get this ticker's real NCS/FWS/danger scores
+        const crossRef = await apiRequest<{ tickers?: Array<{
+          ticker: string;
+          dualNCS: number | null;
+          dualFWS: number | null;
+          dualBQS: number | null;
+        }> }>('/api/scan/cross-ref');
+
+        const match = crossRef.tickers?.find(t => t.ticker === ticker);
+        const ncs = match?.dualNCS ?? 50;
+        const fws = match?.dualFWS ?? 30;
+
+        // Fetch global danger level
+        let danger = 0;
+        try {
+          const dangerRes = await apiRequest<{ ok: boolean; data: { dangerScore: number } }>('/api/prediction/danger-level');
+          if (dangerRes.data) danger = dangerRes.data.dangerScore;
+        } catch {
+          // Non-critical — default to 0
+        }
+
+        const qs = new URLSearchParams({ ticker, ncs: String(ncs), fws: String(fws), danger: String(danger) });
         const result = await apiRequest<{ ok: boolean; data: TradePulseData }>(
           `/api/prediction/trade-pulse?${qs}`
         );
