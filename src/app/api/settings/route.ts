@@ -25,6 +25,9 @@ const settingsPutSchema = z.object({
   showIntradayNCS: z.boolean().optional(),
   applyKellyMultiplier: z.boolean().optional(),
   rlShadowMode: z.boolean().optional(),
+  // Telegram credentials
+  telegramBotToken: z.string().trim().min(1).nullable().optional(),
+  telegramChatId: z.string().trim().min(1).nullable().optional(),
 });
 
 // GET /api/settings?userId=default-user
@@ -49,6 +52,9 @@ export async function GET(request: NextRequest) {
         gapGuardWeekendPct: true,
         gapGuardDailyATR: true,
         gapGuardDailyPct: true,
+        // Telegram credentials
+        telegramBotToken: true,
+        telegramChatId: true,
         // Prediction engine toggles
         showIntradayNCS: true,
         applyKellyMultiplier: true,
@@ -83,6 +89,11 @@ export async function GET(request: NextRequest) {
     // Mask T212 keys — show last 4 chars only
     const maskKey = (k: string | null) => k ? '****' + k.slice(-4) : null;
 
+    // Mask Telegram bot token — show last 4 chars only
+    const maskedTelegramToken = user.telegramBotToken
+      ? '****' + user.telegramBotToken.slice(-4)
+      : null;
+
     // Settings change rarely — cache for 5 minutes, serve stale for 1 min while revalidating
     return NextResponse.json({
       ...user,
@@ -93,6 +104,10 @@ export async function GET(request: NextRequest) {
       t212ApiSecret: maskKey(user.t212ApiSecret),
       t212IsaApiKey: maskKey(user.t212IsaApiKey),
       t212IsaApiSecret: maskKey(user.t212IsaApiSecret),
+      // Telegram: mask token, expose chatId for display
+      telegramBotToken: maskedTelegramToken,
+      telegramBotTokenSet: !!user.telegramBotToken,
+      telegramChatId: user.telegramChatId,
       // Credential source flags — used by Settings UI to show read-only when from ENV
       t212FromEnv: isT212FromEnv(),
       telegramFromEnv: isTelegramFromEnv(),
@@ -127,6 +142,7 @@ export async function PUT(request: NextRequest) {
 
     const { riskProfile, equity, startingEquityOverride, marketDataProvider, eodhApiKey,
       gapGuardMode, gapGuardWeekendATR, gapGuardWeekendPct, gapGuardDailyATR, gapGuardDailyPct,
+      showIntradayNCS, applyKellyMultiplier, rlShadowMode,
     } = parsed.data;
     const id = parsed.data.userId || 'default-user';
 
@@ -145,6 +161,18 @@ export async function PUT(request: NextRequest) {
     if (gapGuardWeekendPct !== undefined) data.gapGuardWeekendPct = gapGuardWeekendPct;
     if (gapGuardDailyATR !== undefined) data.gapGuardDailyATR = gapGuardDailyATR;
     if (gapGuardDailyPct !== undefined) data.gapGuardDailyPct = gapGuardDailyPct;
+    // Prediction engine toggles
+    if (showIntradayNCS !== undefined) data.showIntradayNCS = showIntradayNCS;
+    if (applyKellyMultiplier !== undefined) data.applyKellyMultiplier = applyKellyMultiplier;
+    if (rlShadowMode !== undefined) data.rlShadowMode = rlShadowMode;
+    // Telegram credentials — only update if not masked
+    const { telegramBotToken, telegramChatId } = parsed.data;
+    if (telegramBotToken !== undefined && telegramBotToken !== null && !telegramBotToken.startsWith('****')) {
+      data.telegramBotToken = telegramBotToken || null;
+    }
+    if (telegramChatId !== undefined) {
+      data.telegramChatId = telegramChatId || null;
+    }
 
     const user = await prisma.user.update({
       where: { id },

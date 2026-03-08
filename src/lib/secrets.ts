@@ -122,7 +122,7 @@ export async function getT212Credentials(
 export async function getTelegramCredentials(
   userId = 'default-user'
 ): Promise<TelegramCredentials | null> {
-  // Check environment variables first (already the primary source)
+  // Check environment variables first (primary source)
   const envToken = process.env.TELEGRAM_BOT_TOKEN;
   const envChatId = process.env.TELEGRAM_CHAT_ID;
 
@@ -130,7 +130,19 @@ export async function getTelegramCredentials(
     return { botToken: envToken, chatId: envChatId };
   }
 
-  // No DB fallback for Telegram — it was always env-only
+  // Fallback to database — credentials saved via Settings page survive rebuilds
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { telegramBotToken: true, telegramChatId: true },
+    });
+    if (user?.telegramBotToken && user?.telegramChatId) {
+      return { botToken: user.telegramBotToken, chatId: user.telegramChatId };
+    }
+  } catch (error) {
+    console.error('[Secrets] Failed to load Telegram credentials:', (error as Error).message);
+  }
+
   return null;
 }
 

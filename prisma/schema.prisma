@@ -45,6 +45,9 @@ model User {
   startingEquityOverride Float?
   onboardingDismissed Boolean          @default(false)
   dismissedEquityThresholds String?    // JSON array of equity thresholds already acknowledged
+  // Telegram credentials (env vars take priority; DB is fallback for portability)
+  telegramBotToken    String?
+  telegramChatId      String?
   // Prediction engine settings
   showIntradayNCS     Boolean          @default(true)   // LiveNCSTracker visibility
   applyKellyMultiplier Boolean         @default(false)  // Kelly criterion sizing (default OFF)

@@ -3,16 +3,17 @@
 /**
  * DEPENDENCIES
  * Consumed by: /settings page
- * Consumes: /api/settings/telegram-test, TelegramWebhookPanel
+ * Consumes: /api/settings (GET + PUT), /api/settings/telegram-test, TelegramWebhookPanel
  * Risk-sensitive: NO
- * Last modified: 2026-03-03
+ * Last modified: 2026-03-08
  * Notes: Notifications section — Telegram config, test, and webhook setup.
+ *        Telegram credentials persist to DB (survive rebuilds). ENV vars take priority.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { apiRequest } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
-import { Bell, TestTube, Eye, EyeOff, Loader2, Check } from 'lucide-react';
+import { Bell, TestTube, Eye, EyeOff, Loader2, Check, Save } from 'lucide-react';
 import TelegramWebhookPanel from '@/components/settings/TelegramWebhookPanel';
 
 export default function NotificationsPanel() {
@@ -21,10 +22,76 @@ export default function NotificationsPanel() {
   const [showToken, setShowToken] = useState(false);
   const [telegramTesting, setTelegramTesting] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [fromEnv, setFromEnv] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  // Load saved Telegram credentials on mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await apiRequest<{
+          telegramBotToken: string | null;
+          telegramBotTokenSet: boolean;
+          telegramChatId: string | null;
+          telegramFromEnv: boolean;
+        }>('/api/settings?userId=default-user');
+        setFromEnv(data.telegramFromEnv);
+        // Show masked token if set, or empty if not
+        if (data.telegramBotToken) setTelegramToken(data.telegramBotToken);
+        if (data.telegramChatId) setTelegramChatId(data.telegramChatId);
+      } catch {
+        // Use defaults
+      } finally {
+        setLoaded(true);
+      }
+    };
+    load();
+  }, []);
+
+  const handleTokenChange = useCallback((value: string) => {
+    setTelegramToken(value);
+    setDirty(true);
+    setSaved(false);
+  }, []);
+
+  const handleChatIdChange = useCallback((value: string) => {
+    setTelegramChatId(value);
+    setDirty(true);
+    setSaved(false);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await apiRequest('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'default-user',
+          telegramBotToken: telegramToken || null,
+          telegramChatId: telegramChatId || null,
+        }),
+      });
+      setSaved(true);
+      setDirty(false);
+    } catch {
+      // Error handled by apiRequest
+    } finally {
+      setSaving(false);
+    }
+  }, [telegramToken, telegramChatId]);
 
   const handleTelegramTest = useCallback(async () => {
     if (!telegramToken || !telegramChatId) {
       setTelegramTestResult({ success: false, message: 'Enter both Bot Token and Chat ID' });
+      return;
+    }
+    // Don't send masked tokens to the test endpoint
+    if (telegramToken.startsWith('****')) {
+      setTelegramTestResult({ success: false, message: 'Enter the full bot token (not the masked version)' });
       return;
     }
     setTelegramTesting(true);
@@ -89,9 +156,10 @@ export default function NotificationsPanel() {
               <input
                 type={showToken ? 'text' : 'password'}
                 value={telegramToken}
-                onChange={(e) => setTelegramToken(e.target.value)}
-                placeholder="Enter bot token"
+                onChange={(e) => handleTokenChange(e.target.value)}
+                placeholder={fromEnv ? 'Set via environment variable' : 'Enter bot token'}
                 className="input-field w-full pr-10"
+                readOnly={fromEnv}
               />
               <button onClick={() => setShowToken(!showToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" title="Toggle visibility">
                 {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -100,11 +168,34 @@ export default function NotificationsPanel() {
           </div>
           <div>
             <label className="block text-sm text-muted-foreground mb-1">Chat ID</label>
-            <input type="text" value={telegramChatId} onChange={(e) => setTelegramChatId(e.target.value)} placeholder="Enter chat ID" className="input-field w-full" />
+            <input
+              type="text"
+              value={telegramChatId}
+              onChange={(e) => handleChatIdChange(e.target.value)}
+              placeholder={fromEnv ? 'Set via environment variable' : 'Enter chat ID'}
+              className="input-field w-full"
+              readOnly={fromEnv}
+            />
           </div>
         </div>
 
         <div className="flex items-center gap-3 mt-3">
+          {/* Save button — only when not from ENV */}
+          {!fromEnv && dirty && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="text-xs bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-md flex items-center gap-1 font-medium"
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : saved ? <Check className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+              {saving ? 'Saving...' : saved ? 'Saved' : 'Save'}
+            </button>
+          )}
+          {saved && !dirty && (
+            <span className="text-xs text-green-400 flex items-center gap-1">
+              <Check className="w-3 h-3" /> Saved
+            </span>
+          )}
           <button onClick={handleTelegramTest} disabled={telegramTesting} className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1 disabled:opacity-50">
             {telegramTesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <TestTube className="w-3 h-3" />}
             {telegramTesting ? 'Sending...' : 'Send Test Message'}
@@ -117,7 +208,9 @@ export default function NotificationsPanel() {
         </div>
 
         <p className="text-xs text-muted-foreground mt-3">
-          Telegram credentials are read from environment variables. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.
+          {fromEnv
+            ? 'Telegram credentials loaded from environment variables (read-only).'
+            : 'Credentials are saved to the database and survive rebuilds. Environment variables take priority if set.'}
         </p>
 
         {/* Webhook setup */}
