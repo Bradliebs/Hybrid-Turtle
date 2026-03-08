@@ -777,6 +777,9 @@ export async function POST(request: NextRequest) {
       momentumAlert,
       breakoutFailures: breakoutFailureAlerts,
       alerts,
+      summary: {
+        snapshotSync: { tickerCount: snapshotSync.rowCount, failed: snapshotSync.failed.length },
+      },
       timestamp: new Date(),
     });
   } catch (error) {
