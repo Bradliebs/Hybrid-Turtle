@@ -3,9 +3,9 @@
 /**
  * DEPENDENCIES
  * Consumed by: Next.js app router (/trade-pulse)
- * Consumes: /api/scan (GET — for recent candidates)
+ * Consumes: /api/scan/cross-ref (GET — for candidates with dual scores)
  * Risk-sensitive: NO — read-only index page
- * Last modified: 2026-03-07
+ * Last modified: 2026-03-08
  * Notes: Landing page for /trade-pulse. Shows recent candidates with links
  *        to their individual TradePulse analysis pages.
  */
@@ -23,8 +23,9 @@ interface Candidate {
   ticker: string;
   name: string;
   dualNCS: number | null;
-  dualAction: string;
-  status: string;
+  dualAction: string | null;
+  scanStatus: string | null;
+  matchType: string;
 }
 
 export default function TradePulseIndexPage() {
@@ -34,12 +35,12 @@ export default function TradePulseIndexPage() {
   useEffect(() => {
     const fetchCandidates = async () => {
       try {
-        const data = await apiRequest<{ candidates?: Candidate[] }>('/api/scan');
-        if (data.candidates) {
-          // Show READY and WATCH candidates with NCS scores
+        const data = await apiRequest<{ tickers?: Candidate[] }>('/api/scan/cross-ref');
+        if (data.tickers) {
+          // Show candidates with NCS scores, ranked by NCS
           setCandidates(
-            data.candidates
-              .filter((c: Candidate) => c.dualNCS != null && (c.status === 'READY' || c.status === 'WATCH'))
+            data.tickers
+              .filter((c: Candidate) => c.dualNCS != null)
               .sort((a: Candidate, b: Candidate) => (b.dualNCS ?? 0) - (a.dualNCS ?? 0))
               .slice(0, 20)
           );
@@ -101,7 +102,7 @@ export default function TradePulseIndexPage() {
                     c.dualAction === 'CONDITIONAL' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
                     'bg-red-500/10 border-red-500/30 text-red-400'
                   )}>
-                    {c.dualAction?.replace('_', '-') ?? c.status}
+                    {c.dualAction?.replace('_', '-') ?? c.scanStatus ?? c.matchType}
                   </span>
                   <ArrowRight className="w-4 h-4 text-muted-foreground" />
                 </div>
