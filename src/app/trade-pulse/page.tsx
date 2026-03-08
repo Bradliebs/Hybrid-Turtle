@@ -15,8 +15,6 @@ import Navbar from '@/components/shared/Navbar';
 import { cn } from '@/lib/utils';
 import { apiRequest } from '@/lib/api-client';
 import { Loader2, BarChart3, ArrowRight } from 'lucide-react';
-import { TradePulseGradePill } from '@/components/TradePulseGrade';
-import { classifyGrade, type TradePulseGrade } from '@/lib/prediction/trade-pulse';
 import Link from 'next/link';
 
 interface Candidate {
@@ -86,10 +84,14 @@ export default function TradePulseIndexPage() {
                 className="card-surface p-4 flex items-center justify-between hover:bg-navy-800/60 transition-colors block"
               >
                 <div className="flex items-center gap-3">
-                  <TradePulseGradePill
-                    grade={classifyGrade(c.dualNCS ?? 0)}
-                    score={Math.round(c.dualNCS ?? 0)}
-                  />
+                  <span className={cn(
+                    'inline-flex items-center justify-center min-w-[40px] px-2 py-0.5 rounded-md text-xs font-bold border font-mono',
+                    (c.dualNCS ?? 0) >= 70 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
+                    (c.dualNCS ?? 0) >= 50 ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
+                    'bg-red-500/10 border-red-500/30 text-red-400'
+                  )}>
+                    NCS {Math.round(c.dualNCS ?? 0)}
+                  </span>
                   <div>
                     <span className="text-sm font-semibold text-foreground">{c.ticker}</span>
                     <span className="text-xs text-muted-foreground ml-2">{c.name}</span>
